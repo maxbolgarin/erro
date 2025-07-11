@@ -27,6 +27,10 @@ func (e *wrapError) Error() (out string) {
 		wrappedMsg = e.base.Error()
 	}
 
+	if out == "" {
+		return wrappedMsg
+	}
+
 	return out + ": " + wrappedMsg
 }
 
@@ -55,22 +59,22 @@ func (e *wrapError) Unwrap() error {
 
 // Chaining methods for wrapError - these modify the base error
 func (e *wrapError) Code(code string) Error {
-	e.base.code = code
+	e.base.code = truncateString(code, maxCodeLength)
 	return e
 }
 
 func (e *wrapError) Category(category string) Error {
-	e.base.category = category
+	e.base.category = truncateString(category, maxCategoryLength)
 	return e
 }
 
 func (e *wrapError) Severity(severity string) Error {
-	e.base.severity = severity
+	e.base.severity = truncateString(severity, maxSeverityLength)
 	return e
 }
 
 func (e *wrapError) Fields(fields ...any) Error {
-	e.wrapFields = append(e.wrapFields, prepareFields(fields)...)
+	e.wrapFields = safeAppendFields(e.wrapFields, prepareFields(fields))
 	return e
 }
 
@@ -80,7 +84,7 @@ func (e *wrapError) Context(ctx context.Context) Error {
 }
 
 func (e *wrapError) Tags(tags ...string) Error {
-	e.base.tags = append(e.base.tags, tags...)
+	e.base.tags = safeAppendFields(e.base.tags, tags)
 	return e
 }
 
@@ -90,12 +94,12 @@ func (e *wrapError) Retryable(retryable bool) Error {
 }
 
 func (e *wrapError) TraceID(traceID string) Error {
-	e.base.traceID = traceID
+	e.base.traceID = truncateString(traceID, maxTraceIDLength)
 	return e
 }
 
 // Getter methods for wrapError
-func (e *wrapError) GetBase() *baseError         { return e.base }
+func (e *wrapError) GetBase() Error              { return e.base }
 func (e *wrapError) GetContext() context.Context { return e.base.ctx }
 func (e *wrapError) GetCode() string             { return e.base.code }
 func (e *wrapError) GetCategory() string         { return e.base.category }
@@ -103,7 +107,38 @@ func (e *wrapError) GetSeverity() string         { return e.base.severity }
 func (e *wrapError) GetTags() []string           { return e.base.tags }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
 func (e *wrapError) GetTraceID() string          { return e.base.traceID }
-func (e *wrapError) ErrorWithStack() string      { return e.Error() + "\n" + e.StackFormat() }
+func (e *wrapError) GetCreated() time.Time       { return e.base.created }
+func (e *wrapError) StackWithError() string      { return e.Error() + "\n" + e.StackFormat() }
+
+// Is checks if this error or any wrapped error matches the target
+func (e *wrapError) Is(target error) bool {
+	if target == nil {
+		return false
+	}
+
+	// Check direct equality
+	if e == target {
+		return true
+	}
+
+	// Check if the wrapped error matches directly (most common case)
+	if e.wrapped != nil {
+		if e.wrapped == target {
+			return true
+		}
+		// Use the wrapped error's Is method if it has one
+		if e.wrapped.Is(target) {
+			return true
+		}
+	}
+
+	// Check if the base error matches
+	if e.base != nil && e.base.Is(target) {
+		return true
+	}
+
+	return false
+}
 
 func (e *wrapError) GetFields() []any {
 	// Add fields from wrapped error (if it exists)
@@ -177,11 +212,28 @@ func (e *wrapError) StackFormat() string {
 	return framesToAdd
 }
 
-func newWrapError(base *baseError, wrapped Error, message string, fields ...any) *wrapError {
+func newWrapError(wrapped Error, message string, fields ...any) Error {
+	if wrapped == nil {
+		wrapped = New(message, fields...)
+	}
+
+	var depth int
+
+	baseInt := wrapped.GetBase()
+	base, ok := baseInt.(*baseError)
+	if ok {
+		depth = base.depth
+		base.depth++
+	}
+
+	if depth > maxWrapDepth {
+		return Wrap(ErrMaxWrapDepthExceeded, message, fields...)
+	}
+
 	return &wrapError{
 		base:        base,
 		wrapped:     wrapped,
-		wrapMessage: message,
+		wrapMessage: truncateString(message, maxMessageLength),
 		wrapFields:  prepareFields(fields),
 		wrapPoint:   captureWrapPoint(3), // Skip Wrap, newWrapError and capture caller
 		createdAt:   time.Now(),

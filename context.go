@@ -22,7 +22,7 @@ type ErrorContext struct {
 	Severity  string          // Error severity
 	Tags      []string        // Error tags
 	Retryable bool            // Whether error is retryable
-	CreatedAt time.Time       // When error was created
+	Created   time.Time       // When error was created
 	TraceID   string          // Trace ID if available
 	Context   context.Context // Associated context
 	Stack     Stack           // Stack trace frames
@@ -39,7 +39,6 @@ func ExtractContext(err error) *ErrorContext {
 			Message: err.Error(),
 		}
 	}
-	base := erroErr.GetBase()
 
 	// Extract fields as map
 
@@ -57,7 +56,10 @@ func ExtractContext(err error) *ErrorContext {
 	var function, pkg, file string
 	var line int
 
-	if !base.stack.isEmpty() {
+	baseInt := erroErr.GetBase()
+	base, ok := baseInt.(*baseError)
+
+	if ok && !base.stack.isEmpty() {
 		// Find the first user code frame for function context
 		stackFrames := base.stack.toFrames()
 		stackType := Stack(stackFrames)
@@ -83,15 +85,15 @@ func ExtractContext(err error) *ErrorContext {
 		File:      file,
 		Line:      line,
 		Fields:    fields,
-		Code:      base.code,
-		Category:  base.category,
-		Severity:  base.severity,
-		Tags:      base.tags,
-		Retryable: base.retryable,
-		CreatedAt: base.createdAt,
-		TraceID:   base.traceID,
-		Context:   base.ctx,
-		Stack:     base.stack.toFrames(), // Convert RawStack to Stack frames
+		Code:      baseInt.GetCode(),
+		Category:  baseInt.GetCategory(),
+		Severity:  baseInt.GetSeverity(),
+		Tags:      baseInt.GetTags(),
+		Retryable: baseInt.IsRetryable(),
+		Created:   baseInt.GetCreated(),
+		TraceID:   baseInt.GetTraceID(),
+		Context:   baseInt.GetContext(),
+		Stack:     baseInt.Stack(),
 	}
 }
 
@@ -492,7 +494,7 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 
 	// Add timing information
 	if opts.IncludeCreatedTime {
-		fields = append(fields, opts.FieldNamePrefix+"created_at", ec.CreatedAt)
+		fields = append(fields, opts.FieldNamePrefix+"created_at", ec.Created)
 	}
 
 	// Add function context
@@ -559,7 +561,7 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 
 	// Add timing information
 	if opts.IncludeCreatedTime {
-		fields[opts.FieldNamePrefix+"created"] = ec.CreatedAt
+		fields[opts.FieldNamePrefix+"created"] = ec.Created
 	}
 
 	// Add function context
@@ -605,7 +607,7 @@ func (ec *ErrorContext) getStackTrace(opts *LogOptions) any {
 
 // extractFullMessageWithoutFields builds the complete error message chain without field values
 func extractFullMessageWithoutFields(err Error) string {
-	switch e := err.(type) {
+	switch e := err.GetBase().(type) {
 	case *wrapError:
 		// Get wrap message without fields + ": " + wrapped error message without fields
 		wrapMsg := e.wrapMessage

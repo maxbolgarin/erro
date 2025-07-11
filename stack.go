@@ -29,9 +29,7 @@ var (
 	}
 )
 
-const maxDepth = 50
-
-// кawStack stores just the program counters for efficient storage
+// rawStack stores just the program counters for efficient storage
 type rawStack []uintptr
 
 // captureWrapPoint captures just the program counter of the immediate caller
@@ -66,8 +64,8 @@ func resolveWrapPoint(pc uintptr) StackFrame {
 
 // captureStack captures just the program counters for maximum performance
 func captureStack(skip int) rawStack {
-	var pcs [maxDepth]uintptr
-	n := runtime.Callers(skip+1, pcs[:])
+	pcs := make([]uintptr, maxStackDepth)
+	n := runtime.Callers(skip+1, pcs)
 
 	// Copy only the used portion to avoid storing unused memory
 	rawPcs := make([]uintptr, n)
@@ -161,16 +159,6 @@ func (rs rawStack) isEmpty() bool {
 // formatFull returns detailed formatted stack trace (lazy evaluation)
 func (rs rawStack) formatFull() string {
 	return rs.toFrames().FormatFull()
-}
-
-// toJSON returns a JSON-friendly representation of the stack (lazy evaluation)
-func (rs rawStack) toJSON() []map[string]any {
-	return rs.toFrames().ToJSON()
-}
-
-// toJSONUserFrames returns a JSON-friendly representation of user frames only (lazy evaluation)
-func (rs rawStack) toJSONUserFrames() []map[string]any {
-	return rs.toFrames().ToJSONUserFrames()
 }
 
 // StackFrame stores a frame's runtime information in a human readable format

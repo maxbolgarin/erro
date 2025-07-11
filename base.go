@@ -13,7 +13,7 @@ type baseError struct {
 	originalErr error     // Original error if wrapping external error
 	message     string    // Base message
 	stack       rawStack  // Stack trace (program counters only - resolved on demand)
-	createdAt   time.Time // Creation timestamp
+	created     time.Time // Creation timestamp
 
 	// Metadata
 	fields    []any           // Key-value fields
@@ -24,6 +24,8 @@ type baseError struct {
 	retryable bool            // Retryable flag
 	traceID   string          // Trace ID
 	ctx       context.Context // Associated context
+
+	depth int // Tracks wrapping depth to prevent stack overflow
 }
 
 // Error implements the error interface
@@ -31,10 +33,11 @@ func (e *baseError) Error() (out string) {
 	out = buildFieldsMessage(e.message, e.fields)
 
 	if e.originalErr != nil {
-		// If wrapping external error, include it
+		if out == "" {
+			return e.originalErr.Error()
+		}
 		return out + ": " + e.originalErr.Error()
 	}
-
 	return out
 }
 
@@ -64,22 +67,22 @@ func (e *baseError) Unwrap() error {
 
 // Chaining methods for baseError
 func (e *baseError) Code(code string) Error {
-	e.code = code
+	e.code = truncateString(code, maxCodeLength)
 	return e
 }
 
 func (e *baseError) Category(category string) Error {
-	e.category = category
+	e.category = truncateString(category, maxCategoryLength)
 	return e
 }
 
 func (e *baseError) Severity(severity string) Error {
-	e.severity = severity
+	e.severity = truncateString(severity, maxSeverityLength)
 	return e
 }
 
 func (e *baseError) Fields(fields ...any) Error {
-	e.fields = append(e.fields, prepareFields(fields)...)
+	e.fields = safeAppendFields(e.fields, prepareFields(fields))
 	return e
 }
 
@@ -89,7 +92,7 @@ func (e *baseError) Context(ctx context.Context) Error {
 }
 
 func (e *baseError) Tags(tags ...string) Error {
-	e.tags = append(e.tags, tags...)
+	e.tags = safeAppendFields(e.tags, tags)
 	return e
 }
 
@@ -99,12 +102,12 @@ func (e *baseError) Retryable(retryable bool) Error {
 }
 
 func (e *baseError) TraceID(traceID string) Error {
-	e.traceID = traceID
+	e.traceID = truncateString(traceID, maxTraceIDLength)
 	return e
 }
 
 // Getter methods for baseError
-func (e *baseError) GetBase() *baseError         { return e }
+func (e *baseError) GetBase() Error              { return e }
 func (e *baseError) GetContext() context.Context { return e.ctx }
 func (e *baseError) GetCode() string             { return e.code }
 func (e *baseError) GetCategory() string         { return e.category }
@@ -113,19 +116,60 @@ func (e *baseError) GetTags() []string           { return e.tags }
 func (e *baseError) IsRetryable() bool           { return e.retryable }
 func (e *baseError) GetTraceID() string          { return e.traceID }
 func (e *baseError) GetFields() []any            { return e.fields }
+func (e *baseError) GetCreated() time.Time       { return e.created }
 func (e *baseError) Stack() []StackFrame         { return e.stack.toFrames() }
 func (e *baseError) StackFormat() string         { return e.stack.formatFull() }
-func (e *baseError) ErrorWithStack() string {
-	return e.Error() + "\n" + e.StackFormat()
+func (e *baseError) StackWithError() string      { return e.Error() + "\n" + e.StackFormat() }
+
+// Is checks if this error matches the target error
+func (e *baseError) Is(target error) bool {
+	if target == nil {
+		return false
+	}
+
+	// Check direct equality
+	if e == target {
+		return true
+	}
+
+	// Check if we wrap an external error that matches the target
+	if e.originalErr != nil && e.originalErr == target {
+		return true
+	}
+
+	// Check if target is an erro error and compare by code and message
+	if targetErro, ok := target.(Error); ok {
+		// Compare by code if both have codes
+		if e.code != "" && targetErro.GetCode() != "" {
+			return e.code == targetErro.GetCode()
+		}
+		// Compare by message if no codes
+		return e.message == targetErro.Error()
+	}
+
+	// For external errors, compare by message or check if we wrap it
+	if e.originalErr != nil {
+		// Check if the wrapped error matches
+		if e.originalErr == target {
+			return true
+		}
+		// Check if the wrapped error is also a complex error that might match
+		if x, ok := e.originalErr.(interface{ Is(error) bool }); ok {
+			return x.Is(target)
+		}
+	}
+
+	// Final fallback: compare by message
+	return e.message == target.Error()
 }
 
-// newBaseError creates a new base error
+// newBaseError creates a new base error with security validation
 func newBaseError(originalErr error, message string, fields ...any) *baseError {
 	return &baseError{
 		originalErr: originalErr,
-		message:     message,
+		message:     truncateString(message, maxMessageLength),
 		stack:       captureStack(3), // Skip New, newBaseError and caller
-		createdAt:   time.Now(),
+		created:     time.Now(),
 		fields:      prepareFields(fields),
 	}
 }
@@ -150,20 +194,20 @@ func buildFieldsMessage(message string, fields []any) string {
 			break
 		}
 		builder.WriteString(" ")
-		builder.WriteString(valueToString(fields[i]))
+		key := valueToString(fields[i])
+		if len(key) > maxFieldKeyLength {
+			key = key[:maxFieldKeyLength]
+		}
+		builder.WriteString(key)
 		builder.WriteString("=")
-		builder.WriteString(valueToString(fields[i+1]))
+		value := valueToString(fields[i+1])
+		if len(value) > maxFieldValueLength {
+			value = value[:maxFieldValueLength]
+		}
+		builder.WriteString(value)
 	}
 
 	return builder.String()
-}
-
-// prepareFields ensures fields come in key-value pairs
-func prepareFields(fields []any) []any {
-	if len(fields)%2 != 0 {
-		return append(fields, "<missing>")
-	}
-	return fields
 }
 
 // countFormatVerbs counts the number of format verbs in a format string

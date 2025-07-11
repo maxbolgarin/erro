@@ -3,6 +3,8 @@ package erro
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"time"
 )
 
 // Error represents the common interface for all erro errors
@@ -20,7 +22,7 @@ type Error interface {
 	TraceID(traceID string) Error
 
 	// Extraction methods
-	GetBase() *baseError
+	GetBase() Error
 	GetContext() context.Context
 	GetCode() string
 	GetCategory() string
@@ -29,12 +31,15 @@ type Error interface {
 	IsRetryable() bool
 	GetTraceID() string
 	GetFields() []any
+	GetCreated() time.Time
 
 	// Stack trace access
 	Stack() []StackFrame
 	StackFormat() string
-	ErrorWithStack() string
-	Format(s fmt.State, verb rune)
+	StackWithError() string
+
+	// Error comparison
+	Is(target error) bool
 }
 
 // New creates a new error with optional fields
@@ -70,8 +75,7 @@ func Wrap(err error, message string, fields ...any) Error {
 
 	// If it's already an erro error, create a wrap that points to its base
 	if erroErr, ok := err.(Error); ok {
-		base := erroErr.GetBase()
-		return newWrapError(base, erroErr, message, fields...)
+		return newWrapError(erroErr, message, fields...)
 	}
 
 	// For external errors, create a new base error that wraps it
@@ -83,7 +87,7 @@ func WrapEmpty(err error) Error {
 	if err == nil {
 		return nil
 	}
-	return newBaseError(err, err.Error(), nil)
+	return Wrap(err, "")
 }
 
 // Wrapf wraps an existing error with formatted message and optional fields
@@ -106,8 +110,7 @@ func Wrapf(err error, message string, args ...any) Error {
 
 	// If it's already an erro error, create a wrap that points to its base
 	if erroErr, ok := err.(Error); ok {
-		base := erroErr.GetBase()
-		return newWrapError(base, erroErr, message, args...)
+		return newWrapError(erroErr, message, args...)
 	}
 
 	// For external errors, create a new base error that wraps it
@@ -116,24 +119,50 @@ func Wrapf(err error, message string, args ...any) Error {
 
 // Is reports whether any error in err's chain matches target
 func Is(err error, target error) bool {
+	if target == nil {
+		return err == target
+	}
+
+	// Check current error
+	if isComparable(err, target) {
+		return true
+	}
+
+	// If error has Is method, use it
+	if x, ok := err.(interface{ Is(error) bool }); ok && x.Is(target) {
+		return true
+	}
+
+	// Check wrapped errors
+	if x, ok := err.(interface{ Unwrap() error }); ok {
+		return Is(x.Unwrap(), target)
+	}
+
+	// For erro errors, also check the error chain via GetBase
+	if erroErr, ok := err.(Error); ok {
+		base := erroErr.GetBase()
+		if base != err && Is(base, target) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isComparable checks if two errors are directly comparable
+func isComparable(err, target error) bool {
 	if err == nil || target == nil {
 		return err == target
 	}
 
 	// Check direct equality
-	if err.Error() == target.Error() {
+	if err == target {
 		return true
 	}
 
-	// Check if target is an erro error
-	if targeterro, ok := target.(Error); ok {
-		targetBase := targeterro.GetBase()
-
-		// Check against our error
-		if erroErr, ok := err.(Error); ok {
-			errBase := erroErr.GetBase()
-			return errBase.message == targetBase.message && errBase.code == targetBase.code
-		}
+	// For erro errors, delegate to their Is method
+	if erroErr, ok := err.(Error); ok {
+		return erroErr.Is(target)
 	}
 
 	return false
@@ -141,14 +170,43 @@ func Is(err error, target error) bool {
 
 // As finds the first error in err's chain that matches target
 func As(err error, target any) bool {
+	if target == nil {
+		panic("errors: target cannot be nil")
+	}
+
 	if err == nil {
 		return false
 	}
 
-	// Try direct assignment
+	// Check if target is a pointer
+	val := reflect.ValueOf(target)
+	typ := val.Type()
+	if typ.Kind() != reflect.Ptr {
+		panic("errors: target must be a non-nil pointer")
+	}
+
+	targetType := typ.Elem()
+
+	// Check current error
+	if reflect.TypeOf(err).AssignableTo(targetType) {
+		val.Elem().Set(reflect.ValueOf(err))
+		return true
+	}
+
+	// If error has As method, use it
+	if x, ok := err.(interface{ As(any) bool }); ok && x.As(target) {
+		return true
+	}
+
+	// Check wrapped errors
+	if x, ok := err.(interface{ Unwrap() error }); ok {
+		return As(x.Unwrap(), target)
+	}
+
+	// For erro errors, also check the error chain via GetBase
 	if erroErr, ok := err.(Error); ok {
-		if targetPtr, ok := target.(*Error); ok {
-			*targetPtr = erroErr
+		base := erroErr.GetBase()
+		if base != err && As(base, target) {
 			return true
 		}
 	}
@@ -160,7 +218,10 @@ func As(err error, target any) bool {
 func Unwrap(err error) error {
 	if erroErr, ok := err.(Error); ok {
 		base := erroErr.GetBase()
-		return base.originalErr
+		baseInt, ok := base.(*baseError)
+		if ok {
+			return baseInt.originalErr
+		}
 	}
 	return nil
 }
