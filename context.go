@@ -1,149 +1,100 @@
-// Package erro - Field handling and extraction utilities
 package erro
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// FieldExtractor provides advanced field extraction and processing capabilities
-type FieldExtractor struct {
-	preserveTypes bool // Whether to preserve original types
-	maxFields     int  // Maximum number of fields to extract
-	maxValueLen   int  // Maximum length for field values
+// ErrorContext contains all extractable context from an error
+type ErrorContext struct {
+	Message   string          // Base error message
+	Function  string          // Function where error was created
+	Package   string          // Package where error was created
+	File      string          // File where error was created
+	Line      int             // Line where error was created
+	Fields    map[string]any  // All key-value pairs
+	Code      string          // Error code
+	Category  string          // Error category
+	Severity  string          // Error severity
+	Tags      []string        // Error tags
+	Retryable bool            // Whether error is retryable
+	CreatedAt time.Time       // When error was created
+	TraceID   string          // Trace ID if available
+	Context   context.Context // Associated context
 }
 
-// NewFieldExtractor creates a new field extractor with default settings
-func NewFieldExtractor() *FieldExtractor {
-	return &FieldExtractor{
-		preserveTypes: true,
-		maxFields:     100,
-		maxValueLen:   1000,
-	}
-}
-
-// WithPreserveTypes sets whether to preserve original types when extracting
-func (fe *FieldExtractor) WithPreserveTypes(preserve bool) *FieldExtractor {
-	fe.preserveTypes = preserve
-	return fe
-}
-
-// WithMaxFields sets the maximum number of fields to extract
-func (fe *FieldExtractor) WithMaxFields(max int) *FieldExtractor {
-	fe.maxFields = max
-	return fe
-}
-
-// WithMaxValueLength sets the maximum length for field values
-func (fe *FieldExtractor) WithMaxValueLength(max int) *FieldExtractor {
-	fe.maxValueLen = max
-	return fe
-}
-
-// ExtractFromError extracts fields from an erro error
-func (fe *FieldExtractor) ExtractFromError(err error) map[string]any {
-	if erroErr, ok := err.(Error); ok {
-		return fe.ExtractFromFields(erroErr.GetFields())
-	}
-	return nil
-}
-
-// ExtractFromFields converts a slice of fields to a map
-func (fe *FieldExtractor) ExtractFromFields(fields []any) map[string]any {
-	if len(fields) == 0 {
+// ExtractContext extracts all available context from an error
+func ExtractContext(err error) *ErrorContext {
+	if err == nil {
 		return nil
 	}
-
-	result := make(map[string]any)
-	maxFields := fe.maxFields
-	if maxFields <= 0 {
-		maxFields = len(fields) / 2
-	}
-
-	count := 0
-	for i := 0; i < len(fields) && count < maxFields; i += 2 {
-		if i+1 >= len(fields) {
-			break
+	erroErr, ok := err.(Error)
+	if !ok {
+		return &ErrorContext{
+			Message: err.Error(),
 		}
+	}
+	base := erroErr.GetBase()
 
-		key := fmt.Sprintf("%v", fields[i])
-		value := fields[i+1]
-
-		// Process the value
-		processedValue := fe.processValue(value)
-		result[key] = processedValue
-		count++
+	// Extract fields as map
+	fields := make(map[string]any)
+	allFields := erroErr.GetFields()
+	for i := 0; i < len(allFields); i += 2 {
+		if i+1 < len(allFields) {
+			key := fmt.Sprintf("%v", allFields[i])
+			fields[key] = allFields[i+1]
+		}
 	}
 
-	return result
+	// Extract origin context from stack on demand
+	var function, pkg, file string
+	var line int
+
+	if !base.stack.IsEmpty() {
+		// Find the first user code frame for function context
+		stackFrames := base.stack.ToFrames()
+		stackType := Stack(stackFrames)
+		if topUserFrame := stackType.TopUserFrame(); topUserFrame != nil {
+			function = topUserFrame.Name
+			pkg = topUserFrame.Package
+			file = topUserFrame.File
+			line = topUserFrame.Line
+		} else if len(stackFrames) > 0 {
+			// Fallback to first frame if no user code found
+			frame := stackFrames[0]
+			function = frame.Name
+			pkg = frame.Package
+			file = frame.File
+			line = frame.Line
+		}
+	}
+
+	return &ErrorContext{
+		Message:   base.message,
+		Function:  function,
+		Package:   pkg,
+		File:      file,
+		Line:      line,
+		Fields:    fields,
+		Code:      base.code,
+		Category:  base.category,
+		Severity:  base.severity,
+		Tags:      base.tags,
+		Retryable: base.retryable,
+		CreatedAt: base.createdAt,
+		TraceID:   base.traceID,
+		Context:   base.ctx,
+	}
+
 }
 
-// processValue processes a field value according to extractor settings
-func (fe *FieldExtractor) processValue(value any) any {
-	if value == nil {
-		return nil
-	}
-
-	// Convert to string for length checking
-	str := valueToString(value)
-	if len(str) > fe.maxValueLen {
-		str = str[:fe.maxValueLen] + "..."
-	}
-
-	// Return original type if preserve types is enabled, otherwise return string
-	if fe.preserveTypes {
-		return value
-	}
-	return str
-}
-
-// valueToString converts any value to string
-func valueToString(value any) string {
-	switch v := value.(type) {
-	case string:
-		return v
-	case []byte:
-		return string(v)
-	case time.Time:
-		return v.Format(time.RFC3339)
-	case fmt.Stringer:
-		return v.String()
-	case error:
-		return v.Error()
-	case int:
-		return strconv.FormatInt(int64(v), 10)
-	case int8:
-		return strconv.FormatInt(int64(v), 10)
-	case int16:
-		return strconv.FormatInt(int64(v), 10)
-	case int32:
-		return strconv.FormatInt(int64(v), 10)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case uint:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint8:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint16:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint32:
-		return strconv.FormatUint(uint64(v), 10)
-	case uint64:
-		return strconv.FormatUint(v, 10)
-	case float32:
-		return strconv.FormatFloat(float64(v), 'g', -1, 32)
-	case float64:
-		return strconv.FormatFloat(v, 'g', -1, 64)
-	case bool:
-		return strconv.FormatBool(v)
-	case []string:
-		return strings.Join(v, ",")
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
+const (
+	maxFieldsInLog   = 100
+	maxValueLenInLog = 1000
+)
 
 // LoggingContext contains all context information for structured logging
 type LoggingContext struct {
@@ -160,6 +111,13 @@ func BuildLoggingContext(err error) *LoggingContext {
 		return nil
 	}
 
+	erroErr, ok := err.(Error)
+	if !ok {
+		return &LoggingContext{
+			Message: err.Error(),
+		}
+	}
+
 	ctx := &LoggingContext{
 		Fields:      make(map[string]any),
 		StackFields: make(map[string]any),
@@ -167,70 +125,62 @@ func BuildLoggingContext(err error) *LoggingContext {
 		Context:     make(map[string]any),
 	}
 
-	// Handle erro errors
-	if erroErr, ok := err.(Error); ok {
-		base := erroErr.GetBase()
-		ctx.Message = base.message
+	base := erroErr.GetBase()
+	ctx.Message = base.message
 
-		// Extract fields
-		extractor := NewFieldExtractor()
-		ctx.Fields = extractor.ExtractFromFields(erroErr.GetFields())
+	// Extract fields
+	ctx.Fields = extractFromFields(erroErr.GetFields())
 
-		// Extract stack fields
-		if !base.stack.IsEmpty() {
-			ctx.StackFields = base.stack.ToLogFields()
-		}
+	// Extract stack fields
+	if !base.stack.IsEmpty() {
+		ctx.StackFields = base.stack.ToLogFields()
+	}
 
-		// Extract error metadata
-		if code := erroErr.GetCode(); code != "" {
-			ctx.ErrorMeta["code"] = code
-		}
-		if category := erroErr.GetCategory(); category != "" {
-			ctx.ErrorMeta["category"] = category
-		}
-		if severity := erroErr.GetSeverity(); severity != "" {
-			ctx.ErrorMeta["severity"] = severity
-		}
-		if tags := erroErr.GetTags(); len(tags) > 0 {
-			ctx.ErrorMeta["tags"] = tags
-		}
-		if traceID := erroErr.GetTraceID(); traceID != "" {
-			ctx.ErrorMeta["trace_id"] = traceID
-		}
-		if erroErr.IsRetryable() {
-			ctx.ErrorMeta["retryable"] = true
-		}
+	// Extract error metadata
+	if code := erroErr.GetCode(); code != "" {
+		ctx.ErrorMeta["code"] = code
+	}
+	if category := erroErr.GetCategory(); category != "" {
+		ctx.ErrorMeta["category"] = category
+	}
+	if severity := erroErr.GetSeverity(); severity != "" {
+		ctx.ErrorMeta["severity"] = severity
+	}
+	if tags := erroErr.GetTags(); len(tags) > 0 {
+		ctx.ErrorMeta["tags"] = tags
+	}
+	if traceID := erroErr.GetTraceID(); traceID != "" {
+		ctx.ErrorMeta["trace_id"] = traceID
+	}
+	if erroErr.IsRetryable() {
+		ctx.ErrorMeta["retryable"] = true
+	}
 
-		// Extract timing information
-		ctx.ErrorMeta["created_at"] = base.createdAt
+	// Extract timing information
+	ctx.ErrorMeta["created_at"] = base.createdAt
 
-		// Extract function context from stack on demand
-		if !base.stack.IsEmpty() {
-			if topUserFrame := base.stack.TopUserFrame(); topUserFrame != nil {
-				if topUserFrame.Name != "" {
-					ctx.Context["function"] = topUserFrame.Name
+	// Extract function context from stack on demand
+	if !base.stack.IsEmpty() {
+		if topUserFrame := base.stack.TopUserFrame(); topUserFrame != nil {
+			if topUserFrame.Name != "" {
+				ctx.Context["function"] = topUserFrame.Name
+			}
+			if topUserFrame.Package != "" {
+				ctx.Context["package"] = topUserFrame.Package
+			}
+		} else {
+			// Fallback to first frame
+			stackFrames := base.stack.ToFrames()
+			if len(stackFrames) > 0 {
+				frame := stackFrames[0]
+				if frame.Name != "" {
+					ctx.Context["function"] = frame.Name
 				}
-				if topUserFrame.Package != "" {
-					ctx.Context["package"] = topUserFrame.Package
-				}
-			} else {
-				// Fallback to first frame
-				stackFrames := base.stack.ToFrames()
-				if len(stackFrames) > 0 {
-					frame := stackFrames[0]
-					if frame.Name != "" {
-						ctx.Context["function"] = frame.Name
-					}
-					if pkg := extractPackage(frame.Name); pkg != "" {
-						ctx.Context["package"] = pkg
-					}
+				if frame.Package != "" {
+					ctx.Context["package"] = frame.Package
 				}
 			}
 		}
-
-	} else {
-		// Handle regular errors
-		ctx.Message = err.Error()
 	}
 
 	return ctx
@@ -545,4 +495,82 @@ func LogError(err error) (message string, fields map[string]any) {
 		return err.Error(), nil
 	}
 	return ctx.Message, ctx.ToGenericMap()
+}
+
+// extractFromFields converts a slice of fields to a map
+func extractFromFields(fields []any) map[string]any {
+	if len(fields) == 0 {
+		return nil
+	}
+	maxFields := len(fields) / 2
+	if maxFields > maxFieldsInLog {
+		maxFields = maxFieldsInLog
+	}
+
+	result := make(map[string]any, maxFields)
+
+	count := 0
+	for i := 0; i < len(fields) && count < maxFields; i += 2 {
+		if i+1 >= len(fields) {
+			break
+		}
+
+		key := valueToString(fields[i])
+		value := valueToString(fields[i+1])
+
+		if len(value) > maxValueLenInLog {
+			value = value[:maxValueLenInLog] + "..."
+		}
+
+		result[key] = value
+		count++
+	}
+
+	return result
+}
+
+// valueToString converts any value to string
+func valueToString(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case time.Time:
+		return v.Format(time.RFC3339)
+	case fmt.Stringer:
+		return v.String()
+	case error:
+		return v.Error()
+	case int:
+		return strconv.FormatInt(int64(v), 10)
+	case int8:
+		return strconv.FormatInt(int64(v), 10)
+	case int16:
+		return strconv.FormatInt(int64(v), 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case uint:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'g', -1, 32)
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	case []string:
+		return strings.Join(v, ",")
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
