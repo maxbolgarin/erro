@@ -9,23 +9,24 @@ import (
 func main() {
 	err := erro.New("test", "test", "test").Fields("test23", "test12")
 	wrapped := erro.Wrap(err, "wrapped", "wrap_field")
-	wrapped2 := erro.Wrap(wrapped, "wrapped2", "wrap_field2")
+	wrapped2 := erro.Wrap(wrapped, "wrapped2", "wrap_field2").Code("wrapped2_code").Category("wrapped2_category").Severity("wrapped2_severity").Retryable(true).Tags("wrapped2_tag")
 	// fmt.Println(err.Error())
 	// fmt.Println(wrapped2.Error())
 	// fmt.Println(wrapped2.ErrorWithStack())
+	erro.LogError(wrapped2, func(message string, fields ...any) {
+		fmt.Println(message)
+		fmt.Println(fields)
+	})
 
-	fmt.Println(erro.LogFields(err))
-	fmt.Println(erro.LogFields(wrapped))
-	fmt.Println(erro.LogError(wrapped2))
+	fmt.Println(wrapped2.StackFormat())
 
-	fmt.Println(err.StackFormat())
-
-	fmt.Printf("Package: %s\n", erro.ExtractContext(err).Package)
-	fmt.Printf("Function: %s\n", erro.ExtractContext(err).Function)
-	fmt.Printf("File: %s\n", erro.ExtractContext(err).File)
-	fmt.Printf("Line: %d\n", erro.ExtractContext(err).Line)
-	fmt.Printf("Fields: %v\n", erro.ExtractContext(err).Fields)
-	fmt.Printf("Code: %s\n", erro.ExtractContext(err).Code)
-	fmt.Printf("Category: %s\n", erro.ExtractContext(err).Category)
-	fmt.Printf("Severity: %s\n", erro.ExtractContext(err).Severity)
+	ctx := erro.ExtractContext(wrapped2)
+	fmt.Printf("Package: %s\n", ctx.Package)
+	fmt.Printf("Function: %s\n", ctx.Function)
+	fmt.Printf("File: %s\n", ctx.File)
+	fmt.Printf("Line: %d\n", ctx.Line)
+	fmt.Printf("Fields: %v\n", ctx.Fields)
+	fmt.Printf("Code: %s\n", ctx.Code)
+	fmt.Printf("Category: %s\n", ctx.Category)
+	fmt.Printf("Severity: %s\n", ctx.Severity)
 }

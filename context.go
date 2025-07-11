@@ -3,6 +3,7 @@ package erro
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,11 +41,13 @@ func ExtractContext(err error) *ErrorContext {
 	base := erroErr.GetBase()
 
 	// Extract fields as map
-	fields := make(map[string]any)
+
 	allFields := erroErr.GetFields()
+	fields := make(map[string]any, len(allFields)/2)
+
 	for i := 0; i < len(allFields); i += 2 {
 		if i+1 < len(allFields) {
-			key := fmt.Sprintf("%v", allFields[i])
+			key := valueToString(allFields[i])
 			fields[key] = allFields[i+1]
 		}
 	}
@@ -73,7 +76,7 @@ func ExtractContext(err error) *ErrorContext {
 	}
 
 	return &ErrorContext{
-		Message:   base.message,
+		Message:   extractFullMessageWithoutFields(erroErr), // Use full message chain instead of just base.message
 		Function:  function,
 		Package:   pkg,
 		File:      file,
@@ -88,445 +91,208 @@ func ExtractContext(err error) *ErrorContext {
 		TraceID:   base.traceID,
 		Context:   base.ctx,
 	}
-
-}
-
-const (
-	maxFieldsInLog   = 100
-	maxValueLenInLog = 1000
-)
-
-// LoggingContext contains all context information for structured logging
-type LoggingContext struct {
-	Message     string         // Primary error message
-	Fields      map[string]any // Key-value fields
-	StackFields map[string]any // Stack-derived fields
-	ErrorMeta   map[string]any // Error metadata (code, category, etc.)
-	Context     map[string]any // Additional context
-}
-
-// BuildLoggingContext creates a comprehensive logging context from an error
-func BuildLoggingContext(err error) *LoggingContext {
-	if err == nil {
-		return nil
-	}
-
-	erroErr, ok := err.(Error)
-	if !ok {
-		return &LoggingContext{
-			Message: err.Error(),
-		}
-	}
-
-	ctx := &LoggingContext{
-		Fields:      make(map[string]any),
-		StackFields: make(map[string]any),
-		ErrorMeta:   make(map[string]any),
-		Context:     make(map[string]any),
-	}
-
-	base := erroErr.GetBase()
-	ctx.Message = base.message
-
-	// Extract fields
-	ctx.Fields = extractFromFields(erroErr.GetFields())
-
-	// Extract stack fields
-	if !base.stack.IsEmpty() {
-		ctx.StackFields = base.stack.ToLogFields()
-	}
-
-	// Extract error metadata
-	if code := erroErr.GetCode(); code != "" {
-		ctx.ErrorMeta["code"] = code
-	}
-	if category := erroErr.GetCategory(); category != "" {
-		ctx.ErrorMeta["category"] = category
-	}
-	if severity := erroErr.GetSeverity(); severity != "" {
-		ctx.ErrorMeta["severity"] = severity
-	}
-	if tags := erroErr.GetTags(); len(tags) > 0 {
-		ctx.ErrorMeta["tags"] = tags
-	}
-	if traceID := erroErr.GetTraceID(); traceID != "" {
-		ctx.ErrorMeta["trace_id"] = traceID
-	}
-	if erroErr.IsRetryable() {
-		ctx.ErrorMeta["retryable"] = true
-	}
-
-	// Extract timing information
-	ctx.ErrorMeta["created_at"] = base.createdAt
-
-	// Extract function context from stack on demand
-	if !base.stack.IsEmpty() {
-		if topUserFrame := base.stack.TopUserFrame(); topUserFrame != nil {
-			if topUserFrame.Name != "" {
-				ctx.Context["function"] = topUserFrame.Name
-			}
-			if topUserFrame.Package != "" {
-				ctx.Context["package"] = topUserFrame.Package
-			}
-		} else {
-			// Fallback to first frame
-			stackFrames := base.stack.ToFrames()
-			if len(stackFrames) > 0 {
-				frame := stackFrames[0]
-				if frame.Name != "" {
-					ctx.Context["function"] = frame.Name
-				}
-				if frame.Package != "" {
-					ctx.Context["package"] = frame.Package
-				}
-			}
-		}
-	}
-
-	return ctx
-}
-
-// ToSlogFields converts logging context to slog-compatible fields
-func (lc *LoggingContext) ToSlogFields() []any {
-	var fields []any
-
-	// Add all field types
-	for key, value := range lc.Fields {
-		fields = append(fields, key, value)
-	}
-	for key, value := range lc.StackFields {
-		fields = append(fields, key, value)
-	}
-	for key, value := range lc.ErrorMeta {
-		fields = append(fields, key, value)
-	}
-	for key, value := range lc.Context {
-		fields = append(fields, key, value)
-	}
-
-	return fields
-}
-
-// ToLogrusFields converts logging context to logrus-compatible fields
-func (lc *LoggingContext) ToLogrusFields() map[string]any {
-	fields := make(map[string]any)
-
-	// Merge all field types
-	for key, value := range lc.Fields {
-		fields[key] = value
-	}
-	for key, value := range lc.StackFields {
-		fields[key] = value
-	}
-	for key, value := range lc.ErrorMeta {
-		fields[key] = value
-	}
-	for key, value := range lc.Context {
-		fields[key] = value
-	}
-
-	return fields
-}
-
-// ToZapFields converts logging context to zap-compatible fields
-func (lc *LoggingContext) ToZapFields() map[string]any {
-	// For zap, we can use the same format as logrus
-	return lc.ToLogrusFields()
-}
-
-// ToGenericMap converts to a generic map for any logging framework
-func (lc *LoggingContext) ToGenericMap() map[string]any {
-	return lc.ToLogrusFields()
-}
-
-// Enhanced field parsing for error messages
-type FieldParser struct {
-	quoteChar  rune
-	escapeChar rune
-	separators []rune
-	equalChar  rune
-}
-
-// NewFieldParser creates a new field parser with default settings
-func NewFieldParser() *FieldParser {
-	return &FieldParser{
-		quoteChar:  '"',
-		escapeChar: '\\',
-		separators: []rune{' ', '\t'},
-		equalChar:  '=',
-	}
-}
-
-// ParseFromMessage parses key=value pairs from an error message
-func (fp *FieldParser) ParseFromMessage(message string) (baseMessage string, fields map[string]string) {
-	return fp.parseFieldsFromString(message)
-}
-
-// parseFieldsFromString does the actual parsing work
-func (fp *FieldParser) parseFieldsFromString(message string) (string, map[string]string) {
-	if message == "" {
-		return "", nil
-	}
-
-	// For wrapped errors, only parse the part before the first colon
-	wrapIndex := fp.findWrapDelimiter(message)
-	originalMessage := message
-	if wrapIndex != -1 {
-		message = message[:wrapIndex]
-	}
-
-	fields := make(map[string]string)
-	tokens := fp.parseTokens(message)
-
-	if len(tokens) == 0 {
-		return originalMessage, nil
-	}
-
-	// Find the first field (contains '=')
-	firstFieldIndex := -1
-	for i, token := range tokens {
-		if strings.Contains(token, string(fp.equalChar)) {
-			firstFieldIndex = i
-			break
-		}
-	}
-
-	// If no fields found, return the entire message as base
-	if firstFieldIndex == -1 {
-		return originalMessage, nil
-	}
-
-	// Extract base message (everything before the first field)
-	baseMessage := strings.Join(tokens[:firstFieldIndex], " ")
-
-	// Extract fields
-	for i := firstFieldIndex; i < len(tokens); i++ {
-		token := tokens[i]
-		if equalIndex := strings.Index(token, string(fp.equalChar)); equalIndex != -1 {
-			key := token[:equalIndex]
-			value := token[equalIndex+1:]
-
-			if key != "" {
-				unescapedValue := fp.unescapeValue(value)
-				fields[key] = unescapedValue
-			}
-		}
-	}
-
-	return baseMessage, fields
-}
-
-// findWrapDelimiter finds the position of ": " that indicates error wrapping
-func (fp *FieldParser) findWrapDelimiter(message string) int {
-	var inQuotes bool
-	var i int
-
-	for i < len(message)-1 {
-		r := rune(message[i])
-
-		if inQuotes {
-			if r == fp.escapeChar && i+1 < len(message) {
-				i += 2
-				continue
-			} else if r == fp.quoteChar {
-				inQuotes = false
-			}
-		} else {
-			if r == fp.quoteChar {
-				inQuotes = true
-			} else if r == ':' && i+1 < len(message) && message[i+1] == ' ' {
-				return i
-			}
-		}
-
-		i++
-	}
-
-	return -1
-}
-
-// parseTokens splits a string into tokens, respecting quoted strings
-func (fp *FieldParser) parseTokens(s string) []string {
-	var tokens []string
-	var current strings.Builder
-	var inQuotes bool
-	var i int
-
-	for i < len(s) {
-		r := rune(s[i])
-
-		if inQuotes {
-			if r == fp.escapeChar && i+1 < len(s) {
-				current.WriteRune(r)
-				i++
-				if i < len(s) {
-					current.WriteRune(rune(s[i]))
-				}
-			} else if r == fp.quoteChar {
-				current.WriteRune(r)
-				inQuotes = false
-			} else {
-				current.WriteRune(r)
-			}
-		} else {
-			if r == fp.quoteChar {
-				current.WriteRune(r)
-				inQuotes = true
-			} else if fp.isSeparator(r) {
-				if current.Len() > 0 {
-					tokens = append(tokens, current.String())
-					current.Reset()
-				}
-			} else {
-				current.WriteRune(r)
-			}
-		}
-
-		i++
-	}
-
-	// Add the last token
-	if current.Len() > 0 {
-		tokens = append(tokens, current.String())
-	}
-
-	return tokens
-}
-
-// isSeparator checks if a rune is a separator
-func (fp *FieldParser) isSeparator(r rune) bool {
-	for _, sep := range fp.separators {
-		if r == sep {
-			return true
-		}
-	}
-	return false
-}
-
-// unescapeValue removes quotes and unescapes characters in a field value
-func (fp *FieldParser) unescapeValue(value string) string {
-	if len(value) < 2 {
-		return value
-	}
-
-	// Check if value is quoted
-	if value[0] == byte(fp.quoteChar) && value[len(value)-1] == byte(fp.quoteChar) {
-		// Remove quotes and unescape
-		inner := value[1 : len(value)-1]
-		var result strings.Builder
-		var escaped bool
-
-		for _, r := range inner {
-			if escaped {
-				result.WriteRune(r)
-				escaped = false
-				continue
-			}
-
-			if r == fp.escapeChar {
-				escaped = true
-				continue
-			}
-
-			result.WriteRune(r)
-		}
-
-		return result.String()
-	}
-
-	return value
-}
-
-// Global convenience functions for field extraction
-
-// ExtractFields extracts key-value pairs from an error message
-func ExtractFields(err error) (string, map[string]string) {
-	if err == nil {
-		return "", nil
-	}
-
-	parser := NewFieldParser()
-	return parser.ParseFromMessage(err.Error())
-}
-
-// ExtractFieldsFromString extracts key-value pairs from a message string
-func ExtractFieldsFromString(message string) (string, map[string]string) {
-	parser := NewFieldParser()
-	return parser.ParseFromMessage(message)
 }
 
 // LogFields returns a slice of alternating key-value pairs for structured loggers
 func LogFields(err error) []any {
-	ctx := BuildLoggingContext(err)
+	ctx := ExtractContext(err)
 	if ctx == nil {
 		return nil
 	}
-	return ctx.ToSlogFields()
+	return ctx.LogFields()
 }
 
 // LogFieldsMap returns a map of field key-value pairs for map-based loggers
 func LogFieldsMap(err error) map[string]any {
-	ctx := BuildLoggingContext(err)
+	ctx := ExtractContext(err)
 	if ctx == nil {
 		return nil
 	}
-	return ctx.ToGenericMap()
+	return ctx.LogFieldsMap()
 }
 
 // WithLogger executes a callback with extracted error context for any logging library
-func WithLogger(err error, logFunc func(message string, fields map[string]any)) {
+func LogError(err error, logFunc func(message string, fields ...any)) {
 	if err == nil || logFunc == nil {
 		return
 	}
 
-	ctx := BuildLoggingContext(err)
+	ctx := ExtractContext(err)
 	if ctx == nil {
 		logFunc(err.Error(), nil)
 		return
 	}
 
-	logFunc(ctx.Message, ctx.ToGenericMap())
+	logFunc(ctx.Message, ctx.LogFields()...)
 }
 
-// LogError extracts both message and fields for convenient logging
-func LogError(err error) (message string, fields map[string]any) {
-	ctx := BuildLoggingContext(err)
-	if ctx == nil {
-		return err.Error(), nil
+// String formats the ErrorContext like a normal error with fields
+func (ec *ErrorContext) String() string {
+	if ec == nil {
+		return ""
 	}
-	return ctx.Message, ctx.ToGenericMap()
+
+	if len(ec.Fields) == 0 {
+		return ec.Message
+	}
+
+	var builder strings.Builder
+	// Estimate capacity: message + fields with reasonable estimates for key=value pairs
+	estimatedSize := len(ec.Message) + len(ec.Fields)*20
+	builder.Grow(estimatedSize)
+
+	builder.WriteString(ec.Message)
+
+	// Add fields in sorted order for consistent output
+	keys := make([]string, 0, len(ec.Fields))
+	for key := range ec.Fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		builder.WriteString(" ")
+		builder.WriteString(key)
+		builder.WriteString("=")
+		builder.WriteString(valueToString(ec.Fields[key]))
+	}
+
+	return builder.String()
 }
 
-// extractFromFields converts a slice of fields to a map
-func extractFromFields(fields []any) map[string]any {
-	if len(fields) == 0 {
+// ToSlogFields converts ErrorContext to slog-compatible fields
+func (ec *ErrorContext) LogFields() []any {
+	if ec == nil {
 		return nil
 	}
-	maxFields := len(fields) / 2
-	if maxFields > maxFieldsInLog {
-		maxFields = maxFieldsInLog
+
+	fields := make([]any, 0, len(ec.Fields)+11)
+
+	// Add user fields
+	for key, value := range ec.Fields {
+		fields = append(fields, key, value)
 	}
 
-	result := make(map[string]any, maxFields)
-
-	count := 0
-	for i := 0; i < len(fields) && count < maxFields; i += 2 {
-		if i+1 >= len(fields) {
-			break
-		}
-
-		key := valueToString(fields[i])
-		value := valueToString(fields[i+1])
-
-		if len(value) > maxValueLenInLog {
-			value = value[:maxValueLenInLog] + "..."
-		}
-
-		result[key] = value
-		count++
+	// Add error metadata
+	if ec.Code != "" {
+		fields = append(fields, "code", ec.Code)
+	}
+	if ec.Category != "" {
+		fields = append(fields, "category", ec.Category)
+	}
+	if ec.Severity != "" {
+		fields = append(fields, "severity", ec.Severity)
+	}
+	if len(ec.Tags) > 0 {
+		fields = append(fields, "tags", ec.Tags)
+	}
+	if ec.TraceID != "" {
+		fields = append(fields, "trace_id", ec.TraceID)
+	}
+	if ec.Retryable {
+		fields = append(fields, "retryable", true)
 	}
 
-	return result
+	// Add timing information
+	fields = append(fields, "created_at", ec.CreatedAt)
+
+	// Add function context
+	if ec.Function != "" {
+		fields = append(fields, "error_function", ec.Function)
+	}
+	if ec.Package != "" {
+		fields = append(fields, "error_package", ec.Package)
+	}
+	if ec.File != "" {
+		fields = append(fields, "error_file", ec.File)
+	}
+	if ec.Line > 0 {
+		fields = append(fields, "error_line", ec.Line)
+	}
+
+	return fields
+}
+
+// ToLogrusFields converts ErrorContext to logrus-compatible fields
+func (ec *ErrorContext) LogFieldsMap() map[string]any {
+	if ec == nil {
+		return nil
+	}
+
+	fields := make(map[string]any, len(ec.Fields)+11)
+
+	// Add user fields
+	for key, value := range ec.Fields {
+		fields[key] = value
+	}
+
+	// Add error metadata
+	if ec.Code != "" {
+		fields["code"] = ec.Code
+	}
+	if ec.Category != "" {
+		fields["category"] = ec.Category
+	}
+	if ec.Severity != "" {
+		fields["severity"] = ec.Severity
+	}
+	if len(ec.Tags) > 0 {
+		fields["tags"] = ec.Tags
+	}
+	if ec.TraceID != "" {
+		fields["trace_id"] = ec.TraceID
+	}
+	if ec.Retryable {
+		fields["retryable"] = true
+	}
+
+	// Add timing information
+	fields["created_at"] = ec.CreatedAt
+
+	// Add function context
+	if ec.Function != "" {
+		fields["error_function"] = ec.Function
+	}
+	if ec.Package != "" {
+		fields["error_package"] = ec.Package
+	}
+	if ec.File != "" {
+		fields["error_file"] = ec.File
+	}
+	if ec.Line > 0 {
+		fields["error_line"] = ec.Line
+	}
+
+	return fields
+}
+
+// extractFullMessageWithoutFields builds the complete error message chain without field values
+func extractFullMessageWithoutFields(err Error) string {
+	switch e := err.(type) {
+	case *wrapError:
+		// Get wrap message without fields + ": " + wrapped error message without fields
+		wrapMsg := e.wrapMessage
+		if e.wrapped != nil {
+			wrappedMsg := extractFullMessageWithoutFields(e.wrapped)
+			return wrapMsg + ": " + wrappedMsg
+		} else {
+			// Fallback to base if no wrapped error
+			baseMsg := e.base.message
+			if e.base.originalErr != nil {
+				return wrapMsg + ": " + baseMsg + ": " + e.base.originalErr.Error()
+			}
+			return wrapMsg + ": " + baseMsg
+		}
+	case *baseError:
+		// Get base message without fields + optionally original error
+		if e.originalErr != nil {
+			return e.message + ": " + e.originalErr.Error()
+		}
+		return e.message
+	default:
+		// Fallback for unknown types
+		return err.Error()
+	}
 }
 
 // valueToString converts any value to string

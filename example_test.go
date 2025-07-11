@@ -204,9 +204,9 @@ func TestLoggingIntegration(t *testing.T) {
 
 	// Test callback logging
 	var loggedMessage string
-	var loggedFields map[string]any
+	var loggedFields []any
 
-	erro.WithLogger(err, func(message string, fields map[string]any) {
+	erro.LogError(err, func(message string, fields ...any) {
 		loggedMessage = message
 		loggedFields = fields
 	})
@@ -215,8 +215,8 @@ func TestLoggingIntegration(t *testing.T) {
 		t.Errorf("Expected message: database query failed, got: %s", loggedMessage)
 	}
 
-	if loggedFields["table"] != "users" {
-		t.Errorf("Expected table: users, got: %v", loggedFields["table"])
+	if loggedFields[1] != "users" {
+		t.Errorf("Expected table: users, got: %v", loggedFields[1])
 	}
 }
 
