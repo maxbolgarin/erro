@@ -31,12 +31,12 @@ var (
 
 const maxDepth = 50
 
-// RawStack stores just the program counters for efficient storage
-type RawStack []uintptr
+// кawStack stores just the program counters for efficient storage
+type rawStack []uintptr
 
-// CaptureWrapPoint captures just the program counter of the immediate caller
+// captureWrapPoint captures just the program counter of the immediate caller
 // This is much faster than capturing a full stack for wrap operations
-func CaptureWrapPoint(skip int) uintptr {
+func captureWrapPoint(skip int) uintptr {
 	var pcs [1]uintptr
 	n := runtime.Callers(skip+1, pcs[:])
 	if n > 0 {
@@ -45,8 +45,8 @@ func CaptureWrapPoint(skip int) uintptr {
 	return 0
 }
 
-// ResolveWrapPoint converts a single program counter to a StackFrame
-func ResolveWrapPoint(pc uintptr) StackFrame {
+// resolveWrapPoint converts a single program counter to a StackFrame
+func resolveWrapPoint(pc uintptr) StackFrame {
 	if pc == 0 {
 		return StackFrame{}
 	}
@@ -64,8 +64,8 @@ func ResolveWrapPoint(pc uintptr) StackFrame {
 	}
 }
 
-// CaptureStack captures just the program counters for maximum performance
-func CaptureStack(skip int) RawStack {
+// captureStack captures just the program counters for maximum performance
+func captureStack(skip int) rawStack {
 	var pcs [maxDepth]uintptr
 	n := runtime.Callers(skip+1, pcs[:])
 
@@ -76,8 +76,8 @@ func CaptureStack(skip int) RawStack {
 	return rawPcs
 }
 
-// ToFrames converts the raw stack to resolved stack frames on demand
-func (rs RawStack) ToFrames() Stack {
+// toFrames converts the raw stack to resolved stack frames on demand
+func (rs rawStack) toFrames() Stack {
 	if len(rs) == 0 {
 		return nil
 	}
@@ -153,56 +153,24 @@ func isUselessRuntimeFrame(function, file string) bool {
 	return false
 }
 
-// Len returns the number of stack frames
-func (rs RawStack) Len() int {
-	return len(rs)
-}
-
-// IsEmpty returns true if the stack is empty
-func (rs RawStack) IsEmpty() bool {
+// isEmpty returns true if the stack is empty
+func (rs rawStack) isEmpty() bool {
 	return len(rs) == 0
 }
 
-// Convenience methods that delegate to resolved frames when needed
-
-// TopUserFrame returns the topmost user code frame (lazy evaluation)
-func (rs RawStack) TopUserFrame() *StackFrame {
-	return rs.ToFrames().TopUserFrame()
+// formatFull returns detailed formatted stack trace (lazy evaluation)
+func (rs rawStack) formatFull() string {
+	return rs.toFrames().FormatFull()
 }
 
-// UserFrames returns only the user code frames (lazy evaluation)
-func (rs RawStack) UserFrames() Stack {
-	return rs.ToFrames().UserFrames()
+// toJSON returns a JSON-friendly representation of the stack (lazy evaluation)
+func (rs rawStack) toJSON() []map[string]any {
+	return rs.toFrames().ToJSON()
 }
 
-// GetOriginContext returns context information about where the error originated
-func (rs RawStack) GetOriginContext() *ContextInfo {
-	return rs.ToFrames().GetOriginContext()
-}
-
-// ToLogFields converts stack context to logging fields (lazy evaluation)
-func (rs RawStack) ToLogFields() map[string]any {
-	return rs.ToFrames().ToLogFields()
-}
-
-// String returns a formatted string representation (lazy evaluation)
-func (rs RawStack) String() string {
-	return rs.ToFrames().String()
-}
-
-// FormatFull returns detailed formatted stack trace (lazy evaluation)
-func (rs RawStack) FormatFull() string {
-	return rs.ToFrames().FormatFull()
-}
-
-// GetCaller returns information about a specific caller in the stack
-func GetCaller(skip int) *StackFrame {
-	rawStack := CaptureStack(skip + 1)
-	stack := rawStack.ToFrames()
-	if len(stack) > 0 {
-		return &stack[0]
-	}
-	return nil
+// toJSONUserFrames returns a JSON-friendly representation of user frames only (lazy evaluation)
+func (rs rawStack) toJSONUserFrames() []map[string]any {
+	return rs.toFrames().ToJSONUserFrames()
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -229,6 +197,30 @@ func (f StackFrame) Format(sep string) string {
 // FormatFull returns a detailed formatted stack frame
 func (f StackFrame) FormatFull() string {
 	return fmt.Sprintf("%s\n\t%s:%d", f.FullName, f.File, f.Line)
+}
+
+// ToJSON returns a JSON-friendly representation of the stack frame
+func (f StackFrame) ToJSON() map[string]any {
+	return map[string]any{
+		"function": f.FullName,
+		"file":     f.File,
+		"line":     f.Line,
+		"type":     f.getFrameType(),
+	}
+}
+
+// getFrameType returns the type of this stack frame
+func (f StackFrame) getFrameType() string {
+	if f.IsRuntime() {
+		return string(StackTypeRuntime)
+	}
+	if f.IsStandardLibrary() {
+		return string(StackTypeStandardLibrary)
+	}
+	if f.IsTest() {
+		return string(StackTypeTest)
+	}
+	return string(StackTypeUser)
 }
 
 // IsUser returns true if this frame represents user code (not runtime/stdlib/erro internal)
@@ -267,11 +259,6 @@ func (f StackFrame) IsStandardLibrary() bool {
 		if strings.HasPrefix(f.FullName, prefix) {
 			return true
 		}
-	}
-
-	// If it has no slashes and contains a dot, it's likely stdlib (e.g., "fmt.Printf")
-	if !strings.Contains(f.FullName, "/") && strings.Contains(f.FullName, ".") {
-		return true
 	}
 
 	return false
@@ -376,6 +363,25 @@ func (s Stack) FormatFull() string {
 		builder.WriteString(frame.FormatFull())
 	}
 	return builder.String()
+}
+
+// ToJSON returns a JSON-friendly representation of the stack
+func (s Stack) ToJSON() []map[string]any {
+	frames := make([]map[string]any, len(s))
+	for i, frame := range s {
+		frames[i] = frame.ToJSON()
+	}
+	return frames
+}
+
+// ToJSONUserFrames returns a JSON-friendly representation of user frames only
+func (s Stack) ToJSONUserFrames() []map[string]any {
+	userFrames := s.UserFrames()
+	frames := make([]map[string]any, len(userFrames))
+	for i, frame := range userFrames {
+		frames[i] = frame.ToJSON()
+	}
+	return frames
 }
 
 // UserFrames returns only the user code frames, filtering out runtime and stdlib

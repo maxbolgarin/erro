@@ -12,7 +12,7 @@ type baseError struct {
 	// Core error info
 	originalErr error     // Original error if wrapping external error
 	message     string    // Base message
-	stack       RawStack  // Stack trace (program counters only - resolved on demand)
+	stack       rawStack  // Stack trace (program counters only - resolved on demand)
 	createdAt   time.Time // Creation timestamp
 
 	// Metadata
@@ -46,7 +46,7 @@ func (e *baseError) Format(s fmt.State, verb rune) {
 			// Print with stack trace
 			fmt.Fprint(s, e.Error())
 			fmt.Fprint(s, "\nStack trace:\n")
-			for _, frame := range e.stack.ToFrames() {
+			for _, frame := range e.stack.toFrames() {
 				fmt.Fprintf(s, "\t%s.%s\n\t\t%s:%d\n", frame.Package, frame.Name, frame.File, frame.Line)
 			}
 		} else {
@@ -113,8 +113,8 @@ func (e *baseError) GetTags() []string           { return e.tags }
 func (e *baseError) IsRetryable() bool           { return e.retryable }
 func (e *baseError) GetTraceID() string          { return e.traceID }
 func (e *baseError) GetFields() []any            { return e.fields }
-func (e *baseError) Stack() []StackFrame         { return e.stack.ToFrames() }
-func (e *baseError) StackFormat() string         { return e.stack.FormatFull() }
+func (e *baseError) Stack() []StackFrame         { return e.stack.toFrames() }
+func (e *baseError) StackFormat() string         { return e.stack.formatFull() }
 func (e *baseError) ErrorWithStack() string {
 	return e.Error() + "\n" + e.StackFormat()
 }
@@ -124,7 +124,7 @@ func newBaseError(originalErr error, message string, fields ...any) *baseError {
 	return &baseError{
 		originalErr: originalErr,
 		message:     message,
-		stack:       CaptureStack(3), // Skip New, newBaseError and caller
+		stack:       captureStack(3), // Skip New, newBaseError and caller
 		createdAt:   time.Now(),
 		fields:      prepareFields(fields),
 	}

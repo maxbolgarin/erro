@@ -126,7 +126,7 @@ func (e *wrapError) Stack() []StackFrame {
 	// Add our wrap point first
 	var wrapFrame StackFrame
 	if e.wrapPoint != 0 {
-		wrapFrame = ResolveWrapPoint(e.wrapPoint)
+		wrapFrame = resolveWrapPoint(e.wrapPoint)
 	}
 
 	// If we're wrapping another erro error, get its stack (which may include other wrap points)
@@ -135,7 +135,7 @@ func (e *wrapError) Stack() []StackFrame {
 		framesToAdd = e.wrapped.Stack()
 	} else {
 		// Fallback to base stack if no wrapped error
-		framesToAdd = e.base.stack.ToFrames()
+		framesToAdd = e.base.stack.toFrames()
 	}
 
 	hasWrapFrame := 0
@@ -159,7 +159,7 @@ func (e *wrapError) StackFormat() string {
 	// Add our wrap point first
 	var wrapFrame StackFrame
 	if e.wrapPoint != 0 {
-		wrapFrame = ResolveWrapPoint(e.wrapPoint)
+		wrapFrame = resolveWrapPoint(e.wrapPoint)
 	}
 
 	// If we're wrapping another erro error, get its stack (which may include other wrap points)
@@ -168,7 +168,7 @@ func (e *wrapError) StackFormat() string {
 		framesToAdd = e.wrapped.StackFormat()
 	} else {
 		// Fallback to base stack if no wrapped error
-		framesToAdd = e.base.stack.FormatFull()
+		framesToAdd = e.base.stack.formatFull()
 	}
 
 	if wrapFrame.Name != "" {
@@ -183,7 +183,7 @@ func newWrapError(base *baseError, wrapped Error, message string, fields ...any)
 		wrapped:     wrapped,
 		wrapMessage: message,
 		wrapFields:  prepareFields(fields),
-		wrapPoint:   CaptureWrapPoint(3), // Skip Wrap, newWrapError and capture caller
+		wrapPoint:   captureWrapPoint(3), // Skip Wrap, newWrapError and capture caller
 		createdAt:   time.Now(),
 	}
 }
