@@ -78,6 +78,14 @@ func Wrap(err error, message string, fields ...any) Error {
 	return newBaseError(err, message, fields...)
 }
 
+// WrapEmpty wraps an error without a message to create an erro.Error from it.
+func WrapEmpty(err error) Error {
+	if err == nil {
+		return nil
+	}
+	return newBaseError(err, err.Error(), nil)
+}
+
 // Wrapf wraps an existing error with formatted message and optional fields
 func Wrapf(err error, message string, args ...any) Error {
 	if err == nil {
