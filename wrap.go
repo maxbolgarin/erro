@@ -52,14 +52,19 @@ func (e *wrapError) Code(code string) Error {
 	return e
 }
 
-func (e *wrapError) Category(category string) Error {
-	e.base.category = truncateString(category, maxCategoryLength)
+func (e *wrapError) Category(category Category) Error {
+	e.base.category = category
 	return e
 }
 
-func (e *wrapError) Severity(severity ErrorSeverity) Error {
+func (e *wrapError) Class(class Class) Error {
+	e.base.class = class
+	return e
+}
+
+func (e *wrapError) Severity(severity Severity) Error {
 	if !severity.IsValid() {
-		severity = Unknown
+		severity = SeverityUnknown
 	}
 	e.base.severity = severity
 	return e
@@ -78,7 +83,7 @@ func (e *wrapError) Context(ctx context.Context) Error {
 	return e
 }
 
-func (e *wrapError) Tags(tags ...string) Error {
+func (e *wrapError) Tags(tags ...Tag) Error {
 	e.base.tags = safeAppendFields(e.base.tags, tags)
 	return e
 }
@@ -100,19 +105,21 @@ func (e *wrapError) Span(span Span) Error {
 func (e *wrapError) GetBase() Error              { return e.base }
 func (e *wrapError) GetContext() context.Context { return e.base.ctx }
 func (e *wrapError) GetCode() string             { return e.base.code }
-func (e *wrapError) GetCategory() string         { return e.base.category }
-func (e *wrapError) GetTags() []string           { return e.base.tags }
+func (e *wrapError) GetCategory() Category       { return e.base.category }
+func (e *wrapError) GetClass() Class             { return e.base.class }
+func (e *wrapError) GetTags() []Tag              { return e.base.tags }
+func (e *wrapError) HasTag(tag Tag) bool         { return e.base.HasTag(tag) }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
 func (e *wrapError) GetSpan() Span               { return e.base.span }
 func (e *wrapError) GetCreated() time.Time       { return e.base.created }
 
 // Severity checking methods
-func (e *wrapError) GetSeverity() ErrorSeverity { return e.base.GetSeverity() }
-func (e *wrapError) IsCritical() bool           { return e.base.IsCritical() }
-func (e *wrapError) IsHigh() bool               { return e.base.IsHigh() }
-func (e *wrapError) IsMedium() bool             { return e.base.IsMedium() }
-func (e *wrapError) IsLow() bool                { return e.base.IsLow() }
-func (e *wrapError) IsInfo() bool               { return e.base.IsInfo() }
+func (e *wrapError) GetSeverity() Severity { return e.base.GetSeverity() }
+func (e *wrapError) IsCritical() bool      { return e.base.IsCritical() }
+func (e *wrapError) IsHigh() bool          { return e.base.IsHigh() }
+func (e *wrapError) IsMedium() bool        { return e.base.IsMedium() }
+func (e *wrapError) IsLow() bool           { return e.base.IsLow() }
+func (e *wrapError) IsInfo() bool          { return e.base.IsInfo() }
 func (e *wrapError) IsUnknown() bool {
 	return e.base.IsUnknown()
 }

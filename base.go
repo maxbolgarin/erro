@@ -3,6 +3,7 @@ package erro
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -18,9 +19,10 @@ type baseError struct {
 	// Metadata
 	fields    []any           // Key-value fields
 	code      string          // Error code
-	category  string          // Error category
-	severity  ErrorSeverity   // Error severity
-	tags      []string        // Tags
+	category  Category        // Error category
+	class     Class           // Error class
+	severity  Severity        // Error severity
+	tags      []Tag           // Tags
 	retryable bool            // Retryable flag
 	ctx       context.Context // Associated context
 
@@ -61,14 +63,19 @@ func (e *baseError) Code(code string) Error {
 	return e
 }
 
-func (e *baseError) Category(category string) Error {
-	e.category = truncateString(category, maxCategoryLength)
+func (e *baseError) Category(category Category) Error {
+	e.category = category
 	return e
 }
 
-func (e *baseError) Severity(severity ErrorSeverity) Error {
+func (e *baseError) Class(class Class) Error {
+	e.class = class
+	return e
+}
+
+func (e *baseError) Severity(severity Severity) Error {
 	if !severity.IsValid() {
-		severity = Unknown
+		severity = SeverityUnknown
 	}
 	e.severity = severity
 	return e
@@ -84,7 +91,7 @@ func (e *baseError) Context(ctx context.Context) Error {
 	return e
 }
 
-func (e *baseError) Tags(tags ...string) Error {
+func (e *baseError) Tags(tags ...Tag) Error {
 	e.tags = safeAppendFields(e.tags, tags)
 	return e
 }
@@ -105,27 +112,29 @@ func (e *baseError) Span(span Span) Error {
 func (e *baseError) GetBase() Error              { return e }
 func (e *baseError) GetContext() context.Context { return e.ctx }
 func (e *baseError) GetCode() string             { return e.code }
-func (e *baseError) GetCategory() string         { return e.category }
-func (e *baseError) GetTags() []string           { return e.tags }
+func (e *baseError) GetCategory() Category       { return e.category }
+func (e *baseError) GetClass() Class             { return e.class }
+func (e *baseError) GetTags() []Tag              { return e.tags }
+func (e *baseError) HasTag(tag Tag) bool         { return slices.Contains(e.tags, tag) }
 func (e *baseError) IsRetryable() bool           { return e.retryable }
 func (e *baseError) GetSpan() Span               { return e.span }
 func (e *baseError) GetFields() []any            { return e.fields }
 func (e *baseError) GetCreated() time.Time       { return e.created }
 
 // Severity checking methods
-func (e *baseError) GetSeverity() ErrorSeverity {
+func (e *baseError) GetSeverity() Severity {
 	if e.severity == "" {
-		return Unknown
+		return SeverityUnknown
 	}
 	return e.severity
 }
-func (e *baseError) IsCritical() bool { return e.severity == Critical }
-func (e *baseError) IsHigh() bool     { return e.severity == High }
-func (e *baseError) IsMedium() bool   { return e.severity == Medium }
-func (e *baseError) IsLow() bool      { return e.severity == Low }
-func (e *baseError) IsInfo() bool     { return e.severity == Info }
+func (e *baseError) IsCritical() bool { return e.severity == SeverityCritical }
+func (e *baseError) IsHigh() bool     { return e.severity == SeverityHigh }
+func (e *baseError) IsMedium() bool   { return e.severity == SeverityMedium }
+func (e *baseError) IsLow() bool      { return e.severity == SeverityLow }
+func (e *baseError) IsInfo() bool     { return e.severity == SeverityInfo }
 func (e *baseError) IsUnknown() bool {
-	return e.severity == "" || e.severity == Unknown
+	return e.severity == "" || e.severity == SeverityUnknown
 }
 
 func (e *baseError) Stack() Stack           { return e.stack.toFrames() }

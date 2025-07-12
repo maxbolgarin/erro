@@ -18,9 +18,10 @@ type ErrorContext struct {
 	Line         int             // Line where error was created
 	Fields       map[string]any  // All key-value pairs
 	Code         string          // Error code
-	Category     string          // Error category
-	Severity     ErrorSeverity   // Error severity
-	Tags         []string        // Error tags
+	Category     Category        // Error category
+	Class        Class           // Error class
+	Severity     Severity        // Error severity
+	Tags         []Tag           // Error tags
 	Retryable    bool            // Whether error is retryable
 	Created      time.Time       // When error was created
 	TraceID      string          // Trace ID if available
@@ -28,20 +29,22 @@ type ErrorContext struct {
 	ParentSpanID string          // Parent Span ID if available
 	Context      context.Context // Associated context
 	Stack        Stack           // Stack trace frames
+
+	fields []any
 }
 
 // Severity checking methods for ErrorContext
-func (ec *ErrorContext) IsCritical() bool { return ec.Severity == Critical }
-func (ec *ErrorContext) IsHigh() bool     { return ec.Severity == High }
-func (ec *ErrorContext) IsMedium() bool   { return ec.Severity == Medium }
-func (ec *ErrorContext) IsLow() bool      { return ec.Severity == Low }
-func (ec *ErrorContext) IsInfo() bool     { return ec.Severity == Info }
+func (ec *ErrorContext) IsCritical() bool { return ec.Severity == SeverityCritical }
+func (ec *ErrorContext) IsHigh() bool     { return ec.Severity == SeverityHigh }
+func (ec *ErrorContext) IsMedium() bool   { return ec.Severity == SeverityMedium }
+func (ec *ErrorContext) IsLow() bool      { return ec.Severity == SeverityLow }
+func (ec *ErrorContext) IsInfo() bool     { return ec.Severity == SeverityInfo }
 func (ec *ErrorContext) IsUnknown() bool {
-	return ec.Severity == "" || ec.Severity == Unknown
+	return ec.Severity == "" || ec.Severity == SeverityUnknown
 }
-func (ec *ErrorContext) GetSeverity() ErrorSeverity {
+func (ec *ErrorContext) GetSeverity() Severity {
 	if ec.Severity == "" {
-		return Unknown
+		return SeverityUnknown
 	}
 	return ec.Severity
 }
@@ -105,12 +108,14 @@ func ExtractContext(err error) *ErrorContext {
 		Fields:    fields,
 		Code:      baseInt.GetCode(),
 		Category:  baseInt.GetCategory(),
+		Class:     baseInt.GetClass(),
 		Severity:  baseInt.GetSeverity(),
 		Tags:      baseInt.GetTags(),
 		Retryable: baseInt.IsRetryable(),
 		Created:   baseInt.GetCreated(),
 		Context:   baseInt.GetContext(),
 		Stack:     baseInt.Stack(),
+		fields:    allFields,
 	}
 
 	if span := baseInt.GetSpan(); span != nil {
@@ -519,13 +524,11 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 		opts = optsRaw[0]
 	}
 
-	fields := make([]any, 0, len(ec.Fields)+12)
+	fields := make([]any, 0, len(ec.fields)+12)
 
 	// Add user fields
 	if opts.IncludeUserFields {
-		for key, value := range ec.Fields {
-			fields = append(fields, key, value)
-		}
+		fields = append(fields, ec.fields...)
 	}
 
 	// Add error metadata

@@ -2,6 +2,7 @@ package erro
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,11 +14,12 @@ type List struct {
 	errors []Error
 	// Metadata that will be applied to errors added to this list
 	code      string
-	category  string
-	severity  ErrorSeverity
+	class     Class
+	category  Category
+	severity  Severity
+	tags      []Tag
 	fields    []any
 	ctx       context.Context
-	tags      []string
 	retryable bool
 }
 
@@ -123,13 +125,14 @@ func (g *List) Clear() *List {
 // Copy returns a copy of the list.
 func (g *List) Copy() *List {
 	clone := NewList(cap(g.errors))
-	clone.errors = append([]Error{}, g.errors...)
+	clone.errors = append(make([]Error, 0, len(g.errors)), g.errors...)
 	clone.code = g.code
+	clone.class = g.class
 	clone.category = g.category
 	clone.severity = g.severity
-	clone.fields = append([]any{}, g.fields...)
+	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
 	clone.ctx = g.ctx
-	clone.tags = append([]string{}, g.tags...)
+	clone.tags = append(make([]Tag, 0, len(g.tags)), g.tags...)
 	clone.retryable = g.retryable
 	return clone
 }
@@ -186,29 +189,44 @@ func (g *List) Code(code string) *List {
 	return g
 }
 
-func (g *List) Category(category string) *List {
+func (g *List) Class(class Class) *List {
+	g.class = class
+	return g
+}
+
+func (g *List) Category(category Category) *List {
 	g.category = category
 	return g
 }
 
-func (g *List) Severity(severity ErrorSeverity) *List {
+func (g *List) Severity(severity Severity) *List {
 	if !severity.IsValid() {
-		severity = Unknown
+		severity = SeverityUnknown
 	}
 	g.severity = severity
 	return g
 }
 
+func (g *List) GetCode() string       { return g.code }
+func (g *List) GetClass() Class       { return g.class }
+func (g *List) GetCategory() Category { return g.category }
+func (g *List) GetTags() []Tag        { return g.tags }
+func (g *List) GetFields() []any      { return g.fields }
+func (g *List) GetContext() context.Context {
+	return g.ctx
+}
+func (g *List) IsRetryable() bool { return g.retryable }
+
 // Severity checking methods for List
-func (g *List) IsCritical() bool { return g.severity == Critical }
-func (g *List) IsHigh() bool     { return g.severity == High }
-func (g *List) IsMedium() bool   { return g.severity == Medium }
-func (g *List) IsLow() bool      { return g.severity == Low }
-func (g *List) IsWarning() bool  { return g.severity == Info }
-func (g *List) IsUnknown() bool  { return g.severity == "" || g.severity == Unknown }
-func (g *List) GetSeverity() ErrorSeverity {
+func (g *List) IsCritical() bool { return g.severity == SeverityCritical }
+func (g *List) IsHigh() bool     { return g.severity == SeverityHigh }
+func (g *List) IsMedium() bool   { return g.severity == SeverityMedium }
+func (g *List) IsLow() bool      { return g.severity == SeverityLow }
+func (g *List) IsWarning() bool  { return g.severity == SeverityInfo }
+func (g *List) IsUnknown() bool  { return g.severity == "" || g.severity == SeverityUnknown }
+func (g *List) GetSeverity() Severity {
 	if g.severity == "" {
-		return Unknown
+		return SeverityUnknown
 	}
 	return g.severity
 }
@@ -223,9 +241,13 @@ func (g *List) Context(ctx context.Context) *List {
 	return g
 }
 
-func (g *List) Tags(tags ...string) *List {
+func (g *List) Tags(tags ...Tag) *List {
 	g.tags = append(g.tags, tags...)
 	return g
+}
+
+func (g *List) HasTag(tag Tag) bool {
+	return slices.Contains(g.tags, tag)
 }
 
 func (g *List) Retryable(retryable bool) *List {
@@ -244,10 +266,13 @@ func (g *List) applyMetadata(err Error) {
 	if g.code != "" {
 		err.Code(g.code)
 	}
-	if g.category != "" {
+	if g.category != CategoryUnknown {
 		err.Category(g.category)
 	}
-	if g.severity != "" {
+	if g.class != ClassUnknown {
+		err.Class(g.class)
+	}
+	if g.severity != SeverityUnknown {
 		err.Severity(g.severity)
 	}
 	if len(g.fields) > 0 {
@@ -358,24 +383,39 @@ func (s *Set) Code(code string) *Set {
 	return s
 }
 
-func (s *Set) Category(category string) *Set {
+func (s *Set) Class(class Class) *Set {
+	s.List.Class(class)
+	return s
+}
+
+func (s *Set) Category(category Category) *Set {
 	s.List.Category(category)
 	return s
 }
 
-func (s *Set) Severity(severity ErrorSeverity) *Set {
+func (s *Set) Severity(severity Severity) *Set {
 	s.List.Severity(severity)
 	return s
 }
 
+func (s *Set) GetCode() string       { return s.List.GetCode() }
+func (s *Set) GetClass() Class       { return s.List.GetClass() }
+func (s *Set) GetCategory() Category { return s.List.GetCategory() }
+func (s *Set) GetTags() []Tag        { return s.List.GetTags() }
+func (s *Set) GetFields() []any      { return s.List.GetFields() }
+func (s *Set) GetContext() context.Context {
+	return s.List.GetContext()
+}
+func (s *Set) IsRetryable() bool { return s.List.IsRetryable() }
+
 // Severity checking methods for Set
-func (s *Set) IsCritical() bool           { return s.List.IsCritical() }
-func (s *Set) IsHigh() bool               { return s.List.IsHigh() }
-func (s *Set) IsMedium() bool             { return s.List.IsMedium() }
-func (s *Set) IsLow() bool                { return s.List.IsLow() }
-func (s *Set) IsWarning() bool            { return s.List.IsWarning() }
-func (s *Set) IsUnknown() bool            { return s.List.IsUnknown() }
-func (s *Set) GetSeverity() ErrorSeverity { return s.List.GetSeverity() }
+func (s *Set) IsCritical() bool      { return s.List.IsCritical() }
+func (s *Set) IsHigh() bool          { return s.List.IsHigh() }
+func (s *Set) IsMedium() bool        { return s.List.IsMedium() }
+func (s *Set) IsLow() bool           { return s.List.IsLow() }
+func (s *Set) IsWarning() bool       { return s.List.IsWarning() }
+func (s *Set) IsUnknown() bool       { return s.List.IsUnknown() }
+func (s *Set) GetSeverity() Severity { return s.List.GetSeverity() }
 
 func (s *Set) Fields(fields ...any) *Set {
 	s.List.Fields(fields...)
@@ -387,7 +427,11 @@ func (s *Set) Context(ctx context.Context) *Set {
 	return s
 }
 
-func (s *Set) Tags(tags ...string) *Set {
+func (s *Set) HasTag(tag Tag) bool {
+	return s.List.HasTag(tag)
+}
+
+func (s *Set) Tags(tags ...Tag) *Set {
 	s.List.Tags(tags...)
 	return s
 }
@@ -417,11 +461,12 @@ type SafeList struct {
 	errors []Error
 	// Metadata that will be applied to errors added to this list
 	code      string
-	category  string
-	severity  ErrorSeverity
+	class     Class
+	category  Category
+	severity  Severity
 	fields    []any
 	ctx       context.Context
-	tags      []string
+	tags      []Tag
 	retryable bool
 
 	// Thread safety
@@ -548,13 +593,14 @@ func (g *SafeList) Copy() *SafeList {
 	defer g.mu.RUnlock()
 
 	clone := NewSafeList(cap(g.errors))
-	clone.errors = append([]Error{}, g.errors...)
+	clone.errors = append(make([]Error, 0, len(g.errors)), g.errors...)
 	clone.code = g.code
+	clone.class = g.class
 	clone.category = g.category
 	clone.severity = g.severity
-	clone.fields = append([]any{}, g.fields...)
+	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
 	clone.ctx = g.ctx
-	clone.tags = append([]string{}, g.tags...)
+	clone.tags = append(make([]Tag, 0, len(g.tags)), g.tags...)
 	clone.retryable = g.retryable
 	return clone
 }
@@ -631,16 +677,23 @@ func (g *SafeList) Code(code string) *SafeList {
 	return g
 }
 
-func (g *SafeList) Category(category string) *SafeList {
+func (g *SafeList) Class(class Class) *SafeList {
+	g.mu.Lock()
+	g.class = class
+	g.mu.Unlock()
+	return g
+}
+
+func (g *SafeList) Category(category Category) *SafeList {
 	g.mu.Lock()
 	g.category = category
 	g.mu.Unlock()
 	return g
 }
 
-func (g *SafeList) Severity(severity ErrorSeverity) *SafeList {
+func (g *SafeList) Severity(severity Severity) *SafeList {
 	if !severity.IsValid() {
-		severity = Unknown
+		severity = SeverityUnknown
 	}
 	g.mu.Lock()
 	g.severity = severity
@@ -648,42 +701,78 @@ func (g *SafeList) Severity(severity ErrorSeverity) *SafeList {
 	return g
 }
 
+func (g *SafeList) GetCode() string {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.code
+}
+func (g *SafeList) GetClass() Class {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.class
+}
+func (g *SafeList) GetCategory() Category {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.category
+}
+func (g *SafeList) GetTags() []Tag {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.tags
+}
+func (g *SafeList) GetFields() []any {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.fields
+}
+func (g *SafeList) GetContext() context.Context {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.ctx
+}
+func (g *SafeList) IsRetryable() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.retryable
+}
+
 // Severity checking methods for List
 func (g *SafeList) IsCritical() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.severity == Critical
+	return g.severity == SeverityCritical
 }
 func (g *SafeList) IsHigh() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.severity == High
+	return g.severity == SeverityHigh
 }
 func (g *SafeList) IsMedium() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.severity == Medium
+	return g.severity == SeverityMedium
 }
 func (g *SafeList) IsLow() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.severity == Low
+	return g.severity == SeverityLow
 }
 func (g *SafeList) IsWarning() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.severity == Info
+	return g.severity == SeverityInfo
 }
 func (g *SafeList) IsUnknown() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.severity == "" || g.severity == Unknown
+	return g.severity == "" || g.severity == SeverityUnknown
 }
-func (g *SafeList) GetSeverity() ErrorSeverity {
+func (g *SafeList) GetSeverity() Severity {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	if g.severity == "" {
-		return Unknown
+		return SeverityUnknown
 	}
 	return g.severity
 }
@@ -702,7 +791,13 @@ func (g *SafeList) Context(ctx context.Context) *SafeList {
 	return g
 }
 
-func (g *SafeList) Tags(tags ...string) *SafeList {
+func (g *SafeList) HasTag(tag Tag) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return slices.Contains(g.tags, tag)
+}
+
+func (g *SafeList) Tags(tags ...Tag) *SafeList {
 	g.mu.Lock()
 	g.tags = append(g.tags, tags...)
 	g.mu.Unlock()
@@ -848,24 +943,37 @@ func (s *SafeSet) Code(code string) *SafeSet {
 	return s
 }
 
-func (s *SafeSet) Category(category string) *SafeSet {
+func (s *SafeSet) Class(class Class) *SafeSet {
+	s.SafeList.Class(class)
+	return s
+}
+
+func (s *SafeSet) Category(category Category) *SafeSet {
 	s.SafeList.Category(category)
 	return s
 }
 
-func (s *SafeSet) Severity(severity ErrorSeverity) *SafeSet {
+func (s *SafeSet) Severity(severity Severity) *SafeSet {
 	s.SafeList.Severity(severity)
 	return s
 }
 
+func (s *SafeSet) GetCode() string             { return s.SafeList.GetCode() }
+func (s *SafeSet) GetClass() Class             { return s.SafeList.GetClass() }
+func (s *SafeSet) GetCategory() Category       { return s.SafeList.GetCategory() }
+func (s *SafeSet) GetTags() []Tag              { return s.SafeList.GetTags() }
+func (s *SafeSet) GetFields() []any            { return s.SafeList.GetFields() }
+func (s *SafeSet) GetContext() context.Context { return s.SafeList.GetContext() }
+func (s *SafeSet) IsRetryable() bool           { return s.SafeList.IsRetryable() }
+
 // Severity checking methods for SafeSet
-func (s *SafeSet) IsCritical() bool           { return s.SafeList.IsCritical() }
-func (s *SafeSet) IsHigh() bool               { return s.SafeList.IsHigh() }
-func (s *SafeSet) IsMedium() bool             { return s.SafeList.IsMedium() }
-func (s *SafeSet) IsLow() bool                { return s.SafeList.IsLow() }
-func (s *SafeSet) IsWarning() bool            { return s.SafeList.IsWarning() }
-func (s *SafeSet) IsUnknown() bool            { return s.SafeList.IsUnknown() }
-func (s *SafeSet) GetSeverity() ErrorSeverity { return s.SafeList.GetSeverity() }
+func (s *SafeSet) IsCritical() bool      { return s.SafeList.IsCritical() }
+func (s *SafeSet) IsHigh() bool          { return s.SafeList.IsHigh() }
+func (s *SafeSet) IsMedium() bool        { return s.SafeList.IsMedium() }
+func (s *SafeSet) IsLow() bool           { return s.SafeList.IsLow() }
+func (s *SafeSet) IsWarning() bool       { return s.SafeList.IsWarning() }
+func (s *SafeSet) IsUnknown() bool       { return s.SafeList.IsUnknown() }
+func (s *SafeSet) GetSeverity() Severity { return s.SafeList.GetSeverity() }
 
 func (s *SafeSet) Fields(fields ...any) *SafeSet {
 	s.SafeList.Fields(fields...)
@@ -877,7 +985,11 @@ func (s *SafeSet) Context(ctx context.Context) *SafeSet {
 	return s
 }
 
-func (s *SafeSet) Tags(tags ...string) *SafeSet {
+func (s *SafeSet) HasTag(tag Tag) bool {
+	return s.SafeList.HasTag(tag)
+}
+
+func (s *SafeSet) Tags(tags ...Tag) *SafeSet {
 	s.SafeList.Tags(tags...)
 	return s
 }

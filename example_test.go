@@ -193,7 +193,7 @@ func TestLoggingIntegration(t *testing.T) {
 		t.Errorf("Expected code: DB_SLOW, got: %v", fields["error_code"])
 	}
 
-	if fields["error_category"] != "performance" {
+	if fields["error_category"] != erro.Category("performance") {
 		t.Errorf("Expected category: performance, got: %v", fields["error_category"])
 	}
 
@@ -345,13 +345,13 @@ func TestSeverityRefactoring(t *testing.T) {
 	// Test ErrorSeverity type and predefined constants
 	t.Run("ErrorSeverity type", func(t *testing.T) {
 		// Test that predefined severities are valid
-		severities := []erro.ErrorSeverity{
-			erro.Unknown,
-			erro.Critical,
-			erro.High,
-			erro.Medium,
-			erro.Low,
-			erro.Info,
+		severities := []erro.Severity{
+			erro.SeverityUnknown,
+			erro.SeverityCritical,
+			erro.SeverityHigh,
+			erro.SeverityMedium,
+			erro.SeverityLow,
+			erro.SeverityInfo,
 		}
 
 		for _, severity := range severities {
@@ -361,7 +361,7 @@ func TestSeverityRefactoring(t *testing.T) {
 		}
 
 		// Test invalid severity
-		invalid := erro.ErrorSeverity("invalid")
+		invalid := erro.Severity("invalid")
 		if invalid.IsValid() {
 			t.Error("Expected invalid severity to be invalid")
 		}
@@ -399,23 +399,23 @@ func TestSeverityRefactoring(t *testing.T) {
 	t.Run("GetSeverityLevel method", func(t *testing.T) {
 		// Test with predefined severity
 		err := erro.New("test error").Severity("high")
-		if err.GetSeverity() != erro.High {
+		if err.GetSeverity() != erro.SeverityHigh {
 			t.Errorf("Expected severity level to be SeverityHigh, got %s", err.GetSeverity())
 		}
 
 		// Test with unknown severity
 		unknownErr := erro.New("unknown error")
-		if unknownErr.GetSeverity() != erro.Unknown {
+		if unknownErr.GetSeverity() != erro.SeverityUnknown {
 			t.Errorf("Expected severity level to be SeverityUnknown, got %s", unknownErr.GetSeverity())
 		}
 	})
 
 	t.Run("List severity methods", func(t *testing.T) {
-		list := erro.NewList().Severity(erro.Critical)
+		list := erro.NewList().Severity(erro.SeverityCritical)
 		if !list.IsCritical() {
 			t.Error("Expected list to be critical")
 		}
-		if list.GetSeverity() != erro.Critical {
+		if list.GetSeverity() != erro.SeverityCritical {
 			t.Errorf("Expected list severity level to be SeverityCritical, got %s", list.GetSeverity())
 		}
 
@@ -444,7 +444,7 @@ func TestSeverityRefactoring(t *testing.T) {
 		if !ctx.IsInfo() {
 			t.Error("Expected context to be info")
 		}
-		if ctx.GetSeverity() != erro.Info {
+		if ctx.GetSeverity() != erro.SeverityInfo {
 			t.Errorf("Expected context severity level to be SeverityInfo, got %s", ctx.GetSeverity())
 		}
 	})
