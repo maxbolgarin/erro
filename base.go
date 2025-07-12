@@ -237,10 +237,14 @@ func formatError(err Error, s fmt.State, verb rune) {
 		if s.Flag('+') {
 			// Print with stack trace
 			fmt.Fprint(s, err.Error())
-			fmt.Fprint(s, "\nStack trace:\n")
-			for _, frame := range err.Stack() {
-				fmt.Fprintf(s, "\t%s.%s\n\t\t%s:%d\n", frame.Package, frame.Name, frame.File, frame.Line)
+
+			config := GetStackTraceConfig()
+			if !config.Enabled {
+				return // No stack trace in disabled mode
 			}
+			fmt.Fprint(s, "\nStack trace:\n")
+			fmt.Fprint(s, err.Stack().FormatFull())
+
 		} else {
 			fmt.Fprint(s, err.Error())
 		}

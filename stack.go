@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var (
@@ -26,6 +27,126 @@ var (
 	}
 )
 
+const (
+	defaultFunctionRedacted = "[some_function]"
+	defaultFileNameRedacted = "[some_file]"
+	defaultStackRedacted    = "[disabled]"
+	defaultHiddenFrame      = "[hidden]"
+)
+
+// StackTraceConfig controls what information is included in stack traces
+type StackTraceConfig struct {
+	Enabled       bool // Whether to show stack traces
+	ShowFileNames bool // Whether to show file names
+	ShowFullPaths bool // Whether to show file paths
+	PathElements  int  // Number of path elements to include (0 = filename only, -1 = full path)
+
+	ShowFunctionNames bool // Whether to show function names
+	ShowPackageNames  bool // Whether to show package names
+	ShowLineNumbers   bool // Whether to show line numbers
+	ShowAllCodeFrames bool // Whether to show all types of frames (user, stdlib, etc.)
+
+	FunctionRedacted string // Placeholder for redacted function names (default: "[some_function]")
+	FileNameRedacted string // Placeholder for redacted file names (default: "[some_file]")
+
+	MaxFrames int // Maximum number of frames to show
+}
+
+// DevelopmentStackTraceConfig returns the development-safe stack trace configuration
+func DevelopmentStackTraceConfig() *StackTraceConfig {
+	return &StackTraceConfig{
+		Enabled:           true,
+		ShowFileNames:     true,
+		ShowFullPaths:     true,
+		ShowFunctionNames: true,
+		ShowPackageNames:  true,
+		ShowLineNumbers:   true,
+		ShowAllCodeFrames: true,
+		PathElements:      -1, // Show full path
+	}
+}
+
+// ProductionStackTraceConfig returns a production-safe stack trace configuration
+func ProductionStackTraceConfig() *StackTraceConfig {
+	return &StackTraceConfig{
+		Enabled:       true,
+		ShowFileNames: true,
+		ShowFullPaths: false, // Hide full paths, show only filenames
+		PathElements:  2,     // Show 2 path elements from project root (e.g., "examples/privacy/main.go")
+
+		ShowFunctionNames: true,  // Hide function names for security
+		ShowPackageNames:  false, // Hide package names for security
+		ShowLineNumbers:   true,  // Show line numbers for debugging
+		ShowAllCodeFrames: false,
+
+		MaxFrames: 10,
+	}
+}
+
+// StrictStackTraceConfig returns a strict privacy stack trace configuration
+func StrictStackTraceConfig() *StackTraceConfig {
+	return &StackTraceConfig{
+		Enabled:       true,
+		ShowFileNames: true,  // Hide all file names
+		ShowFullPaths: false, // Hide all path information
+		PathElements:  0,     // Show only filename
+
+		ShowFunctionNames: false, // Hide all function names
+		ShowPackageNames:  false, // Hide all package names
+		ShowLineNumbers:   true,  // Show line numbers for debugging
+		ShowAllCodeFrames: true,
+
+		MaxFrames: 3, // Very limited frames for strict mode
+	}
+}
+
+// NoStackTraceConfig returns a configuration that completely disables stack traces
+func NoStackTraceConfig() *StackTraceConfig {
+	return &StackTraceConfig{}
+}
+
+// Global stack trace configuration
+var (
+	globalStackTraceConfig = DevelopmentStackTraceConfig()
+	cfgMutex               sync.Mutex
+)
+
+// SetStackTraceConfig sets the global stack trace configuration
+func SetStackTraceConfig(config *StackTraceConfig) {
+	cfgMutex.Lock()
+	defer cfgMutex.Unlock()
+
+	globalStackTraceConfig = config
+}
+
+// GetStackTraceConfig returns the current global stack trace configuration
+func GetStackTraceConfig() *StackTraceConfig {
+	cfgMutex.Lock()
+	defer cfgMutex.Unlock()
+
+	return globalStackTraceConfig
+}
+
+// SetDevelopmentStackTrace enables development-safe stack trace configuration
+func SetDevelopmentStackTrace() {
+	SetStackTraceConfig(DevelopmentStackTraceConfig())
+}
+
+// SetProductionStackTrace enables production-safe stack trace configuration
+func SetProductionStackTrace() {
+	SetStackTraceConfig(ProductionStackTraceConfig())
+}
+
+// SetStrictStackTrace enables strict privacy stack trace configuration
+func SetStrictStackTrace() {
+	SetStackTraceConfig(StrictStackTraceConfig())
+}
+
+// DisableStackTrace completely disables stack traces
+func DisableStackTrace() {
+	SetStackTraceConfig(NoStackTraceConfig())
+}
+
 // StackFrame stores a frame's runtime information in a human readable format
 // Enhanced with additional context for better error diagnostics
 type StackFrame struct {
@@ -35,40 +156,58 @@ type StackFrame struct {
 	File     string // Full file path
 	FileName string // Just the filename (e.g., "payment.go")
 	Line     int    // Line number
+
+	StackTraceConfig *StackTraceConfig
 }
 
 // String returns a formatted representation of the stack frame
 func (f StackFrame) String() string {
-	return fmt.Sprintf("%s (%s:%d)", f.Name, f.FileName, f.Line)
+	if f.StackTraceConfig == nil {
+		return f.Name + " (" + f.FileName + ":" + strconv.Itoa(f.Line) + ")"
+	}
+	if !f.StackTraceConfig.ShowAllCodeFrames && !f.IsUser() {
+		return defaultHiddenFrame
+	}
+
+	var line strings.Builder
+	line.Grow(len(f.FileName) + len(f.Name) + 10)
+
+	line.WriteString(f.getFunctionName())
+	if f.StackTraceConfig.ShowFileNames {
+		line.WriteString(" (" + f.getFileName() + ")")
+	}
+
+	return line.String()
 }
 
 // FormatFull returns a detailed formatted stack frame
 func (f StackFrame) FormatFull() string {
-	return fmt.Sprintf("%s\n\t%s:%d", f.FullName, f.File, f.Line)
+	if f.StackTraceConfig == nil {
+		return fmt.Sprintf("\t%s\n\t\t%s:%d", f.FullName, f.File, f.Line)
+	}
+	if !f.StackTraceConfig.ShowAllCodeFrames && !f.IsUser() {
+		return "\t" + defaultHiddenFrame
+	}
+
+	var line strings.Builder
+	line.Grow(len(f.FileName) + len(f.Name) + 10)
+
+	line.WriteString("\t" + f.getFunctionName())
+	if f.StackTraceConfig.ShowFileNames {
+		line.WriteString("\n\t\t" + f.getFileName())
+	}
+
+	return line.String()
 }
 
 // ToJSON returns a JSON-friendly representation of the stack frame
 func (f StackFrame) ToJSON() map[string]any {
 	return map[string]any{
-		"function": f.FullName,
-		"file":     f.File,
+		"function": f.getFunctionName(),
+		"file":     f.getFileName(),
 		"line":     strconv.Itoa(f.Line),
 		"type":     f.getFrameType(),
 	}
-}
-
-// getFrameType returns the type of this stack frame
-func (f StackFrame) getFrameType() string {
-	if f.IsRuntime() {
-		return "runtime"
-	}
-	if f.IsStandardLibrary() {
-		return "stdlib"
-	}
-	if f.IsTest() {
-		return "test"
-	}
-	return "user"
 }
 
 // IsUser returns true if this frame represents user code (not runtime/stdlib/erro internal)
@@ -132,44 +271,55 @@ func (f StackFrame) IsErroInternal() bool {
 	return strings.Contains(f.FullName, "github.com/maxbolgarin/erro") && !f.IsTest()
 }
 
-// ContextInfo extracts contextual information from the stack frame
-type ContextInfo struct {
-	Function   string            // Function name
-	Package    string            // Package name
-	Module     string            // Module name (extracted from full path)
-	File       string            // File name
-	Line       int               // Line number
-	IsUserCode bool              // Whether this is user code
-	Metadata   map[string]string // Additional extracted metadata
+// getFrameType returns the type of this stack frame
+func (f StackFrame) getFrameType() string {
+	if f.IsRuntime() {
+		return "runtime"
+	}
+	if f.IsStandardLibrary() {
+		return "stdlib"
+	}
+	if f.IsTest() {
+		return "test"
+	}
+	return "user"
 }
 
-// GetContextInfo extracts rich context information from the stack frame
-func (f StackFrame) GetContextInfo() ContextInfo {
-	info := ContextInfo{
-		Function:   f.Name,
-		Package:    f.Package,
-		Module:     extractModule(f.FullName),
-		File:       f.FileName,
-		Line:       f.Line,
-		IsUserCode: f.IsUser(),
-		Metadata:   make(map[string]string),
+func (f StackFrame) getFunctionName() string {
+	if f.StackTraceConfig == nil || !f.StackTraceConfig.Enabled {
+		return f.FullName
+	}
+	if f.StackTraceConfig.ShowFunctionNames {
+		if f.StackTraceConfig.ShowPackageNames {
+			return f.FullName
+		}
+		return f.Name
+	}
+	if f.StackTraceConfig.FunctionRedacted != "" {
+		return f.StackTraceConfig.FunctionRedacted
+	}
+	return defaultFunctionRedacted
+}
+
+func (f StackFrame) getFileName() string {
+	if f.StackTraceConfig == nil || !f.StackTraceConfig.Enabled {
+		return f.File
 	}
 
-	// Add additional metadata
-	info.Metadata["full_function"] = f.FullName
-	info.Metadata["file_path"] = f.File
+	fileName := f.File
 
-	if f.IsTest() {
-		info.Metadata["type"] = "test"
-	} else if f.IsRuntime() {
-		info.Metadata["type"] = "runtime"
-	} else if f.IsStandardLibrary() {
-		info.Metadata["type"] = "stdlib"
-	} else {
-		info.Metadata["type"] = "user"
+	if f.StackTraceConfig.ShowFileNames {
+		if !f.StackTraceConfig.ShowFullPaths {
+			fileName = extractPathElements(f.FileName, f.StackTraceConfig.PathElements)
+		}
+		if f.StackTraceConfig.ShowLineNumbers {
+			return fileName + ":" + strconv.Itoa(f.Line)
+		}
 	}
-
-	return info
+	if f.StackTraceConfig.FileNameRedacted != "" {
+		return f.StackTraceConfig.FileNameRedacted
+	}
+	return defaultFileNameRedacted
 }
 
 // Stack represents a collection of stack frames with enhanced analysis capabilities
@@ -240,13 +390,13 @@ func (s Stack) TopUserFrame() *StackFrame {
 }
 
 // GetOriginContext returns context information about where the error originated
-func (s Stack) GetOriginContext() *ContextInfo {
+func (s Stack) GetOriginContext() *StackContext {
 	topFrame := s.TopUserFrame()
 	if topFrame == nil {
 		return nil
 	}
 
-	info := topFrame.GetContextInfo()
+	info := topFrame.GetContext()
 	return &info
 }
 
@@ -257,7 +407,7 @@ func (s Stack) GetCallChain() []string {
 
 	for _, frame := range userFrames {
 		if len(chain) < 5 { // Limit to prevent too much noise
-			chain = append(chain, frame.Name)
+			chain = append(chain, frame.getFunctionName())
 		}
 	}
 
@@ -336,6 +486,46 @@ func (s Stack) FilterByPackage(packageName string) Stack {
 		}
 	}
 	return filtered
+}
+
+// StackContext extracts contextual information from the stack frame
+type StackContext struct {
+	Function   string            // Function name
+	Package    string            // Package name
+	Module     string            // Module name (extracted from full path)
+	File       string            // File name
+	Line       int               // Line number
+	IsUserCode bool              // Whether this is user code
+	Metadata   map[string]string // Additional extracted metadata
+}
+
+// GetContext extracts rich context information from the stack frame
+func (f StackFrame) GetContext() StackContext {
+	info := StackContext{
+		Function:   f.Name,
+		Package:    f.Package,
+		Module:     extractModule(f.FullName),
+		File:       f.FileName,
+		Line:       f.Line,
+		IsUserCode: f.IsUser(),
+		Metadata:   make(map[string]string),
+	}
+
+	// Add additional metadata
+	info.Metadata["full_function"] = f.FullName
+	info.Metadata["file_path"] = f.File
+
+	if f.IsTest() {
+		info.Metadata["type"] = "test"
+	} else if f.IsRuntime() {
+		info.Metadata["type"] = "runtime"
+	} else if f.IsStandardLibrary() {
+		info.Metadata["type"] = "stdlib"
+	} else {
+		info.Metadata["type"] = "user"
+	}
+
+	return info
 }
 
 // extractShortName extracts the short function name from full name
@@ -467,9 +657,10 @@ func (rs rawStack) toFrames() Stack {
 		}
 
 		frame := StackFrame{
-			FullName: runtimeFrame.Function,
-			File:     runtimeFrame.File,
-			Line:     runtimeFrame.Line,
+			FullName:         runtimeFrame.Function,
+			File:             runtimeFrame.File,
+			Line:             runtimeFrame.Line,
+			StackTraceConfig: GetStackTraceConfig(),
 		}
 
 		// Extract short name
@@ -525,4 +716,39 @@ func (rs rawStack) isEmpty() bool {
 // formatFull returns detailed formatted stack trace (lazy evaluation)
 func (rs rawStack) formatFull() string {
 	return rs.toFrames().FormatFull()
+}
+
+// extractPathElements extracts the desired number of path elements from a file path
+func extractPathElements(fullPath string, pathElements int) string {
+	if pathElements == -1 {
+		// Show full path
+		return fullPath
+	}
+
+	if pathElements <= 0 {
+		// Show only filename
+		return filepath.Base(fullPath)
+	}
+
+	// Split the path and take the last N elements
+	pathParts := strings.Split(filepath.Clean(fullPath), string(filepath.Separator))
+
+	// Remove empty parts (can happen with absolute paths)
+	var cleanParts []string
+	for _, part := range pathParts {
+		if part != "" {
+			cleanParts = append(cleanParts, part)
+		}
+	}
+
+	// Take the last pathElements + 1 parts (including filename)
+	elementsToTake := pathElements + 1
+	if elementsToTake > len(cleanParts) {
+		elementsToTake = len(cleanParts)
+	}
+
+	start := len(cleanParts) - elementsToTake
+	selectedParts := cleanParts[start:]
+
+	return strings.Join(selectedParts, string(filepath.Separator))
 }

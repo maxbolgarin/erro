@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/maxbolgarin/erro"
@@ -25,4 +26,7 @@ func main() {
 	erro.LogError(err, func(message string, fields ...any) {
 		slog.Info(message, fields...)
 	}, erro.WithStackFormat(erro.StackFormatList))
+
+	fmt.Println(err.Stack().FormatFull())
+	fmt.Printf("%+v\n", err)
 }
