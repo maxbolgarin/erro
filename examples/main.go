@@ -3,20 +3,20 @@
 package main
 
 import (
-	"log/slog"
+	"fmt"
 
 	"github.com/maxbolgarin/erro"
 )
 
-func main() {
-	err := erro.New("test", "test", "test").Fields("test23", "test12")
-	wrapped := erro.Wrap(err, "wrapped", "wrap_field")
-	//wrapped2 := erro.Wrap(wrapped, "wrapped2", "wrap_field2").Code("wrapped2_code").Category("wrapped2_category").Severity("wrapped2_severity").Retryable(true).Tags("wrapped2_tag")
-	// fmt.Println(err.Error())
-	// fmt.Println(wrapped2.Error())
-	// fmt.Println(wrapped2.ErrorWithStack())
-	erro.LogError(wrapped, func(message string, fields ...any) {
-		slog.Info(message, fields...)
-	}, erro.MinimalLogOpts()...)
+func test2() error {
+	return erro.New("test2", "f", "v").Fields("f2", "v2").Severity(erro.Critical)
+}
 
+func test() error {
+	return erro.Wrap(test2(), "wrapped", "wrapped_field").Fields("f3", "v3").Severity(erro.Critical)
+}
+
+func main() {
+	err := test()
+	fmt.Printf("%+v\n", err)
 }

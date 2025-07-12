@@ -1,46 +1,9 @@
 package erro
 
 import (
-	"context"
 	"fmt"
 	"reflect"
-	"time"
 )
-
-// Error represents the common interface for all erro errors
-type Error interface {
-	error
-
-	// Chaining methods for building errors
-	Code(code string) Error
-	Category(category string) Error
-	Severity(severity string) Error
-	Fields(fields ...any) Error
-	Context(ctx context.Context) Error
-	Tags(tags ...string) Error
-	Retryable(retryable bool) Error
-	TraceID(traceID string) Error
-
-	// Extraction methods
-	GetBase() Error
-	GetContext() context.Context
-	GetCode() string
-	GetCategory() string
-	GetSeverity() string
-	GetTags() []string
-	IsRetryable() bool
-	GetTraceID() string
-	GetFields() []any
-	GetCreated() time.Time
-
-	// Stack trace access
-	Stack() []StackFrame
-	StackFormat() string
-	StackWithError() string
-
-	// Error comparison
-	Is(target error) bool
-}
 
 // New creates a new error with optional fields
 func New(message string, fields ...any) Error {

@@ -31,6 +31,10 @@ func (e *wrapError) Error() (out string) {
 		return wrappedMsg
 	}
 
+	if e.base.severity != "" {
+		out = e.base.severity.Label() + " " + out
+	}
+
 	return out + ": " + wrappedMsg
 }
 
@@ -68,8 +72,11 @@ func (e *wrapError) Category(category string) Error {
 	return e
 }
 
-func (e *wrapError) Severity(severity string) Error {
-	e.base.severity = truncateString(severity, maxSeverityLength)
+func (e *wrapError) Severity(severity ErrorSeverity) Error {
+	if !severity.IsValid() {
+		severity = Unknown
+	}
+	e.base.severity = severity
 	return e
 }
 
@@ -103,12 +110,23 @@ func (e *wrapError) GetBase() Error              { return e.base }
 func (e *wrapError) GetContext() context.Context { return e.base.ctx }
 func (e *wrapError) GetCode() string             { return e.base.code }
 func (e *wrapError) GetCategory() string         { return e.base.category }
-func (e *wrapError) GetSeverity() string         { return e.base.severity }
 func (e *wrapError) GetTags() []string           { return e.base.tags }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
 func (e *wrapError) GetTraceID() string          { return e.base.traceID }
 func (e *wrapError) GetCreated() time.Time       { return e.base.created }
-func (e *wrapError) StackWithError() string      { return e.Error() + "\n" + e.StackFormat() }
+
+// Severity checking methods
+func (e *wrapError) GetSeverity() ErrorSeverity { return e.base.GetSeverity() }
+func (e *wrapError) IsCritical() bool           { return e.base.IsCritical() }
+func (e *wrapError) IsHigh() bool               { return e.base.IsHigh() }
+func (e *wrapError) IsMedium() bool             { return e.base.IsMedium() }
+func (e *wrapError) IsLow() bool                { return e.base.IsLow() }
+func (e *wrapError) IsInfo() bool               { return e.base.IsInfo() }
+func (e *wrapError) IsUnknown() bool {
+	return e.base.IsUnknown()
+}
+
+func (e *wrapError) StackWithError() string { return e.Error() + "\n" + e.StackFormat() }
 
 // Is checks if this error or any wrapped error matches the target
 func (e *wrapError) Is(target error) bool {

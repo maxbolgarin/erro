@@ -341,6 +341,115 @@ func TestComplexErrorScenario(t *testing.T) {
 	fmt.Printf("Logging fields: %+v\n", fields)
 }
 
+func TestSeverityRefactoring(t *testing.T) {
+	// Test ErrorSeverity type and predefined constants
+	t.Run("ErrorSeverity type", func(t *testing.T) {
+		// Test that predefined severities are valid
+		severities := []erro.ErrorSeverity{
+			erro.Unknown,
+			erro.Critical,
+			erro.High,
+			erro.Medium,
+			erro.Low,
+			erro.Info,
+		}
+
+		for _, severity := range severities {
+			if !severity.IsValid() {
+				t.Errorf("Expected severity %s to be valid", severity)
+			}
+		}
+
+		// Test invalid severity
+		invalid := erro.ErrorSeverity("invalid")
+		if invalid.IsValid() {
+			t.Error("Expected invalid severity to be invalid")
+		}
+	})
+
+	t.Run("Severity checking methods", func(t *testing.T) {
+		// Test with critical severity
+		criticalErr := erro.New("critical error").Severity("critical")
+		if !criticalErr.IsCritical() {
+			t.Error("Expected error to be critical")
+		}
+		if criticalErr.IsHigh() || criticalErr.IsLow() || criticalErr.IsInfo() {
+			t.Error("Expected error to only be critical")
+		}
+
+		// Test with high severity
+		highErr := erro.New("high error").Severity("high")
+		if !highErr.IsHigh() {
+			t.Error("Expected error to be high")
+		}
+		if highErr.IsCritical() || highErr.IsLow() || highErr.IsInfo() {
+			t.Error("Expected error to only be high")
+		}
+
+		// Test with unknown severity (empty)
+		unknownErr := erro.New("unknown error")
+		if !unknownErr.IsUnknown() {
+			t.Error("Expected error with no severity to be unknown")
+		}
+		if unknownErr.IsCritical() || unknownErr.IsHigh() || unknownErr.IsLow() {
+			t.Error("Expected error to only be unknown")
+		}
+	})
+
+	t.Run("GetSeverityLevel method", func(t *testing.T) {
+		// Test with predefined severity
+		err := erro.New("test error").Severity("high")
+		if err.GetSeverity() != erro.High {
+			t.Errorf("Expected severity level to be SeverityHigh, got %s", err.GetSeverity())
+		}
+
+		// Test with unknown severity
+		unknownErr := erro.New("unknown error")
+		if unknownErr.GetSeverity() != erro.Unknown {
+			t.Errorf("Expected severity level to be SeverityUnknown, got %s", unknownErr.GetSeverity())
+		}
+	})
+
+	t.Run("List severity methods", func(t *testing.T) {
+		list := erro.NewList().Severity(erro.Critical)
+		if !list.IsCritical() {
+			t.Error("Expected list to be critical")
+		}
+		if list.GetSeverity() != erro.Critical {
+			t.Errorf("Expected list severity level to be SeverityCritical, got %s", list.GetSeverity())
+		}
+
+		// Add an error and verify it inherits the severity
+		list.New("test error")
+		if list.Len() != 1 {
+			t.Error("Expected list to have 1 error")
+		}
+
+		err := list.First()
+		if err == nil {
+			t.Fatal("Expected first error to exist")
+		}
+		if !err.IsCritical() {
+			t.Error("Expected error to inherit critical severity from list")
+		}
+	})
+
+	t.Run("ErrorContext severity methods", func(t *testing.T) {
+		err := erro.New("test error").Severity("warning")
+		ctx := erro.ExtractContext(err)
+		if ctx == nil {
+			t.Fatal("Expected context to exist")
+		}
+
+		if !ctx.IsWarning() {
+			t.Error("Expected context to be warning")
+		}
+		if ctx.GetSeverityLevel() != erro.Info {
+			t.Errorf("Expected context severity level to be SeverityWarning, got %s", ctx.GetSeverityLevel())
+		}
+	})
+}
+
 func TestErrorfAndWrapf(t *testing.T) {
 	// Test Errorf with format string and fields
 	err1 := erro.Errorf("failed to connect to %s:%d", "database", 5432, "timeout", "30s", "retries", 3)

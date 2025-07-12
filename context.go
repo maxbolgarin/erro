@@ -19,13 +19,29 @@ type ErrorContext struct {
 	Fields    map[string]any  // All key-value pairs
 	Code      string          // Error code
 	Category  string          // Error category
-	Severity  string          // Error severity
+	Severity  ErrorSeverity   // Error severity
 	Tags      []string        // Error tags
 	Retryable bool            // Whether error is retryable
 	Created   time.Time       // When error was created
 	TraceID   string          // Trace ID if available
 	Context   context.Context // Associated context
 	Stack     Stack           // Stack trace frames
+}
+
+// Severity checking methods for ErrorContext
+func (ec *ErrorContext) IsCritical() bool { return ec.Severity == Critical }
+func (ec *ErrorContext) IsHigh() bool     { return ec.Severity == High }
+func (ec *ErrorContext) IsMedium() bool   { return ec.Severity == Medium }
+func (ec *ErrorContext) IsLow() bool      { return ec.Severity == Low }
+func (ec *ErrorContext) IsWarning() bool  { return ec.Severity == Info }
+func (ec *ErrorContext) IsUnknown() bool {
+	return ec.Severity == "" || ec.Severity == Unknown
+}
+func (ec *ErrorContext) GetSeverityLevel() ErrorSeverity {
+	if ec.Severity == "" {
+		return Unknown
+	}
+	return ec.Severity
 }
 
 // ExtractContext extracts all available context from an error

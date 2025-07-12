@@ -19,7 +19,7 @@ type baseError struct {
 	fields    []any           // Key-value fields
 	code      string          // Error code
 	category  string          // Error category
-	severity  string          // Error severity
+	severity  ErrorSeverity   // Error severity
 	tags      []string        // Tags
 	retryable bool            // Retryable flag
 	traceID   string          // Trace ID
@@ -31,6 +31,9 @@ type baseError struct {
 // Error implements the error interface
 func (e *baseError) Error() (out string) {
 	out = buildFieldsMessage(e.message, e.fields)
+	if e.depth == 0 && e.severity != "" {
+		out = e.severity.Label() + " " + out
+	}
 
 	if e.originalErr != nil {
 		if out == "" {
@@ -76,8 +79,11 @@ func (e *baseError) Category(category string) Error {
 	return e
 }
 
-func (e *baseError) Severity(severity string) Error {
-	e.severity = truncateString(severity, maxSeverityLength)
+func (e *baseError) Severity(severity ErrorSeverity) Error {
+	if !severity.IsValid() {
+		severity = Unknown
+	}
+	e.severity = severity
 	return e
 }
 
@@ -111,15 +117,31 @@ func (e *baseError) GetBase() Error              { return e }
 func (e *baseError) GetContext() context.Context { return e.ctx }
 func (e *baseError) GetCode() string             { return e.code }
 func (e *baseError) GetCategory() string         { return e.category }
-func (e *baseError) GetSeverity() string         { return e.severity }
 func (e *baseError) GetTags() []string           { return e.tags }
 func (e *baseError) IsRetryable() bool           { return e.retryable }
 func (e *baseError) GetTraceID() string          { return e.traceID }
 func (e *baseError) GetFields() []any            { return e.fields }
 func (e *baseError) GetCreated() time.Time       { return e.created }
-func (e *baseError) Stack() []StackFrame         { return e.stack.toFrames() }
-func (e *baseError) StackFormat() string         { return e.stack.formatFull() }
-func (e *baseError) StackWithError() string      { return e.Error() + "\n" + e.StackFormat() }
+
+// Severity checking methods
+func (e *baseError) GetSeverity() ErrorSeverity {
+	if e.severity == "" {
+		return Unknown
+	}
+	return e.severity
+}
+func (e *baseError) IsCritical() bool { return e.severity == Critical }
+func (e *baseError) IsHigh() bool     { return e.severity == High }
+func (e *baseError) IsMedium() bool   { return e.severity == Medium }
+func (e *baseError) IsLow() bool      { return e.severity == Low }
+func (e *baseError) IsInfo() bool     { return e.severity == Info }
+func (e *baseError) IsUnknown() bool {
+	return e.severity == "" || e.severity == Unknown
+}
+
+func (e *baseError) Stack() []StackFrame    { return e.stack.toFrames() }
+func (e *baseError) StackFormat() string    { return e.stack.formatFull() }
+func (e *baseError) StackWithError() string { return e.Error() + "\n" + e.StackFormat() }
 
 // Is checks if this error matches the target error
 func (e *baseError) Is(target error) bool {
@@ -129,11 +151,6 @@ func (e *baseError) Is(target error) bool {
 
 	// Check direct equality
 	if e == target {
-		return true
-	}
-
-	// Check if we wrap an external error that matches the target
-	if e.originalErr != nil && e.originalErr == target {
 		return true
 	}
 

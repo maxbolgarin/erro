@@ -7,24 +7,24 @@ var (
 // Security configuration constants
 const (
 	// Maximum string lengths to prevent memory exhaustion
-	maxMessageLength    = 10000 // Maximum length for error messages
-	maxFieldKeyLength   = 256   // Maximum length for field keys
-	maxFieldValueLength = 4096  // Maximum length for field values (when converted to string)
-	maxCodeLength       = 128   // Maximum length for error codes
-	maxCategoryLength   = 128   // Maximum length for error categories
-	maxSeverityLength   = 64    // Maximum length for error severity
-	maxTraceIDLength    = 256   // Maximum length for trace IDs
-	maxTagLength        = 128   // Maximum length for individual tags
+	maxMessageLength    = 1000 // Maximum length for error messages
+	maxFieldKeyLength   = 128  // Maximum length for field keys
+	maxFieldValueLength = 1024 // Maximum length for field values (when converted to string)
+	maxCodeLength       = 128  // Maximum length for error codes
+	maxCategoryLength   = 128  // Maximum length for error categories
+	maxSeverityLength   = 64   // Maximum length for error severity
+	maxTraceIDLength    = 256  // Maximum length for trace IDs
+	maxTagLength        = 128  // Maximum length for individual tags
 
 	// Maximum array/slice lengths to prevent array bombing
-	maxFieldsCount = 1000 // Maximum number of fields (key-value pairs)
-	maxTagsCount   = 100  // Maximum number of tags
+	maxFieldsCount = 100 // Maximum number of fields (key-value pairs)
+	maxTagsCount   = 50  // Maximum number of tags
 
 	// Wrapping depth limits to prevent stack overflow
-	maxWrapDepth = 100 // Maximum depth of error wrapping
+	maxWrapDepth = 50 // Maximum depth of error wrapping
 
 	// Stack trace limits
-	maxStackDepth = 100 // Maximum stack depth
+	maxStackDepth = 50 // Maximum stack depth
 )
 
 // wrapDepthTracker tracks the depth of error wrapping to prevent stack overflow

@@ -14,7 +14,7 @@ type List struct {
 	// Metadata that will be applied to errors added to this list
 	code      string
 	category  string
-	severity  string
+	severity  ErrorSeverity
 	fields    []any
 	ctx       context.Context
 	tags      []string
@@ -193,9 +193,26 @@ func (g *List) Category(category string) *List {
 	return g
 }
 
-func (g *List) Severity(severity string) *List {
+func (g *List) Severity(severity ErrorSeverity) *List {
+	if !severity.IsValid() {
+		severity = Unknown
+	}
 	g.severity = severity
 	return g
+}
+
+// Severity checking methods for List
+func (g *List) IsCritical() bool { return g.severity == Critical }
+func (g *List) IsHigh() bool     { return g.severity == High }
+func (g *List) IsMedium() bool   { return g.severity == Medium }
+func (g *List) IsLow() bool      { return g.severity == Low }
+func (g *List) IsWarning() bool  { return g.severity == Info }
+func (g *List) IsUnknown() bool  { return g.severity == "" || g.severity == Unknown }
+func (g *List) GetSeverity() ErrorSeverity {
+	if g.severity == "" {
+		return Unknown
+	}
+	return g.severity
 }
 
 func (g *List) Fields(fields ...any) *List {
@@ -356,10 +373,19 @@ func (s *Set) Category(category string) *Set {
 	return s
 }
 
-func (s *Set) Severity(severity string) *Set {
+func (s *Set) Severity(severity ErrorSeverity) *Set {
 	s.List.Severity(severity)
 	return s
 }
+
+// Severity checking methods for Set
+func (s *Set) IsCritical() bool           { return s.List.IsCritical() }
+func (s *Set) IsHigh() bool               { return s.List.IsHigh() }
+func (s *Set) IsMedium() bool             { return s.List.IsMedium() }
+func (s *Set) IsLow() bool                { return s.List.IsLow() }
+func (s *Set) IsWarning() bool            { return s.List.IsWarning() }
+func (s *Set) IsUnknown() bool            { return s.List.IsUnknown() }
+func (s *Set) GetSeverity() ErrorSeverity { return s.List.GetSeverity() }
 
 func (s *Set) Fields(fields ...any) *Set {
 	s.List.Fields(fields...)
@@ -438,7 +464,7 @@ type SafeList struct {
 	// Metadata that will be applied to errors added to this list
 	code      string
 	category  string
-	severity  string
+	severity  ErrorSeverity
 	fields    []any
 	ctx       context.Context
 	tags      []string
@@ -660,11 +686,54 @@ func (g *SafeList) Category(category string) *SafeList {
 	return g
 }
 
-func (g *SafeList) Severity(severity string) *SafeList {
+func (g *SafeList) Severity(severity ErrorSeverity) *SafeList {
+	if !severity.IsValid() {
+		severity = Unknown
+	}
 	g.mu.Lock()
 	g.severity = severity
 	g.mu.Unlock()
 	return g
+}
+
+// Severity checking methods for List
+func (g *SafeList) IsCritical() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity == Critical
+}
+func (g *SafeList) IsHigh() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity == High
+}
+func (g *SafeList) IsMedium() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity == Medium
+}
+func (g *SafeList) IsLow() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity == Low
+}
+func (g *SafeList) IsWarning() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity == Info
+}
+func (g *SafeList) IsUnknown() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity == "" || g.severity == Unknown
+}
+func (g *SafeList) GetSeverity() ErrorSeverity {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.severity == "" {
+		return Unknown
+	}
+	return g.severity
 }
 
 func (g *SafeList) Fields(fields ...any) *SafeList {
@@ -842,10 +911,19 @@ func (s *SafeSet) Category(category string) *SafeSet {
 	return s
 }
 
-func (s *SafeSet) Severity(severity string) *SafeSet {
+func (s *SafeSet) Severity(severity ErrorSeverity) *SafeSet {
 	s.SafeList.Severity(severity)
 	return s
 }
+
+// Severity checking methods for SafeSet
+func (s *SafeSet) IsCritical() bool           { return s.SafeList.IsCritical() }
+func (s *SafeSet) IsHigh() bool               { return s.SafeList.IsHigh() }
+func (s *SafeSet) IsMedium() bool             { return s.SafeList.IsMedium() }
+func (s *SafeSet) IsLow() bool                { return s.SafeList.IsLow() }
+func (s *SafeSet) IsWarning() bool            { return s.SafeList.IsWarning() }
+func (s *SafeSet) IsUnknown() bool            { return s.SafeList.IsUnknown() }
+func (s *SafeSet) GetSeverity() ErrorSeverity { return s.SafeList.GetSeverity() }
 
 func (s *SafeSet) Fields(fields ...any) *SafeSet {
 	s.SafeList.Fields(fields...)
