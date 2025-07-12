@@ -50,7 +50,14 @@ func WrapEmpty(err error) Error {
 	if err == nil {
 		return nil
 	}
-	return Wrap(err, "")
+
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(Error); ok {
+		return newWrapError(erroErr, "")
+	}
+
+	// For external errors, create a new base error that wraps it
+	return newBaseError(err, "")
 }
 
 // Wrapf wraps an existing error with formatted message and optional fields

@@ -87,7 +87,7 @@ type Error interface {
 	IsUnknown() bool
 
 	// Stack trace access
-	Stack() []StackFrame
+	Stack() Stack
 	StackFormat() string
 	StackWithError() string
 

@@ -12,7 +12,6 @@ type wrapError struct {
 	wrapped     Error      // The wrapped error (to get all its fields)
 	wrapMessage string     // Wrap message
 	wrapFields  []any      // Additional fields for this wrap
-	wrapPoint   uintptr    // Single PC for where this wrap occurred (not full stack!)
 	createdAt   time.Time  // When this wrap was created
 }
 
@@ -39,21 +38,7 @@ func (e *wrapError) Error() (out string) {
 }
 
 func (e *wrapError) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if s.Flag('+') {
-			// Print with complete stack trace
-			fmt.Fprint(s, e.Error())
-			fmt.Fprint(s, "\nStack trace:\n")
-			for _, frame := range e.Stack() {
-				fmt.Fprintf(s, "\t%s.%s\n\t\t%s:%d\n", frame.Package, frame.Name, frame.File, frame.Line)
-			}
-		} else {
-			fmt.Fprint(s, e.Error())
-		}
-	case 's':
-		fmt.Fprint(s, e.Error())
-	}
+	formatError(e, s, verb)
 }
 
 // Unwrap implements the Unwrap interface
@@ -125,7 +110,8 @@ func (e *wrapError) IsInfo() bool               { return e.base.IsInfo() }
 func (e *wrapError) IsUnknown() bool {
 	return e.base.IsUnknown()
 }
-
+func (e *wrapError) Stack() Stack           { return e.base.stack.toFrames() }
+func (e *wrapError) StackFormat() string    { return e.base.stack.formatFull() }
 func (e *wrapError) StackWithError() string { return e.Error() + "\n" + e.StackFormat() }
 
 // Is checks if this error or any wrapped error matches the target
@@ -175,61 +161,6 @@ func (e *wrapError) GetFields() []any {
 	return allFields
 }
 
-func (e *wrapError) Stack() []StackFrame {
-	// Add our wrap point first
-	var wrapFrame StackFrame
-	if e.wrapPoint != 0 {
-		wrapFrame = resolveWrapPoint(e.wrapPoint)
-	}
-
-	// If we're wrapping another erro error, get its stack (which may include other wrap points)
-	var framesToAdd []StackFrame
-	if e.wrapped != nil {
-		framesToAdd = e.wrapped.Stack()
-	} else {
-		// Fallback to base stack if no wrapped error
-		framesToAdd = e.base.stack.toFrames()
-	}
-
-	hasWrapFrame := 0
-	if wrapFrame.Name != "" {
-		hasWrapFrame = 1
-	}
-
-	frames := make([]StackFrame, len(framesToAdd)+hasWrapFrame)
-	if hasWrapFrame == 1 {
-		frames[0] = wrapFrame
-	}
-
-	if len(framesToAdd) > 0 {
-		copy(frames[1:], framesToAdd)
-	}
-
-	return frames
-}
-
-func (e *wrapError) StackFormat() string {
-	// Add our wrap point first
-	var wrapFrame StackFrame
-	if e.wrapPoint != 0 {
-		wrapFrame = resolveWrapPoint(e.wrapPoint)
-	}
-
-	// If we're wrapping another erro error, get its stack (which may include other wrap points)
-	var framesToAdd string
-	if e.wrapped != nil {
-		framesToAdd = e.wrapped.StackFormat()
-	} else {
-		// Fallback to base stack if no wrapped error
-		framesToAdd = e.base.stack.formatFull()
-	}
-
-	if wrapFrame.Name != "" {
-		return wrapFrame.FormatFull() + "\n" + framesToAdd
-	}
-	return framesToAdd
-}
-
 func newWrapError(wrapped Error, message string, fields ...any) Error {
 	if wrapped == nil {
 		wrapped = New(message, fields...)
@@ -253,7 +184,6 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		wrapped:     wrapped,
 		wrapMessage: truncateString(message, maxMessageLength),
 		wrapFields:  prepareFields(fields),
-		wrapPoint:   captureWrapPoint(3), // Skip Wrap, newWrapError and capture caller
 		createdAt:   time.Now(),
 	}
 }

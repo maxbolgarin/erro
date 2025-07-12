@@ -218,6 +218,7 @@ type StackFormat int
 
 const (
 	StackFormatString StackFormat = iota // Default string format
+	StackFormatList                      // List of call chain
 	StackFormatFull                      // Full stack trace format
 	StackFormatJSON                      // JSON format for structured logging
 )
@@ -308,6 +309,29 @@ func VerboseLogOpts() []func(*LogOptions) {
 		WithFile(true),
 		WithLine(true),
 		WithStack(true),
+	}
+}
+
+func EmptyLogOptions() *LogOptions {
+	return &LogOptions{}
+}
+
+func EmptyLogOpts() []func(*LogOptions) {
+	return []func(*LogOptions){
+		WithUserFields(false),
+		WithCode(false),
+		WithSeverity(false),
+		WithCategory(false),
+		WithTags(false),
+		WithTraceID(false),
+		WithRetryable(false),
+		WithCreatedTime(false),
+		WithFunction(false),
+		WithPackage(false),
+		WithFile(false),
+		WithLine(false),
+		WithStack(false),
+		WithFieldNamePrefix(""),
 	}
 }
 
@@ -615,6 +639,11 @@ func (ec *ErrorContext) getStackTrace(opts *LogOptions) any {
 	case StackFormatFull:
 		// Return full stack trace
 		return ec.Stack.FormatFull()
+	case StackFormatList:
+		// Return list of call chain
+		return ec.Stack.GetCallChain()
+	case StackFormatString:
+		fallthrough
 	default:
 		// Return string representation of stack frames
 		return ec.Stack.String()

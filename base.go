@@ -46,21 +46,7 @@ func (e *baseError) Error() (out string) {
 
 // Format implements fmt.Formatter for stack trace printing
 func (e *baseError) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if s.Flag('+') {
-			// Print with stack trace
-			fmt.Fprint(s, e.Error())
-			fmt.Fprint(s, "\nStack trace:\n")
-			for _, frame := range e.stack.toFrames() {
-				fmt.Fprintf(s, "\t%s.%s\n\t\t%s:%d\n", frame.Package, frame.Name, frame.File, frame.Line)
-			}
-		} else {
-			fmt.Fprint(s, e.Error())
-		}
-	case 's':
-		fmt.Fprint(s, e.Error())
-	}
+	formatError(e, s, verb)
 }
 
 // Unwrap implements the Unwrap interface
@@ -139,7 +125,7 @@ func (e *baseError) IsUnknown() bool {
 	return e.severity == "" || e.severity == Unknown
 }
 
-func (e *baseError) Stack() []StackFrame    { return e.stack.toFrames() }
+func (e *baseError) Stack() Stack           { return e.stack.toFrames() }
 func (e *baseError) StackFormat() string    { return e.stack.formatFull() }
 func (e *baseError) StackWithError() string { return e.Error() + "\n" + e.StackFormat() }
 
@@ -243,4 +229,22 @@ func countFormatVerbs(format string) int {
 		}
 	}
 	return count
+}
+
+func formatError(err Error, s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			// Print with stack trace
+			fmt.Fprint(s, err.Error())
+			fmt.Fprint(s, "\nStack trace:\n")
+			for _, frame := range err.Stack() {
+				fmt.Fprintf(s, "\t%s.%s\n\t\t%s:%d\n", frame.Package, frame.Name, frame.File, frame.Line)
+			}
+		} else {
+			fmt.Fprint(s, err.Error())
+		}
+	case 's':
+		fmt.Fprint(s, err.Error())
+	}
 }

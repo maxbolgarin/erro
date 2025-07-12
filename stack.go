@@ -4,16 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
-)
-
-type StackType string
-
-const (
-	StackTypeUser            StackType = "user"
-	StackTypeRuntime         StackType = "runtime"
-	StackTypeStandardLibrary StackType = "stdlib"
-	StackTypeTest            StackType = "test"
 )
 
 var (
@@ -27,139 +19,12 @@ var (
 		"buildErrorMessage", "buildFieldsMessage", "validateFields", "prepareFields",
 		"New", "Wrap", "Wrapf", "Errorf", "extractPackage",
 	}
-)
-
-// rawStack stores just the program counters for efficient storage
-type rawStack []uintptr
-
-// captureWrapPoint captures just the program counter of the immediate caller
-// This is much faster than capturing a full stack for wrap operations
-func captureWrapPoint(skip int) uintptr {
-	var pcs [1]uintptr
-	n := runtime.Callers(skip+1, pcs[:])
-	if n > 0 {
-		return pcs[0]
-	}
-	return 0
-}
-
-// resolveWrapPoint converts a single program counter to a StackFrame
-func resolveWrapPoint(pc uintptr) StackFrame {
-	if pc == 0 {
-		return StackFrame{}
-	}
-
-	runtimeFrames := runtime.CallersFrames([]uintptr{pc})
-	runtimeFrame, _ := runtimeFrames.Next()
-
-	return StackFrame{
-		FullName: runtimeFrame.Function,
-		File:     runtimeFrame.File,
-		Line:     runtimeFrame.Line,
-		Name:     extractShortName(runtimeFrame.Function),
-		Package:  extractPackageFromFunction(runtimeFrame.Function),
-		FileName: filepath.Base(runtimeFrame.File),
-	}
-}
-
-// captureStack captures just the program counters for maximum performance
-func captureStack(skip int) rawStack {
-	pcs := make([]uintptr, maxStackDepth)
-	n := runtime.Callers(skip+1, pcs)
-
-	// Copy only the used portion to avoid storing unused memory
-	rawPcs := make([]uintptr, n)
-	copy(rawPcs, pcs[:n])
-
-	return rawPcs
-}
-
-// toFrames converts the raw stack to resolved stack frames on demand
-func (rs rawStack) toFrames() Stack {
-	if len(rs) == 0 {
-		return nil
-	}
-
-	frames := make(Stack, 0, len(rs))
-	runtimeFrames := runtime.CallersFrames(rs)
-
-	for {
-		runtimeFrame, more := runtimeFrames.Next()
-
-		// Skip useless runtime frames and internal erro functions
-		if isUselessRuntimeFrame(runtimeFrame.Function, runtimeFrame.File) {
-			if !more {
-				break
-			}
-			continue
-		}
-
-		frame := StackFrame{
-			FullName: runtimeFrame.Function,
-			File:     runtimeFrame.File,
-			Line:     runtimeFrame.Line,
-		}
-
-		// Extract short name
-		frame.Name = extractShortName(runtimeFrame.Function)
-
-		// Extract package name
-		frame.Package = extractPackageFromFunction(runtimeFrame.Function)
-
-		// Extract filename
-		frame.FileName = filepath.Base(runtimeFrame.File)
-
-		frames = append(frames, frame)
-
-		if !more {
-			break
-		}
-	}
-
-	return frames
-}
-
-// isUselessRuntimeFrame determines if a frame should be filtered from stack traces
-func isUselessRuntimeFrame(function, file string) bool {
-	// Filter out common useless runtime frames that appear at the bottom of stacks
-	uselessFrames := []string{
+	uselessFrames = []string{
 		"runtime.main",        // Runtime's main function (not user's main)
 		"runtime.goexit",      // Goroutine exit function
 		"runtime.deferreturn", // Defer cleanup
 	}
-
-	for _, useless := range uselessFrames {
-		if function == useless {
-			return true
-		}
-	}
-
-	// Filter out erro internal functions
-	for _, internal := range internalFuncs {
-		if strings.HasSuffix(function, "."+internal) {
-			return true
-		}
-	}
-
-	// Also filter by file patterns - these are always runtime noise
-	if strings.Contains(file, "runtime/proc.go") || // runtime.main lives here
-		strings.Contains(file, "runtime/asm_") || // assembly runtime code
-		strings.HasSuffix(file, "/goexit") { // goexit variants
-		return true
-	}
-
-	return false
-}
-
-// isEmpty returns true if the stack is empty
-func (rs rawStack) isEmpty() bool {
-	return len(rs) == 0
-}
-
-// formatFull returns detailed formatted stack trace (lazy evaluation)
-func (rs rawStack) formatFull() string {
-	return rs.toFrames().FormatFull()
-}
+)
 
 // StackFrame stores a frame's runtime information in a human readable format
 // Enhanced with additional context for better error diagnostics
@@ -177,11 +42,6 @@ func (f StackFrame) String() string {
 	return fmt.Sprintf("%s (%s:%d)", f.Name, f.FileName, f.Line)
 }
 
-// Format returns a formatted stack frame with custom separator
-func (f StackFrame) Format(sep string) string {
-	return fmt.Sprintf("%s%s%s%s%d", f.Name, sep, f.FileName, sep, f.Line)
-}
-
 // FormatFull returns a detailed formatted stack frame
 func (f StackFrame) FormatFull() string {
 	return fmt.Sprintf("%s\n\t%s:%d", f.FullName, f.File, f.Line)
@@ -192,7 +52,7 @@ func (f StackFrame) ToJSON() map[string]any {
 	return map[string]any{
 		"function": f.FullName,
 		"file":     f.File,
-		"line":     f.Line,
+		"line":     strconv.Itoa(f.Line),
 		"type":     f.getFrameType(),
 	}
 }
@@ -200,15 +60,15 @@ func (f StackFrame) ToJSON() map[string]any {
 // getFrameType returns the type of this stack frame
 func (f StackFrame) getFrameType() string {
 	if f.IsRuntime() {
-		return string(StackTypeRuntime)
+		return "runtime"
 	}
 	if f.IsStandardLibrary() {
-		return string(StackTypeStandardLibrary)
+		return "stdlib"
 	}
 	if f.IsTest() {
-		return string(StackTypeTest)
+		return "test"
 	}
-	return string(StackTypeUser)
+	return "user"
 }
 
 // IsUser returns true if this frame represents user code (not runtime/stdlib/erro internal)
@@ -300,13 +160,13 @@ func (f StackFrame) GetContextInfo() ContextInfo {
 	info.Metadata["file_path"] = f.File
 
 	if f.IsTest() {
-		info.Metadata["type"] = string(StackTypeTest)
+		info.Metadata["type"] = "test"
 	} else if f.IsRuntime() {
-		info.Metadata["type"] = string(StackTypeRuntime)
+		info.Metadata["type"] = "runtime"
 	} else if f.IsStandardLibrary() {
-		info.Metadata["type"] = string(StackTypeStandardLibrary)
+		info.Metadata["type"] = "stdlib"
 	} else {
-		info.Metadata["type"] = string(StackTypeUser)
+		info.Metadata["type"] = "user"
 	}
 
 	return info
@@ -320,25 +180,11 @@ func (s Stack) String() string {
 	var builder strings.Builder
 	for i, frame := range s {
 		if i > 0 {
-			builder.WriteString("\n")
+			builder.WriteString(" -> ")
 		}
 		builder.WriteString(frame.String())
 	}
 	return builder.String()
-}
-
-// Format returns formatted stack frames with custom options
-func (s Stack) Format(sep string, invert bool) []string {
-	var str []string
-	for _, f := range s {
-		formatted := f.Format(sep)
-		if invert {
-			str = append(str, formatted)
-		} else {
-			str = append([]string{formatted}, str...)
-		}
-	}
-	return str
 }
 
 // FormatFull returns detailed formatted stack trace
@@ -459,6 +305,39 @@ func (s Stack) ToLogFields() map[string]any {
 	return fields
 }
 
+// IsGlobalError determines if the stack trace represents a global/init error
+func (s Stack) IsGlobalError() bool {
+	for _, frame := range s {
+		if strings.Contains(strings.ToLower(frame.Name), "init") ||
+			strings.Contains(strings.ToLower(frame.FullName), "runtime.doinit") {
+			return true
+		}
+	}
+	return false
+}
+
+// ContainsFunction returns true if the stack contains a frame with the given function name
+func (s Stack) ContainsFunction(functionName string) bool {
+	for _, frame := range s {
+		if frame.Name == functionName ||
+			strings.HasSuffix(frame.FullName, "."+functionName) {
+			return true
+		}
+	}
+	return false
+}
+
+// FilterByPackage returns frames that belong to the specified package
+func (s Stack) FilterByPackage(packageName string) Stack {
+	var filtered Stack
+	for _, frame := range s {
+		if frame.Package == packageName {
+			filtered = append(filtered, frame)
+		}
+	}
+	return filtered
+}
+
 // extractShortName extracts the short function name from full name
 func extractShortName(fullName string) string {
 	if fullName == "" {
@@ -552,39 +431,98 @@ func extractModule(fullName string) string {
 	return ""
 }
 
-// IsGlobalError determines if the stack trace represents a global/init error
-func (s Stack) IsGlobalError() bool {
-	for _, frame := range s {
-		if strings.Contains(strings.ToLower(frame.Name), "init") ||
-			strings.Contains(strings.ToLower(frame.FullName), "runtime.doinit") {
+// rawStack stores just the program counters for efficient storage
+type rawStack []uintptr
+
+// captureStack captures just the program counters for maximum performance
+func captureStack(skip int) rawStack {
+	pcs := make([]uintptr, maxStackDepth)
+	n := runtime.Callers(skip+1, pcs)
+
+	// Copy only the used portion to avoid storing unused memory
+	rawPcs := make([]uintptr, n)
+	copy(rawPcs, pcs[:n])
+
+	return rawPcs
+}
+
+// toFrames converts the raw stack to resolved stack frames on demand
+func (rs rawStack) toFrames() Stack {
+	if len(rs) == 0 {
+		return nil
+	}
+
+	frames := make(Stack, 0, len(rs))
+	runtimeFrames := runtime.CallersFrames(rs)
+
+	for {
+		runtimeFrame, more := runtimeFrames.Next()
+
+		// Skip useless runtime frames and internal erro functions
+		if isUselessRuntimeFrame(runtimeFrame.Function, runtimeFrame.File) {
+			if !more {
+				break
+			}
+			continue
+		}
+
+		frame := StackFrame{
+			FullName: runtimeFrame.Function,
+			File:     runtimeFrame.File,
+			Line:     runtimeFrame.Line,
+		}
+
+		// Extract short name
+		frame.Name = extractShortName(runtimeFrame.Function)
+
+		// Extract package name
+		frame.Package = extractPackageFromFunction(runtimeFrame.Function)
+
+		// Extract filename
+		frame.FileName = filepath.Base(runtimeFrame.File)
+
+		frames = append(frames, frame)
+
+		if !more {
+			break
+		}
+	}
+
+	return frames
+}
+
+// isUselessRuntimeFrame determines if a frame should be filtered from stack traces
+func isUselessRuntimeFrame(function, file string) bool {
+	// Filter out common useless runtime frames that appear at the bottom of stacks
+	for _, useless := range uselessFrames {
+		if function == useless {
 			return true
 		}
 	}
-	return false
-}
 
-// ContainsFunction returns true if the stack contains a frame with the given function name
-func (s Stack) ContainsFunction(functionName string) bool {
-	for _, frame := range s {
-		if frame.Name == functionName ||
-			strings.HasSuffix(frame.FullName, "."+functionName) {
+	// Filter out erro internal functions
+	for _, internal := range internalFuncs {
+		if strings.HasSuffix(function, "."+internal) {
 			return true
 		}
 	}
+
+	// Also filter by file patterns - these are always runtime noise
+	if strings.Contains(file, "runtime/proc.go") || // runtime.main lives here
+		strings.Contains(file, "runtime/asm_") || // assembly runtime code
+		strings.HasSuffix(file, "/goexit") { // goexit variants
+		return true
+	}
+
 	return false
 }
 
-// FilterByPackage returns frames that belong to the specified package
-func (s Stack) FilterByPackage(packageName string) Stack {
-	var filtered Stack
-	for _, frame := range s {
-		if frame.Package == packageName {
-			filtered = append(filtered, frame)
-		}
-	}
-	return filtered
+// isEmpty returns true if the stack is empty
+func (rs rawStack) isEmpty() bool {
+	return len(rs) == 0
 }
 
-func (s StackType) String() string {
-	return string(s)
+// formatFull returns detailed formatted stack trace (lazy evaluation)
+func (rs rawStack) formatFull() string {
+	return rs.toFrames().FormatFull()
 }
