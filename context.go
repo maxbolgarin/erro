@@ -540,10 +540,12 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 		fields = append(fields, opts.FieldNamePrefix+"retryable", true)
 	}
 
-	for _, field := range opts.ContextFields {
-		value := ec.Context.Value(field)
-		if value != nil {
-			fields = append(fields, opts.FieldNamePrefix+field, value)
+	if ec.Context != nil && len(opts.ContextFields) > 0 {
+		for _, field := range opts.ContextFields {
+			value := ec.Context.Value(field)
+			if value != nil {
+				fields = append(fields, opts.FieldNamePrefix+field, value)
+			}
 		}
 	}
 
@@ -614,10 +616,12 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 		fields[opts.FieldNamePrefix+"retryable"] = true
 	}
 
-	for _, field := range opts.ContextFields {
-		value := ec.Context.Value(field)
-		if value != nil {
-			fields[opts.FieldNamePrefix+field] = value
+	if ec.Context != nil && len(opts.ContextFields) > 0 {
+		for _, field := range opts.ContextFields {
+			value := ec.Context.Value(field)
+			if value != nil {
+				fields[opts.FieldNamePrefix+field] = value
+			}
 		}
 	}
 
