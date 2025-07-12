@@ -195,6 +195,7 @@ type LogOptions struct {
 	IncludeTags      bool
 	IncludeTraceID   bool
 	IncludeRetryable bool
+	ContextFields    []string
 
 	// Timing information
 	IncludeCreatedTime bool
@@ -346,6 +347,13 @@ func WithUserFields(include ...bool) func(*LogOptions) {
 		if len(include) > 0 {
 			opts.IncludeUserFields = include[0]
 		}
+	}
+}
+
+// WithContextFields sets the context fields to include in the log output
+func WithContextFields(fields ...string) func(*LogOptions) {
+	return func(opts *LogOptions) {
+		opts.ContextFields = fields
 	}
 }
 
@@ -532,6 +540,13 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 		fields = append(fields, opts.FieldNamePrefix+"retryable", true)
 	}
 
+	for _, field := range opts.ContextFields {
+		value := ec.Context.Value(field)
+		if value != nil {
+			fields = append(fields, opts.FieldNamePrefix+field, value)
+		}
+	}
+
 	// Add timing information
 	if opts.IncludeCreatedTime {
 		fields = append(fields, opts.FieldNamePrefix+"created_at", ec.Created)
@@ -597,6 +612,13 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 	}
 	if opts.IncludeRetryable && ec.Retryable {
 		fields[opts.FieldNamePrefix+"retryable"] = true
+	}
+
+	for _, field := range opts.ContextFields {
+		value := ec.Context.Value(field)
+		if value != nil {
+			fields[opts.FieldNamePrefix+field] = value
+		}
 	}
 
 	// Add timing information
