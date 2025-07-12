@@ -5,6 +5,57 @@ import (
 	"time"
 )
 
+// Error represents the common interface for all erro errors
+type Error interface {
+	error
+
+	// Chaining methods for building errors
+	Code(code string) Error
+	Category(category string) Error
+	Severity(severity ErrorSeverity) Error
+	Fields(fields ...any) Error
+	Context(ctx context.Context) Error
+	Tags(tags ...string) Error
+	Retryable(retryable bool) Error
+	Span(span Span) Error
+
+	// Extraction methods
+	GetBase() Error
+	GetContext() context.Context
+	GetCode() string
+	GetCategory() string
+	GetTags() []string
+	IsRetryable() bool
+	GetSpan() Span
+	GetFields() []any
+	GetCreated() time.Time
+
+	// Severity checking methods
+	GetSeverity() ErrorSeverity
+	IsCritical() bool
+	IsHigh() bool
+	IsMedium() bool
+	IsLow() bool
+	IsInfo() bool
+	IsUnknown() bool
+
+	// Stack trace access
+	Stack() Stack
+	StackFormat() string
+	StackWithError() string
+
+	// Error comparison
+	Is(target error) bool
+}
+
+type Span interface {
+	RecordError(err error)
+	SetAttributes(attributes ...any)
+	TraceID() string
+	SpanID() string
+	ParentSpanID() string
+}
+
 // ErrorSeverity represents the severity level of an error
 type ErrorSeverity string
 
@@ -50,47 +101,4 @@ func (s ErrorSeverity) Label() string {
 	default:
 		return ""
 	}
-}
-
-// Error represents the common interface for all erro errors
-type Error interface {
-	error
-
-	// Chaining methods for building errors
-	Code(code string) Error
-	Category(category string) Error
-	Severity(severity ErrorSeverity) Error
-	Fields(fields ...any) Error
-	Context(ctx context.Context) Error
-	Tags(tags ...string) Error
-	Retryable(retryable bool) Error
-	TraceID(traceID string) Error
-
-	// Extraction methods
-	GetBase() Error
-	GetContext() context.Context
-	GetCode() string
-	GetCategory() string
-	GetTags() []string
-	IsRetryable() bool
-	GetTraceID() string
-	GetFields() []any
-	GetCreated() time.Time
-
-	// Severity checking methods
-	GetSeverity() ErrorSeverity
-	IsCritical() bool
-	IsHigh() bool
-	IsMedium() bool
-	IsLow() bool
-	IsInfo() bool
-	IsUnknown() bool
-
-	// Stack trace access
-	Stack() Stack
-	StackFormat() string
-	StackWithError() string
-
-	// Error comparison
-	Is(target error) bool
 }

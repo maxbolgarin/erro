@@ -209,10 +209,7 @@ func ExampleList() {
 
 	// Output:
 	// Validation failed:
-	// multiple errors (3):
-	//   1. name is required
-	//   2. email is invalid
-	//   3. validation failed: age out of range
+	// multiple errors (3): (1) [HIGH] name is required; (2) [HIGH] email is invalid; (3) [HIGH] validation failed: age out of range
 }
 
 func ExampleSet() {
@@ -234,13 +231,6 @@ func ExampleSet() {
 
 	fmt.Printf("Stored %d unique errors out of 110 attempts\n", s.Len())
 
-	if err := s.Err(); err != nil {
-		// Will show 11 unique errors (1 timeout + 10 retry messages)
-		lines := strings.Split(err.Error(), "\n")
-		fmt.Printf("Combined error has %d lines\n", len(lines))
-	}
-
 	// Output:
 	// Stored 11 unique errors out of 110 attempts
-	// Combined error has 12 lines
 }

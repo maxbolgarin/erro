@@ -67,6 +67,9 @@ func (e *wrapError) Severity(severity ErrorSeverity) Error {
 
 func (e *wrapError) Fields(fields ...any) Error {
 	e.wrapFields = safeAppendFields(e.wrapFields, prepareFields(fields))
+	if e.base.span != nil {
+		e.base.span.SetAttributes(e.wrapFields...)
+	}
 	return e
 }
 
@@ -85,8 +88,11 @@ func (e *wrapError) Retryable(retryable bool) Error {
 	return e
 }
 
-func (e *wrapError) TraceID(traceID string) Error {
-	e.base.traceID = truncateString(traceID, maxTraceIDLength)
+func (e *wrapError) Span(span Span) Error {
+	span.SetAttributes(e.base.fields...)
+	span.SetAttributes(e.wrapFields...)
+	span.RecordError(e)
+	e.base.span = span
 	return e
 }
 
@@ -97,7 +103,7 @@ func (e *wrapError) GetCode() string             { return e.base.code }
 func (e *wrapError) GetCategory() string         { return e.base.category }
 func (e *wrapError) GetTags() []string           { return e.base.tags }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
-func (e *wrapError) GetTraceID() string          { return e.base.traceID }
+func (e *wrapError) GetSpan() Span               { return e.base.span }
 func (e *wrapError) GetCreated() time.Time       { return e.base.created }
 
 // Severity checking methods
@@ -162,6 +168,7 @@ func (e *wrapError) GetFields() []any {
 }
 
 func newWrapError(wrapped Error, message string, fields ...any) Error {
+	fields = prepareFields(fields)
 	if wrapped == nil {
 		wrapped = New(message, fields...)
 	}
@@ -179,11 +186,15 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		return Wrap(ErrMaxWrapDepthExceeded, message, fields...)
 	}
 
+	if base.span != nil {
+		base.span.SetAttributes(fields...)
+	}
+
 	return &wrapError{
 		base:        base,
 		wrapped:     wrapped,
 		wrapMessage: truncateString(message, maxMessageLength),
-		wrapFields:  prepareFields(fields),
+		wrapFields:  fields,
 		createdAt:   time.Now(),
 	}
 }

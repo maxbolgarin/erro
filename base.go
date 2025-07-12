@@ -22,8 +22,9 @@ type baseError struct {
 	severity  ErrorSeverity   // Error severity
 	tags      []string        // Tags
 	retryable bool            // Retryable flag
-	traceID   string          // Trace ID
 	ctx       context.Context // Associated context
+
+	span Span // Span
 
 	depth int // Tracks wrapping depth to prevent stack overflow
 }
@@ -93,8 +94,10 @@ func (e *baseError) Retryable(retryable bool) Error {
 	return e
 }
 
-func (e *baseError) TraceID(traceID string) Error {
-	e.traceID = truncateString(traceID, maxTraceIDLength)
+func (e *baseError) Span(span Span) Error {
+	span.SetAttributes(e.fields...)
+	span.RecordError(e)
+	e.span = span
 	return e
 }
 
@@ -105,7 +108,7 @@ func (e *baseError) GetCode() string             { return e.code }
 func (e *baseError) GetCategory() string         { return e.category }
 func (e *baseError) GetTags() []string           { return e.tags }
 func (e *baseError) IsRetryable() bool           { return e.retryable }
-func (e *baseError) GetTraceID() string          { return e.traceID }
+func (e *baseError) GetSpan() Span               { return e.span }
 func (e *baseError) GetFields() []any            { return e.fields }
 func (e *baseError) GetCreated() time.Time       { return e.created }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/maxbolgarin/erro"
 )
 
-func TestNewerroPackage(t *testing.T) {
+func TestNewErroPackage(t *testing.T) {
 	// Test basic error creation with chaining
 	err := erro.New("database connection failed", "host", "localhost", "port", "5432").
 		Code("DB_001").
@@ -18,7 +18,7 @@ func TestNewerroPackage(t *testing.T) {
 		Tags("database", "connection")
 
 	// Test error message
-	expectedMsg := "database connection failed host=localhost port=5432"
+	expectedMsg := "[HIGH] database connection failed host=localhost port=5432"
 	if err.Error() != expectedMsg {
 		t.Errorf("Expected message: %s, got: %s", expectedMsg, err.Error())
 	}
@@ -75,7 +75,7 @@ func TestErrorWrapping(t *testing.T) {
 	}
 
 	// Test error message
-	expectedMsg := "operation failed operation=user_login: connection timeout timeout=30s"
+	expectedMsg := "[CRIT] operation failed operation=user_login: connection timeout timeout=30s"
 	if wrappedErr.Error() != expectedMsg {
 		t.Errorf("Expected: %s, got: %s", expectedMsg, wrappedErr.Error())
 	}
@@ -279,7 +279,7 @@ func TestComplexErrorScenario(t *testing.T) {
 
 	// Add trace ID and context
 	ctx := context.WithValue(context.Background(), "requestID", "req-123")
-	baseErr = baseErr.TraceID("trace-456").Context(ctx)
+	baseErr = baseErr.Category("trace-456").Context(ctx)
 
 	// Wrap with business context
 	businessErr := erro.Wrap(baseErr, "failed to save user", "user_id", "user-789", "operation", "create").
@@ -293,8 +293,8 @@ func TestComplexErrorScenario(t *testing.T) {
 		t.Errorf("Expected code: CONN_REFUSED, got: %s", finalErr.GetCode())
 	}
 
-	if finalErr.GetTraceID() != "trace-456" {
-		t.Errorf("Expected trace ID: trace-456, got: %s", finalErr.GetTraceID())
+	if finalErr.GetCategory() != "trace-456" {
+		t.Errorf("Expected trace ID: trace-456, got: %s", finalErr.GetCategory())
 	}
 
 	if len(finalErr.GetTags()) != 2 {
@@ -435,17 +435,17 @@ func TestSeverityRefactoring(t *testing.T) {
 	})
 
 	t.Run("ErrorContext severity methods", func(t *testing.T) {
-		err := erro.New("test error").Severity("warning")
+		err := erro.New("test error").Severity("info")
 		ctx := erro.ExtractContext(err)
 		if ctx == nil {
 			t.Fatal("Expected context to exist")
 		}
 
-		if !ctx.IsWarning() {
-			t.Error("Expected context to be warning")
+		if !ctx.IsInfo() {
+			t.Error("Expected context to be info")
 		}
-		if ctx.GetSeverityLevel() != erro.Info {
-			t.Errorf("Expected context severity level to be SeverityWarning, got %s", ctx.GetSeverityLevel())
+		if ctx.GetSeverity() != erro.Info {
+			t.Errorf("Expected context severity level to be SeverityInfo, got %s", ctx.GetSeverity())
 		}
 	})
 }

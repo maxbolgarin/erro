@@ -2,7 +2,7 @@ package erro
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -19,7 +19,6 @@ type List struct {
 	ctx       context.Context
 	tags      []string
 	retryable bool
-	traceID   string
 }
 
 // Newlist creates a new error list
@@ -132,7 +131,6 @@ func (g *List) Copy() *List {
 	clone.ctx = g.ctx
 	clone.tags = append([]string{}, g.tags...)
 	clone.retryable = g.retryable
-	clone.traceID = g.traceID
 	return clone
 }
 
@@ -235,11 +233,6 @@ func (g *List) Retryable(retryable bool) *List {
 	return g
 }
 
-func (g *List) TraceID(traceID string) *List {
-	g.traceID = traceID
-	return g
-}
-
 func (g *List) add(err Error) *List {
 	g.applyMetadata(err)
 	g.errors = append(g.errors, err)
@@ -268,9 +261,6 @@ func (g *List) applyMetadata(err Error) {
 	}
 	if g.retryable {
 		err.Retryable(g.retryable)
-	}
-	if g.traceID != "" {
-		err.TraceID(g.traceID)
 	}
 }
 
@@ -407,11 +397,6 @@ func (s *Set) Retryable(retryable bool) *Set {
 	return s
 }
 
-func (s *Set) TraceID(traceID string) *Set {
-	s.List.TraceID(traceID)
-	return s
-}
-
 func (s *Set) add(err Error) *Set {
 	s.applyMetadata(err)
 	key := s.errorKey(err)
@@ -427,37 +412,6 @@ func (s *Set) errorKey(err Error) string {
 	return err.GetCode() + ":" + err.Error()
 }
 
-// multiError represents multiple errors combined into one
-type multiError struct {
-	errors []Error
-}
-
-// Error implements the error interface for multiError
-func (m *multiError) Error() string {
-	if len(m.errors) == 0 {
-		return ""
-	}
-	if len(m.errors) == 1 {
-		return m.errors[0].Error()
-	}
-
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("multiple errors (%d):", len(m.errors)))
-	for i, err := range m.errors {
-		builder.WriteString(fmt.Sprintf("\n  %d. %s", i+1, err.Error()))
-	}
-	return builder.String()
-}
-
-// Unwrap returns the underlying errors for error chain traversal
-func (m *multiError) Unwrap() []error {
-	result := make([]error, len(m.errors))
-	for i, err := range m.errors {
-		result[i] = err
-	}
-	return result
-}
-
 // SafeList is a thread-safe version of List that can be used safely across multiple goroutines
 type SafeList struct {
 	errors []Error
@@ -469,7 +423,6 @@ type SafeList struct {
 	ctx       context.Context
 	tags      []string
 	retryable bool
-	traceID   string
 
 	// Thread safety
 	mu sync.RWMutex // Protects all fields
@@ -603,7 +556,6 @@ func (g *SafeList) Copy() *SafeList {
 	clone.ctx = g.ctx
 	clone.tags = append([]string{}, g.tags...)
 	clone.retryable = g.retryable
-	clone.traceID = g.traceID
 	return clone
 }
 
@@ -764,13 +716,6 @@ func (g *SafeList) Retryable(retryable bool) *SafeList {
 	return g
 }
 
-func (g *SafeList) TraceID(traceID string) *SafeList {
-	g.mu.Lock()
-	g.traceID = traceID
-	g.mu.Unlock()
-	return g
-}
-
 func (g *SafeList) add(err Error) *SafeList {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -802,9 +747,6 @@ func (g *SafeList) applyMetadata(err Error) {
 	}
 	if g.retryable {
 		err.Retryable(g.retryable)
-	}
-	if g.traceID != "" {
-		err.TraceID(g.traceID)
 	}
 }
 
@@ -945,11 +887,6 @@ func (s *SafeSet) Retryable(retryable bool) *SafeSet {
 	return s
 }
 
-func (s *SafeSet) TraceID(traceID string) *SafeSet {
-	s.SafeList.TraceID(traceID)
-	return s
-}
-
 func (s *SafeSet) add(err Error) *SafeSet {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -966,4 +903,43 @@ func (s *SafeSet) add(err Error) *SafeSet {
 // errorKey generates a unique key for an error based on code and message
 func (s *SafeSet) errorKey(err Error) string {
 	return err.GetCode() + ":" + err.Error()
+}
+
+// multiError represents multiple errors combined into one
+type multiError struct {
+	errors []Error
+}
+
+// Error implements the error interface for multiError
+func (m *multiError) Error() string {
+	if len(m.errors) == 0 {
+		return ""
+	}
+	if len(m.errors) == 1 {
+		return m.errors[0].Error()
+	}
+
+	var builder strings.Builder
+	builder.WriteString("multiple errors (")
+	builder.WriteString(strconv.Itoa(len(m.errors)))
+	builder.WriteString("): ")
+	for i, err := range m.errors {
+		builder.WriteString("(")
+		builder.WriteString(strconv.Itoa(i + 1))
+		builder.WriteString(") ")
+		builder.WriteString(err.Error())
+		if i < len(m.errors)-1 {
+			builder.WriteString("; ")
+		}
+	}
+	return builder.String()
+}
+
+// Unwrap returns the underlying errors for error chain traversal
+func (m *multiError) Unwrap() []error {
+	result := make([]error, len(m.errors))
+	for i, err := range m.errors {
+		result[i] = err
+	}
+	return result
 }

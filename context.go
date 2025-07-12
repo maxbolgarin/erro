@@ -11,21 +11,23 @@ import (
 
 // ErrorContext contains all extractable context from an error
 type ErrorContext struct {
-	Message   string          // Base error message
-	Function  string          // Function where error was created
-	Package   string          // Package where error was created
-	File      string          // File where error was created
-	Line      int             // Line where error was created
-	Fields    map[string]any  // All key-value pairs
-	Code      string          // Error code
-	Category  string          // Error category
-	Severity  ErrorSeverity   // Error severity
-	Tags      []string        // Error tags
-	Retryable bool            // Whether error is retryable
-	Created   time.Time       // When error was created
-	TraceID   string          // Trace ID if available
-	Context   context.Context // Associated context
-	Stack     Stack           // Stack trace frames
+	Message      string          // Base error message
+	Function     string          // Function where error was created
+	Package      string          // Package where error was created
+	File         string          // File where error was created
+	Line         int             // Line where error was created
+	Fields       map[string]any  // All key-value pairs
+	Code         string          // Error code
+	Category     string          // Error category
+	Severity     ErrorSeverity   // Error severity
+	Tags         []string        // Error tags
+	Retryable    bool            // Whether error is retryable
+	Created      time.Time       // When error was created
+	TraceID      string          // Trace ID if available
+	SpanID       string          // Span ID if available
+	ParentSpanID string          // Parent Span ID if available
+	Context      context.Context // Associated context
+	Stack        Stack           // Stack trace frames
 }
 
 // Severity checking methods for ErrorContext
@@ -33,11 +35,11 @@ func (ec *ErrorContext) IsCritical() bool { return ec.Severity == Critical }
 func (ec *ErrorContext) IsHigh() bool     { return ec.Severity == High }
 func (ec *ErrorContext) IsMedium() bool   { return ec.Severity == Medium }
 func (ec *ErrorContext) IsLow() bool      { return ec.Severity == Low }
-func (ec *ErrorContext) IsWarning() bool  { return ec.Severity == Info }
+func (ec *ErrorContext) IsInfo() bool     { return ec.Severity == Info }
 func (ec *ErrorContext) IsUnknown() bool {
 	return ec.Severity == "" || ec.Severity == Unknown
 }
-func (ec *ErrorContext) GetSeverityLevel() ErrorSeverity {
+func (ec *ErrorContext) GetSeverity() ErrorSeverity {
 	if ec.Severity == "" {
 		return Unknown
 	}
@@ -94,7 +96,7 @@ func ExtractContext(err error) *ErrorContext {
 		}
 	}
 
-	return &ErrorContext{
+	ec := &ErrorContext{
 		Message:   extractFullMessageWithoutFields(erroErr), // Use full message chain instead of just base.message
 		Function:  function,
 		Package:   pkg,
@@ -107,10 +109,16 @@ func ExtractContext(err error) *ErrorContext {
 		Tags:      baseInt.GetTags(),
 		Retryable: baseInt.IsRetryable(),
 		Created:   baseInt.GetCreated(),
-		TraceID:   baseInt.GetTraceID(),
 		Context:   baseInt.GetContext(),
 		Stack:     baseInt.Stack(),
 	}
+
+	if span := baseInt.GetSpan(); span != nil {
+		ec.TraceID = span.TraceID()
+		ec.SpanID = span.SpanID()
+		ec.ParentSpanID = span.ParentSpanID()
+	}
+	return ec
 }
 
 // LogFields returns a slice of alternating key-value pairs for structured loggers
@@ -193,8 +201,8 @@ type LogOptions struct {
 	IncludeCategory  bool
 	IncludeSeverity  bool
 	IncludeTags      bool
-	IncludeTraceID   bool
 	IncludeRetryable bool
+	IncludeTracing   bool
 	ContextFields    []string
 
 	// Timing information
@@ -231,7 +239,7 @@ func DefaultLogOptions() *LogOptions {
 		IncludeCode:        true,
 		IncludeCategory:    true,
 		IncludeSeverity:    true,
-		IncludeTraceID:     true,
+		IncludeTracing:     true,
 		IncludeCreatedTime: false, // Often too verbose
 		IncludeTags:        false,
 		IncludeRetryable:   true,
@@ -263,7 +271,7 @@ func MinimalLogOpts() []func(*LogOptions) {
 		WithSeverity(true),
 		WithCategory(false),
 		WithTags(false),
-		WithTraceID(false),
+		WithTracing(false),
 		WithRetryable(false),
 		WithCreatedTime(false),
 		WithFunction(false),
@@ -282,7 +290,7 @@ func VerboseLogOptions() *LogOptions {
 		IncludeCategory:    true,
 		IncludeSeverity:    true,
 		IncludeTags:        true,
-		IncludeTraceID:     true,
+		IncludeTracing:     true,
 		IncludeRetryable:   true,
 		IncludeCreatedTime: true,
 		IncludeFunction:    true,
@@ -302,7 +310,7 @@ func VerboseLogOpts() []func(*LogOptions) {
 		WithSeverity(true),
 		WithCategory(true),
 		WithTags(true),
-		WithTraceID(true),
+		WithTracing(true),
 		WithRetryable(true),
 		WithCreatedTime(true),
 		WithFunction(true),
@@ -324,7 +332,7 @@ func EmptyLogOpts() []func(*LogOptions) {
 		WithSeverity(false),
 		WithCategory(false),
 		WithTags(false),
-		WithTraceID(false),
+		WithTracing(false),
 		WithRetryable(false),
 		WithCreatedTime(false),
 		WithFunction(false),
@@ -397,12 +405,12 @@ func WithTags(include ...bool) func(*LogOptions) {
 	}
 }
 
-// WithTraceID enables/disables trace ID field
-func WithTraceID(include ...bool) func(*LogOptions) {
+// WithTracing enables/disables tracing field
+func WithTracing(include ...bool) func(*LogOptions) {
 	return func(opts *LogOptions) {
-		opts.IncludeTraceID = true
+		opts.IncludeTracing = true
 		if len(include) > 0 {
-			opts.IncludeTraceID = include[0]
+			opts.IncludeTracing = include[0]
 		}
 	}
 }
@@ -533,8 +541,10 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 	if opts.IncludeTags && len(ec.Tags) > 0 {
 		fields = append(fields, opts.FieldNamePrefix+"tags", ec.Tags)
 	}
-	if opts.IncludeTraceID && ec.TraceID != "" {
-		fields = append(fields, opts.FieldNamePrefix+"trace_id", ec.TraceID)
+	if opts.IncludeTracing && ec.TraceID != "" {
+		fields = append(fields, "trace_id", ec.TraceID)
+		fields = append(fields, "span_id", ec.SpanID)
+		fields = append(fields, "parent_span_id", ec.ParentSpanID)
 	}
 	if opts.IncludeRetryable && ec.Retryable {
 		fields = append(fields, opts.FieldNamePrefix+"retryable", true)
@@ -609,8 +619,10 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 	if opts.IncludeTags && len(ec.Tags) > 0 {
 		fields[opts.FieldNamePrefix+"tags"] = ec.Tags
 	}
-	if opts.IncludeTraceID && ec.TraceID != "" {
-		fields[opts.FieldNamePrefix+"trace_id"] = ec.TraceID
+	if opts.IncludeTracing && ec.TraceID != "" {
+		fields["trace_id"] = ec.TraceID
+		fields["span_id"] = ec.SpanID
+		fields["parent_span_id"] = ec.ParentSpanID
 	}
 	if opts.IncludeRetryable && ec.Retryable {
 		fields[opts.FieldNamePrefix+"retryable"] = true
