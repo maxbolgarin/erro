@@ -93,25 +93,11 @@ func safeAppendFields[T any](existing []T, newFields []T) []T {
 }
 
 // truncateString safely truncates a string to maximum length
-func truncateString(s string, maxLen int) string {
+func truncateString[T ~string](s T, maxLen int) T {
 	if len(s) <= maxLen {
 		return s
 	}
 	return s[:maxLen]
-}
-
-// truncateTags safely truncates tags array and individual tag lengths
-func truncateTags(tags []string) []string {
-	if len(tags) > maxTagsCount {
-		tags = tags[:maxTagsCount]
-	}
-
-	// Truncate individual tag lengths
-	for i, tag := range tags {
-		tags[i] = truncateString(tag, maxTagLength)
-	}
-
-	return tags
 }
 
 // prepareFields prepares fields with validation and safe truncation

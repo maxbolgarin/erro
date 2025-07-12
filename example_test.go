@@ -14,8 +14,7 @@ func TestNewErroPackage(t *testing.T) {
 		Code("DB_001").
 		Category("infrastructure").
 		Severity("high").
-		Retryable(true).
-		Tags("database", "connection")
+		Retryable(true)
 
 	// Test error message
 	expectedMsg := "[HIGH] database connection failed host=localhost port=5432"
@@ -40,10 +39,6 @@ func TestNewErroPackage(t *testing.T) {
 		t.Error("Expected error to be retryable")
 	}
 
-	tags := err.GetTags()
-	if len(tags) != 2 || tags[0] != "database" || tags[1] != "connection" {
-		t.Errorf("Expected tags: [database, connection], got: %v", tags)
-	}
 }
 
 func TestErrorWrapping(t *testing.T) {
@@ -282,8 +277,7 @@ func TestComplexErrorScenario(t *testing.T) {
 	baseErr = baseErr.Category("trace-456").Context(ctx)
 
 	// Wrap with business context
-	businessErr := erro.Wrap(baseErr, "failed to save user", "user_id", "user-789", "operation", "create").
-		Tags("user-management", "database")
+	businessErr := erro.Wrap(baseErr, "failed to save user", "user_id", "user-789", "operation", "create")
 
 	// Final wrap with request context
 	finalErr := erro.Wrap(businessErr, "API request failed", "endpoint", "/api/users", "method", "POST")
@@ -295,10 +289,6 @@ func TestComplexErrorScenario(t *testing.T) {
 
 	if finalErr.GetCategory() != "trace-456" {
 		t.Errorf("Expected trace ID: trace-456, got: %s", finalErr.GetCategory())
-	}
-
-	if len(finalErr.GetTags()) != 2 {
-		t.Errorf("Expected 2 tags, got: %d", len(finalErr.GetTags()))
 	}
 
 	// Test all errors point to same base

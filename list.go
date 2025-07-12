@@ -2,7 +2,6 @@ package erro
 
 import (
 	"context"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,7 +16,6 @@ type List struct {
 	class     Class
 	category  Category
 	severity  Severity
-	tags      []Tag
 	fields    []any
 	ctx       context.Context
 	retryable bool
@@ -132,7 +130,6 @@ func (g *List) Copy() *List {
 	clone.severity = g.severity
 	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
 	clone.ctx = g.ctx
-	clone.tags = append(make([]Tag, 0, len(g.tags)), g.tags...)
 	clone.retryable = g.retryable
 	return clone
 }
@@ -210,7 +207,6 @@ func (g *List) Severity(severity Severity) *List {
 func (g *List) GetCode() string       { return g.code }
 func (g *List) GetClass() Class       { return g.class }
 func (g *List) GetCategory() Category { return g.category }
-func (g *List) GetTags() []Tag        { return g.tags }
 func (g *List) GetFields() []any      { return g.fields }
 func (g *List) GetContext() context.Context {
 	return g.ctx
@@ -239,15 +235,6 @@ func (g *List) Fields(fields ...any) *List {
 func (g *List) Context(ctx context.Context) *List {
 	g.ctx = ctx
 	return g
-}
-
-func (g *List) Tags(tags ...Tag) *List {
-	g.tags = append(g.tags, tags...)
-	return g
-}
-
-func (g *List) HasTag(tag Tag) bool {
-	return slices.Contains(g.tags, tag)
 }
 
 func (g *List) Retryable(retryable bool) *List {
@@ -280,9 +267,6 @@ func (g *List) applyMetadata(err Error) {
 	}
 	if g.ctx != nil {
 		err.Context(g.ctx)
-	}
-	if len(g.tags) > 0 {
-		err.Tags(g.tags...)
 	}
 	if g.retryable {
 		err.Retryable(g.retryable)
@@ -401,7 +385,6 @@ func (s *Set) Severity(severity Severity) *Set {
 func (s *Set) GetCode() string       { return s.List.GetCode() }
 func (s *Set) GetClass() Class       { return s.List.GetClass() }
 func (s *Set) GetCategory() Category { return s.List.GetCategory() }
-func (s *Set) GetTags() []Tag        { return s.List.GetTags() }
 func (s *Set) GetFields() []any      { return s.List.GetFields() }
 func (s *Set) GetContext() context.Context {
 	return s.List.GetContext()
@@ -424,15 +407,6 @@ func (s *Set) Fields(fields ...any) *Set {
 
 func (s *Set) Context(ctx context.Context) *Set {
 	s.List.Context(ctx)
-	return s
-}
-
-func (s *Set) HasTag(tag Tag) bool {
-	return s.List.HasTag(tag)
-}
-
-func (s *Set) Tags(tags ...Tag) *Set {
-	s.List.Tags(tags...)
 	return s
 }
 
@@ -466,7 +440,6 @@ type SafeList struct {
 	severity  Severity
 	fields    []any
 	ctx       context.Context
-	tags      []Tag
 	retryable bool
 
 	// Thread safety
@@ -600,7 +573,6 @@ func (g *SafeList) Copy() *SafeList {
 	clone.severity = g.severity
 	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
 	clone.ctx = g.ctx
-	clone.tags = append(make([]Tag, 0, len(g.tags)), g.tags...)
 	clone.retryable = g.retryable
 	return clone
 }
@@ -716,11 +688,7 @@ func (g *SafeList) GetCategory() Category {
 	defer g.mu.RUnlock()
 	return g.category
 }
-func (g *SafeList) GetTags() []Tag {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.tags
-}
+
 func (g *SafeList) GetFields() []any {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -791,19 +759,6 @@ func (g *SafeList) Context(ctx context.Context) *SafeList {
 	return g
 }
 
-func (g *SafeList) HasTag(tag Tag) bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return slices.Contains(g.tags, tag)
-}
-
-func (g *SafeList) Tags(tags ...Tag) *SafeList {
-	g.mu.Lock()
-	g.tags = append(g.tags, tags...)
-	g.mu.Unlock()
-	return g
-}
-
 func (g *SafeList) Retryable(retryable bool) *SafeList {
 	g.mu.Lock()
 	g.retryable = retryable
@@ -836,9 +791,6 @@ func (g *SafeList) applyMetadata(err Error) {
 	}
 	if g.ctx != nil {
 		err.Context(g.ctx)
-	}
-	if len(g.tags) > 0 {
-		err.Tags(g.tags...)
 	}
 	if g.retryable {
 		err.Retryable(g.retryable)
@@ -961,7 +913,6 @@ func (s *SafeSet) Severity(severity Severity) *SafeSet {
 func (s *SafeSet) GetCode() string             { return s.SafeList.GetCode() }
 func (s *SafeSet) GetClass() Class             { return s.SafeList.GetClass() }
 func (s *SafeSet) GetCategory() Category       { return s.SafeList.GetCategory() }
-func (s *SafeSet) GetTags() []Tag              { return s.SafeList.GetTags() }
 func (s *SafeSet) GetFields() []any            { return s.SafeList.GetFields() }
 func (s *SafeSet) GetContext() context.Context { return s.SafeList.GetContext() }
 func (s *SafeSet) IsRetryable() bool           { return s.SafeList.IsRetryable() }
@@ -982,15 +933,6 @@ func (s *SafeSet) Fields(fields ...any) *SafeSet {
 
 func (s *SafeSet) Context(ctx context.Context) *SafeSet {
 	s.SafeList.Context(ctx)
-	return s
-}
-
-func (s *SafeSet) HasTag(tag Tag) bool {
-	return s.SafeList.HasTag(tag)
-}
-
-func (s *SafeSet) Tags(tags ...Tag) *SafeSet {
-	s.SafeList.Tags(tags...)
 	return s
 }
 

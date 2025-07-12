@@ -3,7 +3,6 @@ package erro
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 )
@@ -22,7 +21,6 @@ type baseError struct {
 	category  Category        // Error category
 	class     Class           // Error class
 	severity  Severity        // Error severity
-	tags      []Tag           // Tags
 	retryable bool            // Retryable flag
 	ctx       context.Context // Associated context
 
@@ -91,11 +89,6 @@ func (e *baseError) Context(ctx context.Context) Error {
 	return e
 }
 
-func (e *baseError) Tags(tags ...Tag) Error {
-	e.tags = safeAppendFields(e.tags, tags)
-	return e
-}
-
 func (e *baseError) Retryable(retryable bool) Error {
 	e.retryable = retryable
 	return e
@@ -114,8 +107,6 @@ func (e *baseError) GetContext() context.Context { return e.ctx }
 func (e *baseError) GetCode() string             { return e.code }
 func (e *baseError) GetCategory() Category       { return e.category }
 func (e *baseError) GetClass() Class             { return e.class }
-func (e *baseError) GetTags() []Tag              { return e.tags }
-func (e *baseError) HasTag(tag Tag) bool         { return slices.Contains(e.tags, tag) }
 func (e *baseError) IsRetryable() bool           { return e.retryable }
 func (e *baseError) GetSpan() Span               { return e.span }
 func (e *baseError) GetFields() []any            { return e.fields }

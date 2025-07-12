@@ -43,8 +43,7 @@ func TestGroup_Chaining(t *testing.T) {
 		Code("TEST_CODE").
 		Category("validation").
 		Severity("high").
-		Fields("user", "test-user").
-		Tags("api", "request")
+		Fields("user", "test-user")
 
 	g.New("validation failed").New("invalid input")
 

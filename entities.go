@@ -14,7 +14,6 @@ type Error interface {
 	Class(class Class) Error
 	Category(category Category) Error
 	Severity(severity Severity) Error
-	Tags(tags ...Tag) Error
 	Retryable(retryable bool) Error
 	Fields(fields ...any) Error
 	Context(ctx context.Context) Error
@@ -26,8 +25,6 @@ type Error interface {
 	GetCode() string
 	GetClass() Class
 	GetCategory() Category
-	GetTags() []Tag
-	HasTag(tag Tag) bool
 	IsRetryable() bool
 	GetFields() []any
 	GetContext() context.Context
@@ -74,14 +71,12 @@ const (
 	ClassUnavailable       Class = "unavailable"
 	ClassInternal          Class = "internal"
 	ClassCancelled         Class = "cancelled"
-	ClassDependencyFailed  Class = "dependency_failed"
 	ClassNotImplemented    Class = "not_implemented"
 	ClassSecurity          Class = "security"
 	ClassCritical          Class = "critical"
 	ClassExternal          Class = "external"
 	ClassDataLoss          Class = "data_loss"
 	ClassResourceExhausted Class = "resource_exhausted"
-	ClassExpected          Class = "expected"
 	ClassUnknown           Class = ""
 )
 
@@ -92,6 +87,7 @@ const (
 	CategoryNetwork       Category = "network"
 	CategoryOS            Category = "os"
 	CategoryAuth          Category = "auth"
+	CategorySecurity      Category = "security"
 	CategoryPayment       Category = "payment"
 	CategoryAPI           Category = "api"
 	CategoryBusinessLogic Category = "business_logic"
@@ -120,41 +116,6 @@ const (
 	SeverityLow      Severity = "low"
 	SeverityInfo     Severity = "info"
 	SeverityUnknown  Severity = ""
-)
-
-type Tag string
-
-const (
-	TagUnknown       Tag = "unknown"
-	TagTemporary     Tag = "temporary"
-	TagRetryable     Tag = "retryable"
-	TagCritical      Tag = "critical"
-	TagSecurity      Tag = "security"
-	TagUserInput     Tag = "user_input"
-	TagExternal      Tag = "external"
-	TagExpected      Tag = "expected"
-	TagDeprecated    Tag = "deprecated"
-	TagAudit         Tag = "audit"
-	TagFeatureFlag   Tag = "feature_flag"
-	TagExperimental  Tag = "experimental"
-	TagMigration     Tag = "migration"
-	TagThrottled     Tag = "throttled"
-	TagAlert         Tag = "alert"
-	TagMonitoring    Tag = "monitoring"
-	TagCompliance    Tag = "compliance"
-	TagPerformance   Tag = "performance"
-	TagResource      Tag = "resource"
-	TagDataLoss      Tag = "data_loss"
-	TagTimeout       Tag = "timeout"
-	TagCancelled     Tag = "cancelled"
-	TagConflict      Tag = "conflict"
-	TagDuplicate     Tag = "duplicate"
-	TagNotFound      Tag = "not_found"
-	TagAlreadyExists Tag = "already_exists"
-	TagHigh          Tag = "high"
-	TagMedium        Tag = "medium"
-	TagLow           Tag = "low"
-	TagInfo          Tag = "info"
 )
 
 // String returns the string representation of ErrorSeverity
@@ -197,8 +158,4 @@ func (c Class) String() string {
 
 func (c Category) String() string {
 	return string(c)
-}
-
-func (t Tag) String() string {
-	return string(t)
 }

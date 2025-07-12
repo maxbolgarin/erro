@@ -27,6 +27,6 @@ func main() {
 		slog.Info(message, fields...)
 	}, erro.WithStackFormat(erro.StackFormatList))
 
-	fmt.Println(err.Stack().FormatFull())
-	fmt.Printf("%+v\n", err)
+	err2 := erro.AIError.New("test2")
+	fmt.Printf("%+v\n", err2)
 }

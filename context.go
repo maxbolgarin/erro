@@ -21,7 +21,6 @@ type ErrorContext struct {
 	Category     Category        // Error category
 	Class        Class           // Error class
 	Severity     Severity        // Error severity
-	Tags         []Tag           // Error tags
 	Retryable    bool            // Whether error is retryable
 	Created      time.Time       // When error was created
 	TraceID      string          // Trace ID if available
@@ -110,7 +109,6 @@ func ExtractContext(err error) *ErrorContext {
 		Category:  baseInt.GetCategory(),
 		Class:     baseInt.GetClass(),
 		Severity:  baseInt.GetSeverity(),
-		Tags:      baseInt.GetTags(),
 		Retryable: baseInt.IsRetryable(),
 		Created:   baseInt.GetCreated(),
 		Context:   baseInt.GetContext(),
@@ -205,7 +203,6 @@ type LogOptions struct {
 	IncludeCode      bool
 	IncludeCategory  bool
 	IncludeSeverity  bool
-	IncludeTags      bool
 	IncludeRetryable bool
 	IncludeTracing   bool
 	ContextFields    []string
@@ -246,7 +243,6 @@ func DefaultLogOptions() *LogOptions {
 		IncludeSeverity:    true,
 		IncludeTracing:     true,
 		IncludeCreatedTime: false, // Often too verbose
-		IncludeTags:        false,
 		IncludeRetryable:   true,
 		IncludeFunction:    true,
 		IncludePackage:     false,
@@ -275,7 +271,6 @@ func MinimalLogOpts() []func(*LogOptions) {
 		WithCode(true),
 		WithSeverity(true),
 		WithCategory(false),
-		WithTags(false),
 		WithTracing(false),
 		WithRetryable(false),
 		WithCreatedTime(false),
@@ -294,7 +289,6 @@ func VerboseLogOptions() *LogOptions {
 		IncludeCode:        true,
 		IncludeCategory:    true,
 		IncludeSeverity:    true,
-		IncludeTags:        true,
 		IncludeTracing:     true,
 		IncludeRetryable:   true,
 		IncludeCreatedTime: true,
@@ -314,7 +308,6 @@ func VerboseLogOpts() []func(*LogOptions) {
 		WithCode(true),
 		WithSeverity(true),
 		WithCategory(true),
-		WithTags(true),
 		WithTracing(true),
 		WithRetryable(true),
 		WithCreatedTime(true),
@@ -336,7 +329,6 @@ func EmptyLogOpts() []func(*LogOptions) {
 		WithCode(false),
 		WithSeverity(false),
 		WithCategory(false),
-		WithTags(false),
 		WithTracing(false),
 		WithRetryable(false),
 		WithCreatedTime(false),
@@ -396,16 +388,6 @@ func WithSeverity(include ...bool) func(*LogOptions) {
 		opts.IncludeSeverity = true
 		if len(include) > 0 {
 			opts.IncludeSeverity = include[0]
-		}
-	}
-}
-
-// WithTags enables/disables error tags field
-func WithTags(include ...bool) func(*LogOptions) {
-	return func(opts *LogOptions) {
-		opts.IncludeTags = true
-		if len(include) > 0 {
-			opts.IncludeTags = include[0]
 		}
 	}
 }
@@ -541,9 +523,6 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 	if opts.IncludeSeverity && ec.Severity != "" {
 		fields = append(fields, opts.FieldNamePrefix+"severity", ec.Severity)
 	}
-	if opts.IncludeTags && len(ec.Tags) > 0 {
-		fields = append(fields, opts.FieldNamePrefix+"tags", ec.Tags)
-	}
 	if opts.IncludeTracing && ec.TraceID != "" {
 		fields = append(fields, "trace_id", ec.TraceID)
 		fields = append(fields, "span_id", ec.SpanID)
@@ -619,9 +598,7 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 	if opts.IncludeSeverity && ec.Severity != "" {
 		fields[opts.FieldNamePrefix+"severity"] = ec.Severity
 	}
-	if opts.IncludeTags && len(ec.Tags) > 0 {
-		fields[opts.FieldNamePrefix+"tags"] = ec.Tags
-	}
+
 	if opts.IncludeTracing && ec.TraceID != "" {
 		fields["trace_id"] = ec.TraceID
 		fields["span_id"] = ec.SpanID

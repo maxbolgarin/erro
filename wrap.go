@@ -83,11 +83,6 @@ func (e *wrapError) Context(ctx context.Context) Error {
 	return e
 }
 
-func (e *wrapError) Tags(tags ...Tag) Error {
-	e.base.tags = safeAppendFields(e.base.tags, tags)
-	return e
-}
-
 func (e *wrapError) Retryable(retryable bool) Error {
 	e.base.retryable = retryable
 	return e
@@ -107,8 +102,6 @@ func (e *wrapError) GetContext() context.Context { return e.base.ctx }
 func (e *wrapError) GetCode() string             { return e.base.code }
 func (e *wrapError) GetCategory() Category       { return e.base.category }
 func (e *wrapError) GetClass() Class             { return e.base.class }
-func (e *wrapError) GetTags() []Tag              { return e.base.tags }
-func (e *wrapError) HasTag(tag Tag) bool         { return e.base.HasTag(tag) }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
 func (e *wrapError) GetSpan() Span               { return e.base.span }
 func (e *wrapError) GetCreated() time.Time       { return e.base.created }
