@@ -12,11 +12,20 @@ type wrapError struct {
 	wrapped     Error      // The wrapped error (to get all its fields)
 	wrapMessage string     // Wrap message
 	wrapFields  []any      // Additional fields for this wrap
-	createdAt   time.Time  // When this wrap was created
-	wrapDepth   int        // Depth of this specific wrap (without mutating base)
+	createdAt   time.Time  // When this wrap was created (caching)
+	wrapDepth   int        // Depth of this specific wrap (without mutating base) (caching)
+
+	fullMessage string // Full message with fields (caching)
 }
 
 func (e *wrapError) Error() (out string) {
+	if e.fullMessage != "" {
+		return e.fullMessage
+	}
+	defer func() {
+		e.fullMessage = out
+	}()
+
 	out = buildFieldsMessage(e.wrapMessage, e.wrapFields)
 
 	// Build the complete chain by getting the wrapped error's message
@@ -46,8 +55,15 @@ func (e *wrapError) Error() (out string) {
 }
 
 // errorWithoutSeverity returns the error message without severity label
-func (e *wrapError) errorWithoutSeverity() string {
-	out := buildFieldsMessage(e.wrapMessage, e.wrapFields)
+func (e *wrapError) errorWithoutSeverity() (out string) {
+	if e.fullMessage != "" {
+		return e.fullMessage
+	}
+	defer func() {
+		e.fullMessage = out
+	}()
+
+	out = buildFieldsMessage(e.wrapMessage, e.wrapFields)
 
 	// Build the complete chain by getting the wrapped error's message without severity
 	var wrappedMsg string
@@ -88,16 +104,19 @@ func (e *wrapError) ID(idRaw ...string) Error {
 		id = e.base.GetID()
 	}
 	e.base.id = id
+	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Category(category Category) Error {
 	e.base.category = category
+	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Class(class Class) Error {
 	e.base.class = class
+	e.fullMessage = ""
 	return e
 }
 
@@ -106,6 +125,7 @@ func (e *wrapError) Severity(severity Severity) Error {
 		severity = SeverityUnknown
 	}
 	e.base.severity = severity
+	e.fullMessage = ""
 	return e
 }
 
@@ -114,16 +134,19 @@ func (e *wrapError) Fields(fields ...any) Error {
 	if e.base.span != nil {
 		e.base.span.SetAttributes(e.wrapFields...)
 	}
+	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Context(ctx context.Context) Error {
 	e.base.ctx = ctx
+	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Retryable(retryable bool) Error {
 	e.base.retryable = retryable
+	e.fullMessage = ""
 	return e
 }
 
@@ -132,6 +155,7 @@ func (e *wrapError) Span(span Span) Error {
 	span.SetAttributes(e.wrapFields...)
 	span.RecordError(e)
 	e.base.span = span
+	e.fullMessage = ""
 	return e
 }
 
@@ -157,20 +181,20 @@ func (e *wrapError) IsUnknown() bool {
 	return e.base.IsUnknown()
 }
 func (e *wrapError) Stack() Stack {
-	if e.base.frames == nil {
-		e.base.frames = e.base.stack.toFrames()
+	if e.base.initStack() {
+		e.fullMessage = ""
 	}
 	return e.base.frames
 }
 func (e *wrapError) StackFormat() string {
-	if e.base.frames == nil {
-		e.base.frames = e.base.stack.toFrames()
+	if e.base.initStack() {
+		e.fullMessage = ""
 	}
 	return e.base.frames.FormatFull()
 }
 func (e *wrapError) StackWithError() string {
-	if e.base.frames == nil {
-		e.base.frames = e.base.stack.toFrames()
+	if e.base.initStack() {
+		e.fullMessage = ""
 	}
 	return e.Error() + "\n" + e.base.frames.FormatFull()
 }
@@ -186,18 +210,37 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) boo
 		return false
 	}
 
-	// Check direct equality
+	// Check direct equality first (fastest path)
 	if e == target {
 		return true
 	}
 
-	// Cycle detection: if we've already visited this base error, return false
+	// Cycle detection: if we've already visited this base error in this path,
+	// skip this branch to avoid infinite recursion
 	if e.base != nil && visited[e.base] {
-		return false
+		return false // Skip this branch, not an error condition
 	}
 
+	// Mark this base as visited for cycle detection
 	if e.base != nil {
 		visited[e.base] = true
+		// Clean up after this branch to allow other paths to visit the same base
+		defer func() { delete(visited, e.base) }()
+	}
+
+	// Fast path: Check if target is an erro error and use optimized comparison
+	if targetErro, ok := target.(Error); ok {
+		// Compare by id if both have non-empty ids (very fast)
+		if e.base != nil && e.base.id != "" && targetErro.GetID() != "" {
+			if e.base.id == targetErro.GetID() {
+				return true
+			}
+		}
+
+		// Compare base messages (fast)
+		if e.base != nil && e.base.message == targetErro.GetMessage() {
+			return true
+		}
 	}
 
 	// Check if the wrapped error matches directly (most common case)
@@ -205,7 +248,8 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) boo
 		if e.wrapped == target {
 			return true
 		}
-		// Use the wrapped error's Is method with cycle detection
+
+		// Recursive check with cycle detection
 		if wrapErr, ok := e.wrapped.(*wrapError); ok {
 			if wrapErr.isWithVisited(target, visited) {
 				return true
@@ -215,7 +259,7 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) boo
 		}
 	}
 
-	// Check if the base error matches
+	// Check if the base error matches (use our optimized baseError.Is)
 	if e.base != nil && e.base.Is(target) {
 		return true
 	}

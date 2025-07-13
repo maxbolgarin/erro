@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // baseError holds the root error with all context and metadata
@@ -14,6 +16,7 @@ type baseError struct {
 	// Core error info
 	originalErr error     // Original error if wrapping external error
 	message     string    // Base message
+	fullMessage string    // Full message with fields (caching)
 	created     time.Time // Creation timestamp
 
 	// Metadata
@@ -25,14 +28,22 @@ type baseError struct {
 	retryable bool            // Retryable flag
 	ctx       context.Context // Associated context
 
-	stack  rawStack // Stack trace (program counters only - resolved on demand)
-	frames Stack    // Stack trace frames (for caching)
+	stackOnce sync.Once
+	stack     rawStack // Stack trace (program counters only - resolved on demand)
+	frames    Stack    // Stack trace frames (for caching)
 
 	span Span // Span
 }
 
 // Error implements the error interface
 func (e *baseError) Error() (out string) {
+	if e.fullMessage != "" {
+		return e.fullMessage
+	}
+	defer func() {
+		e.fullMessage = out
+	}()
+
 	out = buildFieldsMessage(e.message, e.fields)
 	// Always show severity label for base errors
 	if e.severity != "" {
@@ -49,8 +60,15 @@ func (e *baseError) Error() (out string) {
 }
 
 // errorWithoutSeverity returns the error message without severity label
-func (e *baseError) errorWithoutSeverity() string {
-	out := buildFieldsMessage(e.message, e.fields)
+func (e *baseError) errorWithoutSeverity() (out string) {
+	if e.fullMessage != "" {
+		return e.fullMessage
+	}
+	defer func() {
+		e.fullMessage = out
+	}()
+
+	out = buildFieldsMessage(e.message, e.fields)
 
 	if e.originalErr != nil {
 		if out == "" {
@@ -80,16 +98,19 @@ func (e *baseError) ID(idRaw ...string) Error {
 		id = newID(e.class, e.category, e.created)
 	}
 	e.id = id
+	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Category(category Category) Error {
 	e.category = category
+	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Class(class Class) Error {
 	e.class = class
+	e.fullMessage = ""
 	return e
 }
 
@@ -98,21 +119,25 @@ func (e *baseError) Severity(severity Severity) Error {
 		severity = SeverityUnknown
 	}
 	e.severity = severity
+	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Fields(fields ...any) Error {
 	e.fields = safeAppendFields(e.fields, prepareFields(fields))
+	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Context(ctx context.Context) Error {
 	e.ctx = ctx
+	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Retryable(retryable bool) Error {
 	e.retryable = retryable
+	e.fullMessage = ""
 	return e
 }
 
@@ -120,6 +145,7 @@ func (e *baseError) Span(span Span) Error {
 	span.SetAttributes(e.fields...)
 	span.RecordError(e)
 	e.span = span
+	e.fullMessage = ""
 	return e
 }
 
@@ -157,20 +183,20 @@ func (e *baseError) IsUnknown() bool {
 }
 
 func (e *baseError) Stack() Stack {
-	if e.frames == nil {
-		e.frames = e.stack.toFrames()
+	if e.initStack() {
+		e.fullMessage = ""
 	}
 	return e.frames
 }
 func (e *baseError) StackFormat() string {
-	if e.frames == nil {
-		e.frames = e.stack.toFrames()
+	if e.initStack() {
+		e.fullMessage = ""
 	}
 	return e.frames.FormatFull()
 }
 func (e *baseError) StackWithError() string {
-	if e.frames == nil {
-		e.frames = e.stack.toFrames()
+	if e.initStack() {
+		e.fullMessage = ""
 	}
 	return e.Error() + "\n" + e.frames.FormatFull()
 }
@@ -181,35 +207,65 @@ func (e *baseError) Is(target error) bool {
 		return false
 	}
 
-	// Check direct equality
+	// Check direct equality (fastest path)
 	if e == target {
 		return true
 	}
 
-	// Check if target is an erro error
+	// Fast path for erro errors - compare by metadata first
 	if targetErro, ok := target.(Error); ok {
-		// Compare by id if both have non-empty ids
-		if e.id != "" && targetErro.GetID() != "" && e.id == targetErro.GetID() {
+		// Compare by id if both have non-empty ids (very fast)
+		if e.id != "" && targetErro.GetID() != "" {
+			return e.id == targetErro.GetID()
+		}
+
+		// Compare base messages without fields (fast)
+		if e.message == targetErro.GetMessage() {
 			return true
 		}
-		// Compare base messages (without fields) for erro errors
-		return e.message == targetErro.GetMessage()
 	}
 
-	// For external errors, check if we wrap it first
+	// For external errors, check if we wrap it directly
 	if e.originalErr != nil {
-		// Check if the wrapped error matches directly
+		// Direct reference comparison (very fast)
 		if e.originalErr == target {
 			return true
 		}
-		// Check if the wrapped error has an Is method and use it
+
+		// If the wrapped error has an Is method, use it
 		if x, ok := e.originalErr.(interface{ Is(error) bool }); ok {
 			return x.Is(target)
 		}
+
+		// For external errors, compare the original error's string representation
+		// This avoids building our full error string with fields
+		return e.originalErr.Error() == target.Error()
 	}
 
-	// Final fallback: compare error strings for external errors
-	return e.Error() == target.Error()
+	// Last resort: only for comparison with external errors without originalErr
+	// Try to be smart about when to do expensive string comparison
+	if _, isErro := target.(Error); !isErro {
+		// Target is external error, we are baseError - only compare if we have no fields
+		if len(e.fields) == 0 && e.severity == "" {
+			// No fields, safe to compare messages
+			return e.message == target.Error()
+		}
+		// If we have fields, this comparison is likely wrong anyway since
+		// external errors won't match our formatted string with fields
+		return false
+	}
+
+	// Both are erro errors but didn't match on any fast path
+	// This should be rare with good error design
+	return false
+}
+
+func (e *baseError) initStack() (changed bool) {
+	e.stackOnce.Do(func() {
+		e.frames = e.stack.toFrames()
+		changed = true
+	})
+	return
 }
 
 // newBaseError creates a new base error with security validation
@@ -229,37 +285,130 @@ func buildFieldsMessage(message string, fields []any) string {
 		return message
 	}
 
-	var builder strings.Builder
-
-	// Estimate capacity: message + fields with reasonable estimates for key=value pairs
-	// Each field pair needs: space + key + "=" + value (estimate ~20 chars per pair)
-	estimatedSize := len(message) + (len(fields)/2)*20
-	builder.Grow(estimatedSize)
-
-	builder.WriteString(message)
+	msg := make([]byte, 0, len(message)+len(fields)*20)
+	msg = append(msg, message...)
 
 	for i := 0; i < len(fields); i += 2 {
 		if i+1 >= len(fields) {
 			break
 		}
-		builder.WriteString(" ")
-		key := valueToString(fields[i])
-		if utf8.RuneCountInString(key) > maxFieldKeyLength {
-			runes := []rune(key)
-			key = string(runes[:maxFieldKeyLength])
-		}
-		builder.WriteString(key)
 
-		builder.WriteString("=")
-		value := valueToString(fields[i+1])
-		if utf8.RuneCountInString(value) > maxFieldValueLength {
-			runes := []rune(value)
-			value = string(runes[:maxFieldValueLength])
+		msg = append(msg, ' ')
+		key, ok := fields[i].(string)
+		if !ok {
+			key = valueToString(fields[i])
 		}
-		builder.WriteString(value)
+		msg = append(msg, truncateString(key, maxFieldKeyLength)...)
+		msg = append(msg, '=')
+		value, ok := fields[i+1].(string)
+		if !ok {
+			value = valueToString(fields[i+1])
+		}
+		msg = append(msg, truncateString(value, maxFieldValueLength)...)
 	}
 
-	return builder.String()
+	return unsafe.String(unsafe.SliceData(msg), len(msg))
+}
+
+// valueToStringTruncated converts any value to string and truncates efficiently using byte-based approach
+func valueToString(value any) string {
+	if value == nil {
+		return ""
+	}
+	var str string
+	switch v := value.(type) {
+	case string:
+		str = v
+	case []byte:
+		str = string(v)
+	case time.Time:
+		str = v.Format(time.RFC3339)
+	case fmt.Stringer:
+		if v == nil {
+			return ""
+		}
+		str = v.String()
+	case error:
+		if v == nil {
+			return ""
+		}
+		str = v.Error()
+	case int:
+		return strconv.FormatInt(int64(v), 10) // Numbers don't need truncation
+	case int8:
+		return strconv.FormatInt(int64(v), 10)
+	case int16:
+		return strconv.FormatInt(int64(v), 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case uint:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10)
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'g', -1, 32)
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64)
+	case bool:
+		return strconv.FormatBool(v)
+	case []string:
+		str = strings.Join(v, ",")
+	default:
+		str = fmt.Sprintf("%v", v)
+	}
+
+	return str
+}
+
+func truncateString[T ~string](s T, maxLen int) T {
+	// Efficient byte-based truncation that preserves UTF-8 boundaries
+	if len(s) <= maxLen {
+		return s
+	}
+
+	// Fast path for ASCII strings (most common case)
+	if isASCII(s) {
+		return s[:maxLen]
+	}
+
+	// Slow path for UTF-8 strings - truncate at safe boundary
+	return truncateUTF8(s, maxLen)
+}
+
+// isASCII checks if string contains only ASCII characters (fast path)
+func isASCII[T ~string](s T) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// truncateUTF8 truncates string at UTF-8 boundary without expensive rune conversion
+func truncateUTF8[T ~string](s T, maxBytes int) T {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+
+	// Find the largest valid UTF-8 prefix within maxBytes
+	for i := maxBytes; i > 0; i-- {
+		if utf8.ValidString(string(s[:i])) {
+			return s[:i]
+		}
+	}
+	return ""
 }
 
 // countFormatVerbs counts the number of format verbs in a format string
@@ -303,18 +452,36 @@ func formatError(err Error, s fmt.State, verb rune) {
 }
 
 func newID(class Class, category Category, created time.Time) string {
-	if class == "" || len(class) < 2 {
-		class = "XX"
+	var buf [16]byte
+
+	if len(class) < 2 {
+		buf[0] = 'X'
+		buf[1] = 'X'
+	} else {
+		buf[0] = toUpperByte(class[0])
+		buf[1] = toUpperByte(class[1])
 	}
-	if category == "" || len(category) < 2 {
-		category = "XX"
+	if len(category) < 2 {
+		buf[2] = 'X'
+		buf[3] = 'X'
+	} else {
+		buf[2] = toUpperByte(category[0])
+		buf[3] = toUpperByte(category[1])
 	}
+	buf[4] = '-'
+
 	if created.IsZero() {
 		created = time.Now()
 	}
-	classStr := strings.ToUpper(string(class[:2]))
-	categoryStr := strings.ToUpper(string(category[:2]))
+	unique := (created.UnixMicro() % 10000) * 10000
 
-	timestampStr := strconv.FormatInt(created.UnixMicro(), 10)
-	return classStr + categoryStr + "-" + timestampStr[len(timestampStr)-4:]
+	strconv.AppendUint(buf[5:5], uint64(unique), 10)
+	return string(buf[:])
+}
+
+func toUpperByte(b byte) byte {
+	if b >= 'a' && b <= 'z' {
+		return b - 'a' + 'A'
+	}
+	return b
 }

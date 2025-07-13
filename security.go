@@ -92,23 +92,10 @@ func safeAppendFields[T any](existing []T, newFields []T) []T {
 	return append(existing, newFields...)
 }
 
-// truncateString safely truncates a string to maximum length
-func truncateString[T ~string](s T, maxLen int) T {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen]
-}
-
 // prepareFields prepares fields with validation and safe truncation
 func prepareFields(fields []any) []any {
 	if len(fields) == 0 {
 		return fields
-	}
-
-	// Ensure even number of elements (key-value pairs)
-	if len(fields)%2 != 0 {
-		fields = append(fields, "<missing>")
 	}
 
 	// Limit the number of fields to prevent DOS
@@ -117,5 +104,15 @@ func prepareFields(fields []any) []any {
 		fields = fields[:maxElements]
 	}
 
-	return fields
+	// Ensure even number of elements (key-value pairs)
+	if len(fields)%2 != 0 {
+		result := make([]any, len(fields)+1)
+		copy(result, fields)
+		result[len(fields)] = "<missing>"
+		return result
+	}
+
+	result := make([]any, len(fields))
+	copy(result, fields)
+	return result
 }

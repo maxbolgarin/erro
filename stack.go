@@ -554,18 +554,25 @@ func extractShortName(fullName string) string {
 	if fullName == "" {
 		return ""
 	}
-
-	// Handle methods (e.g., "(*Type).Method" or "Type.Method")
-	if idx := strings.LastIndex(fullName, ")."); idx != -1 {
-		return fullName[idx+2:]
+	// Find last dot using byte-based search
+	lastDot := -1
+	for i := len(fullName) - 1; i >= 0; i-- {
+		if fullName[i] == '.' {
+			lastDot = i
+			break
+		}
 	}
 
-	// Handle regular functions
-	if idx := strings.LastIndex(fullName, "."); idx != -1 {
-		return fullName[idx+1:]
+	if lastDot == -1 {
+		return fullName
 	}
 
-	return fullName
+	// Handle methods like "(*Type).Method"
+	if lastDot > 0 && fullName[lastDot-1] == ')' {
+		return fullName[lastDot+1:]
+	}
+
+	return fullName[lastDot+1:]
 }
 
 // extractPackageFromFunction extracts package name from full function name
@@ -665,6 +672,7 @@ func (rs rawStack) toFrames() Stack {
 
 	frames := make(Stack, 0, len(rs))
 	runtimeFrames := runtime.CallersFrames(rs)
+	cfg := GetStackTraceConfig()
 
 	for {
 		runtimeFrame, more := runtimeFrames.Next()
@@ -681,7 +689,7 @@ func (rs rawStack) toFrames() Stack {
 			FullName:         runtimeFrame.Function,
 			File:             runtimeFrame.File,
 			Line:             runtimeFrame.Line,
-			StackTraceConfig: GetStackTraceConfig(),
+			StackTraceConfig: cfg,
 		}
 
 		// Extract short name
