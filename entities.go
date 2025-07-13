@@ -10,7 +10,7 @@ type Error interface {
 	error
 
 	// Chaining methods for building errors
-	Code(code string) Error
+	ID(id ...string) Error
 	Class(class Class) Error
 	Category(category Category) Error
 	Severity(severity Severity) Error
@@ -22,7 +22,7 @@ type Error interface {
 	// Extraction methods
 	GetBase() Error
 	GetCreated() time.Time
-	GetCode() string
+	GetID() string
 	GetClass() Class
 	GetCategory() Category
 	IsRetryable() bool

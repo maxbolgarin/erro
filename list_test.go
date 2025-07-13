@@ -54,8 +54,8 @@ func TestGroup_Chaining(t *testing.T) {
 	}
 
 	for i, err := range errors {
-		if err.GetCode() != "TEST_CODE" {
-			t.Errorf("Error %d: expected code 'TEST_CODE', got '%s'", i, err.GetCode())
+		if err.GetID() != "TEST_CODE" {
+			t.Errorf("Error %d: expected code 'TEST_CODE', got '%s'", i, err.GetID())
 		}
 		if err.GetCategory() != "validation" {
 			t.Errorf("Error %d: expected category 'validation', got '%s'", i, err.GetCategory())
@@ -165,8 +165,8 @@ func TestSet_ChainingMethods(t *testing.T) {
 	}
 
 	err := errors[0]
-	if err.GetCode() != "SET_CODE" {
-		t.Errorf("Expected code 'SET_CODE', got '%s'", err.GetCode())
+	if err.GetID() != "SET_CODE" {
+		t.Errorf("Expected code 'SET_CODE', got '%s'", err.GetID())
 	}
 	if err.GetCategory() != "test" {
 		t.Errorf("Expected category 'test', got '%s'", err.GetCategory())

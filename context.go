@@ -17,7 +17,7 @@ type ErrorContext struct {
 	File         string          // File where error was created
 	Line         int             // Line where error was created
 	Fields       map[string]any  // All key-value pairs
-	Code         string          // Error code
+	ID           string          // Error id
 	Category     Category        // Error category
 	Class        Class           // Error class
 	Severity     Severity        // Error severity
@@ -105,7 +105,7 @@ func ExtractContext(err error) *ErrorContext {
 		File:      file,
 		Line:      line,
 		Fields:    fields,
-		Code:      baseInt.GetCode(),
+		ID:        baseInt.GetID(),
 		Category:  baseInt.GetCategory(),
 		Class:     baseInt.GetClass(),
 		Severity:  baseInt.GetSeverity(),
@@ -200,7 +200,7 @@ type LogOptions struct {
 	IncludeUserFields bool
 
 	// Error metadata
-	IncludeCode      bool
+	IncludeID        bool
 	IncludeCategory  bool
 	IncludeSeverity  bool
 	IncludeRetryable bool
@@ -238,7 +238,7 @@ const (
 func DefaultLogOptions() *LogOptions {
 	return &LogOptions{
 		IncludeUserFields:  true,
-		IncludeCode:        true,
+		IncludeID:          true,
 		IncludeCategory:    true,
 		IncludeSeverity:    true,
 		IncludeTracing:     true,
@@ -258,7 +258,7 @@ func DefaultLogOptions() *LogOptions {
 func MinimalLogOptions() *LogOptions {
 	return &LogOptions{
 		IncludeUserFields: true,
-		IncludeCode:       true,
+		IncludeID:         true,
 		IncludeSeverity:   true,
 		StackFormat:       StackFormatJSON,
 		FieldNamePrefix:   "error_",
@@ -268,7 +268,7 @@ func MinimalLogOptions() *LogOptions {
 func MinimalLogOpts() []func(*LogOptions) {
 	return []func(*LogOptions){
 		WithUserFields(true),
-		WithCode(true),
+		WithID(true),
 		WithSeverity(true),
 		WithCategory(false),
 		WithTracing(false),
@@ -286,7 +286,7 @@ func MinimalLogOpts() []func(*LogOptions) {
 func VerboseLogOptions() *LogOptions {
 	return &LogOptions{
 		IncludeUserFields:  true,
-		IncludeCode:        true,
+		IncludeID:          true,
 		IncludeCategory:    true,
 		IncludeSeverity:    true,
 		IncludeTracing:     true,
@@ -305,7 +305,7 @@ func VerboseLogOptions() *LogOptions {
 func VerboseLogOpts() []func(*LogOptions) {
 	return []func(*LogOptions){
 		WithUserFields(true),
-		WithCode(true),
+		WithID(true),
 		WithSeverity(true),
 		WithCategory(true),
 		WithTracing(true),
@@ -326,7 +326,7 @@ func EmptyLogOptions() *LogOptions {
 func EmptyLogOpts() []func(*LogOptions) {
 	return []func(*LogOptions){
 		WithUserFields(false),
-		WithCode(false),
+		WithID(false),
 		WithSeverity(false),
 		WithCategory(false),
 		WithTracing(false),
@@ -362,12 +362,12 @@ func WithContextFields(fields ...string) func(*LogOptions) {
 	}
 }
 
-// WithCode enables/disables error code field
-func WithCode(include ...bool) func(*LogOptions) {
+// WithID enables/disables error id field
+func WithID(include ...bool) func(*LogOptions) {
 	return func(opts *LogOptions) {
-		opts.IncludeCode = true
+		opts.IncludeID = true
 		if len(include) > 0 {
-			opts.IncludeCode = include[0]
+			opts.IncludeID = include[0]
 		}
 	}
 }
@@ -514,8 +514,8 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 	}
 
 	// Add error metadata
-	if opts.IncludeCode && ec.Code != "" {
-		fields = append(fields, opts.FieldNamePrefix+"code", ec.Code)
+	if opts.IncludeID && ec.ID != "" {
+		fields = append(fields, opts.FieldNamePrefix+"id", ec.ID)
 	}
 	if opts.IncludeCategory && ec.Category != "" {
 		fields = append(fields, opts.FieldNamePrefix+"category", ec.Category)
@@ -589,8 +589,8 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 	}
 
 	// Add error metadata
-	if opts.IncludeCode && ec.Code != "" {
-		fields[opts.FieldNamePrefix+"code"] = ec.Code
+	if opts.IncludeID && ec.ID != "" {
+		fields[opts.FieldNamePrefix+"id"] = ec.ID
 	}
 	if opts.IncludeCategory && ec.Category != "" {
 		fields[opts.FieldNamePrefix+"category"] = ec.Category

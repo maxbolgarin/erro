@@ -47,8 +47,14 @@ func (e *wrapError) Unwrap() error {
 }
 
 // Chaining methods for wrapError - these modify the base error
-func (e *wrapError) Code(code string) Error {
-	e.base.code = truncateString(code, maxCodeLength)
+func (e *wrapError) ID(idRaw ...string) Error {
+	var id string
+	if len(idRaw) > 0 {
+		id = truncateString(idRaw[0], maxCodeLength)
+	} else {
+		id = e.base.GetID()
+	}
+	e.base.id = id
 	return e
 }
 
@@ -99,7 +105,7 @@ func (e *wrapError) Span(span Span) Error {
 // Getter methods for wrapError
 func (e *wrapError) GetBase() Error              { return e.base }
 func (e *wrapError) GetContext() context.Context { return e.base.ctx }
-func (e *wrapError) GetCode() string             { return e.base.code }
+func (e *wrapError) GetID() string               { return e.base.GetID() }
 func (e *wrapError) GetCategory() Category       { return e.base.category }
 func (e *wrapError) GetClass() Class             { return e.base.class }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }

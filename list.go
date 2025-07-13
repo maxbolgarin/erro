@@ -251,7 +251,7 @@ func (g *List) add(err Error) *List {
 // applyMetadata applies accumulated metadata to an error
 func (g *List) applyMetadata(err Error) {
 	if g.code != "" {
-		err.Code(g.code)
+		err.ID(g.code)
 	}
 	if g.category != CategoryUnknown {
 		err.Category(g.category)
@@ -427,7 +427,7 @@ func (s *Set) add(err Error) *Set {
 
 // errorKey generates a unique key for an error based on code and message
 func (s *Set) errorKey(err Error) string {
-	return err.GetCode() + ":" + err.Error()
+	return err.GetID() + ":" + err.Error()
 }
 
 // SafeList is a thread-safe version of List that can be used safely across multiple goroutines
@@ -778,7 +778,7 @@ func (g *SafeList) add(err Error) *SafeList {
 // applyMetadata applies accumulated metadata to an error
 func (g *SafeList) applyMetadata(err Error) {
 	if g.code != "" {
-		err.Code(g.code)
+		err.ID(g.code)
 	}
 	if g.category != "" {
 		err.Category(g.category)
@@ -956,7 +956,7 @@ func (s *SafeSet) add(err Error) *SafeSet {
 
 // errorKey generates a unique key for an error based on code and message
 func (s *SafeSet) errorKey(err Error) string {
-	return err.GetCode() + ":" + err.Error()
+	return err.GetID() + ":" + err.Error()
 }
 
 // multiError represents multiple errors combined into one

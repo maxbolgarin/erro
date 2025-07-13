@@ -11,7 +11,7 @@ import (
 func TestNewErroPackage(t *testing.T) {
 	// Test basic error creation with chaining
 	err := erro.New("database connection failed", "host", "localhost", "port", "5432").
-		Code("DB_001").
+		ID("DB_001").
 		Category("infrastructure").
 		Severity("high").
 		Retryable(true)
@@ -23,8 +23,8 @@ func TestNewErroPackage(t *testing.T) {
 	}
 
 	// Test metadata
-	if err.GetCode() != "DB_001" {
-		t.Errorf("Expected code: DB_001, got: %s", err.GetCode())
+	if err.GetID() != "DB_001" {
+		t.Errorf("Expected code: DB_001, got: %s", err.GetID())
 	}
 
 	if err.GetCategory() != "infrastructure" {
@@ -44,7 +44,7 @@ func TestNewErroPackage(t *testing.T) {
 func TestErrorWrapping(t *testing.T) {
 	// Create base error
 	baseErr := erro.New("connection timeout", "timeout", "30s").
-		Code("TIMEOUT").
+		ID("TIMEOUT").
 		Category("network")
 
 	// Wrap it
@@ -52,8 +52,8 @@ func TestErrorWrapping(t *testing.T) {
 		Severity("critical")
 
 	// Test that base error context is preserved
-	if wrappedErr.GetCode() != "TIMEOUT" {
-		t.Errorf("Expected code: TIMEOUT, got: %s", wrappedErr.GetCode())
+	if wrappedErr.GetID() != "TIMEOUT" {
+		t.Errorf("Expected code: TIMEOUT, got: %s", wrappedErr.GetID())
 	}
 
 	if wrappedErr.GetCategory() != "network" {
@@ -82,12 +82,12 @@ func TestExternalErrorWrapping(t *testing.T) {
 
 	// Wrap it with erro
 	wrappedErr := erro.Wrap(externalErr, "failed to process", "step", "validation").
-		Code("VALIDATION_ERROR").
+		ID("VALIDATION_ERROR").
 		Category("business")
 
 	// Test that it created a new base error
-	if wrappedErr.GetCode() != "VALIDATION_ERROR" {
-		t.Errorf("Expected code: VALIDATION_ERROR, got: %s", wrappedErr.GetCode())
+	if wrappedErr.GetID() != "VALIDATION_ERROR" {
+		t.Errorf("Expected code: VALIDATION_ERROR, got: %s", wrappedErr.GetID())
 	}
 
 	// Test error message includes external error
@@ -102,7 +102,7 @@ func TestContextExtraction(t *testing.T) {
 
 	err := erro.New("operation failed", "user", "alice", "action", "transfer").
 		Context(ctx).
-		Code("OP_001").
+		ID("OP_001").
 		Category("business").
 		Severity("medium").
 		Retryable(true)
@@ -118,8 +118,8 @@ func TestContextExtraction(t *testing.T) {
 		t.Errorf("Expected message: operation failed, got: %s", errorCtx.Message)
 	}
 
-	if errorCtx.Code != "OP_001" {
-		t.Errorf("Expected code: OP_001, got: %s", errorCtx.Code)
+	if errorCtx.ID != "OP_001" {
+		t.Errorf("Expected id: OP_001, got: %s", errorCtx.ID)
 	}
 
 	if errorCtx.Category != "business" {
@@ -164,7 +164,7 @@ func TestContextExtraction(t *testing.T) {
 
 func TestLoggingIntegration(t *testing.T) {
 	err := erro.New("database query failed", "table", "users", "query_time", "250ms").
-		Code("DB_SLOW").
+		ID("DB_SLOW").
 		Category("performance").
 		Severity("warning")
 
@@ -260,14 +260,14 @@ func processUser(userID string) erro.Error {
 
 func validateUser(userID string) erro.Error {
 	return erro.New("user validation failed", "user_id", userID, "reason", "invalid_format").
-		Code("USER_INVALID").
+		ID("USER_INVALID").
 		Category("validation")
 }
 
 func TestComplexErrorScenario(t *testing.T) {
 	// Simulate a complex error scenario
 	baseErr := erro.New("connection refused", "host", "db.example.com", "port", "5432").
-		Code("CONN_REFUSED").
+		ID("CONN_REFUSED").
 		Category("infrastructure").
 		Severity("high").
 		Retryable(true)
@@ -283,8 +283,8 @@ func TestComplexErrorScenario(t *testing.T) {
 	finalErr := erro.Wrap(businessErr, "API request failed", "endpoint", "/api/users", "method", "POST")
 
 	// Test that all context is preserved
-	if finalErr.GetCode() != "CONN_REFUSED" {
-		t.Errorf("Expected code: CONN_REFUSED, got: %s", finalErr.GetCode())
+	if finalErr.GetID() != "CONN_REFUSED" {
+		t.Errorf("Expected code: CONN_REFUSED, got: %s", finalErr.GetID())
 	}
 
 	if finalErr.GetCategory() != "trace-456" {
@@ -472,12 +472,12 @@ func TestErrorfAndWrapf(t *testing.T) {
 	}
 
 	// Test Wrapf with erro error
-	baseErroErr := erro.New("database error", "table", "users").Code("DB_001")
+	baseErroErr := erro.New("database error", "table", "users").ID("DB_001")
 	err5 := erro.Wrapf(baseErroErr, "operation %s failed", "insert", "operation_id", "op-456")
 
 	// Should preserve base error code
-	if err5.GetCode() != "DB_001" {
-		t.Errorf("Expected code: DB_001, got: %s", err5.GetCode())
+	if err5.GetID() != "DB_001" {
+		t.Errorf("Expected code: DB_001, got: %s", err5.GetID())
 	}
 
 	// Test Wrapf with nil error (should act like Errorf)
@@ -489,12 +489,12 @@ func TestErrorfAndWrapf(t *testing.T) {
 
 	// Test chaining after Errorf/Wrapf
 	err7 := erro.Errorf("api call failed: %s", "timeout", "duration", "5s").
-		Code("API_TIMEOUT").
+		ID("API_TIMEOUT").
 		Category("external").
 		Severity("high")
 
-	if err7.GetCode() != "API_TIMEOUT" {
-		t.Errorf("Expected code: API_TIMEOUT, got: %s", err7.GetCode())
+	if err7.GetID() != "API_TIMEOUT" {
+		t.Errorf("Expected code: API_TIMEOUT, got: %s", err7.GetID())
 	}
 
 	if err7.GetCategory() != "external" {

@@ -3,6 +3,7 @@ package erro_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/maxbolgarin/erro"
@@ -163,7 +164,7 @@ func BenchmarkErroWrappedGetStack(b *testing.B) {
 // Benchmark context extraction (rare operations - acceptable to be slower)
 func BenchmarkErroExtractContext(b *testing.B) {
 	err := erro.New("connection failed", "host", "localhost").
-		Code("DB_001").
+		ID("DB_001").
 		Category("infrastructure").
 		Severity("high")
 	b.ResetTimer()
@@ -175,7 +176,7 @@ func BenchmarkErroExtractContext(b *testing.B) {
 
 func BenchmarkErroLogFieldsMap(b *testing.B) {
 	err := erro.New("connection failed", "host", "localhost").
-		Code("DB_001").
+		ID("DB_001").
 		Category("infrastructure").
 		Severity("high")
 	b.ResetTimer()
@@ -200,7 +201,7 @@ func BenchmarkRealisticErroUsage(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		baseErr := erro.New("connection refused", "host", "db.example.com", "port", 5432).
-			Code("CONN_001").
+			ID("CONN_001").
 			Category("infrastructure")
 		wrappedErr := erro.Wrap(baseErr, "failed to connect to database", "timeout", "30s")
 		finalErr := erro.Wrap(wrappedErr, "user operation failed", "user_id", "123", "operation", "save")
@@ -235,7 +236,7 @@ func BenchmarkErroNewWithChaining(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = erro.New("connection failed", "host", "localhost").
-			Code("DB_001").
+			ID("DB_001").
 			Category("infrastructure").
 			Severity("high").
 			Retryable(true)
@@ -264,5 +265,40 @@ func BenchmarkMultipleWrapsNew(b *testing.B) {
 		err3 := erro.Wrap(err2, "wrap 2")
 		err4 := erro.Wrap(err3, "wrap 3")
 		_ = erro.Wrap(err4, "wrap 4")
+	}
+}
+
+func BenchmarkUnixNano(b *testing.B) {
+	a := "1"
+	c := "3"
+	d := "4"
+	e := "5"
+	f := "6"
+	g := "7"
+	h := "8"
+	builder := strings.Builder{}
+	builder.Grow(20)
+	for i := 0; i < b.N; i++ {
+		builder.Reset()
+		builder.WriteString(a)
+		builder.WriteString(c)
+		builder.WriteString(d)
+		builder.WriteString(e)
+		builder.WriteString(f)
+		builder.WriteString(g)
+		builder.WriteString(h)
+	}
+}
+
+func BenchmarkUnix(b *testing.B) {
+	a := "1"
+	c := "3"
+	d := "4"
+	e := "5"
+	f := "6"
+	g := "7"
+	h := "8"
+	for i := 0; i < b.N; i++ {
+		_ = a + c + d + e + f + g + h
 	}
 }

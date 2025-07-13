@@ -2,7 +2,6 @@ package erro
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -153,32 +152,11 @@ func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) 
 }
 
 func (t *ErrorTemplate) setErrorMetadata(err Error) {
-	var codeBuilder strings.Builder
-	codeBuilder.Grow(10)
-
-	if t.class != ClassUnknown {
-		err.Class(t.class)
-		codeBuilder.WriteString(strings.ToUpper(t.class.String()[:2]))
-	}
-	if t.category != CategoryUnknown {
-		err.Category(t.category)
-		codeBuilder.WriteString(strings.ToUpper(t.category.String()[:2]))
-	}
-	if t.severity != SeverityUnknown {
-		err.Severity(t.severity)
-	}
-	if t.retryable {
-		err.Retryable(t.retryable)
-	}
-	if len(t.fields) > 0 {
-		err.Fields(t.fields...)
-	}
-	if codeBuilder.Len() > 0 {
-		timestamp := strconv.FormatInt(err.GetCreated().Unix(), 10)
-		codeBuilder.WriteString("-")
-		codeBuilder.WriteString(timestamp[len(timestamp)-2:])
-		err.Code(codeBuilder.String())
-	}
+	err.Class(t.class)
+	err.Category(t.category)
+	err.Severity(t.severity)
+	err.Retryable(t.retryable)
+	err.Fields(t.fields...)
 }
 
 // formatTemplate formats a template string using fields
@@ -193,22 +171,22 @@ func (t *ErrorTemplate) formatTemplate(template string, fields ...any) string {
 var (
 	// ValidationError creates validation errors
 	ValidationError = NewTemplate().
-				Class(ClassValidation).
-				Category(CategoryUserInput).
-				Severity(SeverityLow).
-				Message("failed validation: %s")
+			Class(ClassValidation).
+			Category(CategoryUserInput).
+			Severity(SeverityLow).
+			Message("failed validation: %s")
 
 	// NotFoundError creates not found errors
 	NotFoundError = NewTemplate().
-				Class(ClassNotFound).
-				Severity(SeverityMedium).
-				Message("%s not found")
+			Class(ClassNotFound).
+			Severity(SeverityMedium).
+			Message("%s not found")
 
 	// DatabaseError creates database errors
 	DatabaseError = NewTemplate().
-				Category(CategoryDatabase).
-				Severity(SeverityHigh).
-				Message("database error: %s")
+			Category(CategoryDatabase).
+			Severity(SeverityHigh).
+			Message("database error: %s")
 
 	// NetworkError creates network errors
 	NetworkError = NewTemplate().
@@ -240,37 +218,37 @@ var (
 
 	// ConflictError creates conflict errors
 	ConflictError = NewTemplate().
-				Class(ClassConflict).
-				Severity(SeverityMedium).
-				Message("conflict: %s")
+			Class(ClassConflict).
+			Severity(SeverityMedium).
+			Message("conflict: %s")
 
 	// RateLimitError creates rate limit errors
 	RateLimitError = NewTemplate().
-				Class(ClassRateLimited).
-				Severity(SeverityLow).
-				Retryable(true).
-				Message("rate limit exceeded: %s")
+			Class(ClassRateLimited).
+			Severity(SeverityLow).
+			Retryable(true).
+			Message("rate limit exceeded: %s")
 
 	// InternalError creates internal errors
 	InternalError = NewTemplate().
-				Class(ClassInternal).
-				Severity(SeverityHigh).
-				Message("internal error: %s")
+			Class(ClassInternal).
+			Severity(SeverityHigh).
+			Message("internal error: %s")
 
 	// SecurityError creates security errors
 	SecurityError = NewTemplate().
-				Class(ClassSecurity).
-				Category(CategorySecurity).
-				Severity(SeverityCritical).
-				Message("security violation: %s")
+			Class(ClassSecurity).
+			Category(CategorySecurity).
+			Severity(SeverityCritical).
+			Message("security violation: %s")
 
 	// ExternalError creates external service errors
 	ExternalError = NewTemplate().
-				Class(ClassExternal).
-				Category(CategoryExternal).
-				Severity(SeverityMedium).
-				Retryable(true).
-				Message("external error: %s")
+			Class(ClassExternal).
+			Category(CategoryExternal).
+			Severity(SeverityMedium).
+			Retryable(true).
+			Message("external error: %s")
 
 	// PaymentError creates payment errors
 	PaymentError = NewTemplate().
@@ -314,16 +292,16 @@ var (
 
 	// ProcessingError creates processing errors
 	ProcessingError = NewTemplate().
-				Category(CategoryProcessing).
-				Class(ClassInternal).
-				Severity(SeverityHigh).
-				Message("processing error: %s")
+			Category(CategoryProcessing).
+			Class(ClassInternal).
+			Severity(SeverityHigh).
+			Message("processing error: %s")
 
 	// MonitoringError creates monitoring errors
 	MonitoringError = NewTemplate().
-				Category(CategoryMonitoring).
-				Severity(SeverityMedium).
-				Message("monitoring error: %s")
+			Category(CategoryMonitoring).
+			Severity(SeverityMedium).
+			Message("monitoring error: %s")
 
 	// NotificationError creates notification errors
 	NotificationError = NewTemplate().
@@ -334,16 +312,16 @@ var (
 
 	// AIError creates AI/ML errors
 	AIError = NewTemplate().
-			Category(CategoryAI).
-			Class(ClassInternal).
-			Severity(SeverityHigh).
-			Message("AI error: %s")
+		Category(CategoryAI).
+		Class(ClassInternal).
+		Severity(SeverityHigh).
+		Message("AI error: %s")
 
-			// AnalyticsError creates analytics errors
+		// AnalyticsError creates analytics errors
 	AnalyticsError = NewTemplate().
-				Category(CategoryAnalytics).
-				Severity(SeverityLow).
-				Message("analytics error: %s")
+			Category(CategoryAnalytics).
+			Severity(SeverityLow).
+			Message("analytics error: %s")
 
 	// EventsTemplate creates events errors
 	EventsTemplate = NewTemplate().
@@ -353,27 +331,27 @@ var (
 
 	// CriticalError creates critical errors
 	CriticalError = NewTemplate().
-				Class(ClassCritical).
-				Severity(SeverityCritical).
-				Message("critical error: %s")
+			Class(ClassCritical).
+			Severity(SeverityCritical).
+			Message("critical error: %s")
 
 	// TemporaryError creates temporary errors
 	TemporaryError = NewTemplate().
-				Class(ClassTemporary).
-				Severity(SeverityMedium).
-				Message("temporary error: %s")
+			Class(ClassTemporary).
+			Severity(SeverityMedium).
+			Message("temporary error: %s")
 
 	// DataLossError creates data loss errors
 	DataLossError = NewTemplate().
-				Class(ClassDataLoss).
-				Severity(SeverityCritical).
-				Message("data loss: %s")
+			Class(ClassDataLoss).
+			Severity(SeverityCritical).
+			Message("data loss: %s")
 
 	// ResourceExhaustedError creates resource exhausted errors
 	ResourceExhaustedError = NewTemplate().
-					Class(ClassResourceExhausted).
-					Severity(SeverityHigh).
-					Message("resource exhausted: %s")
+				Class(ClassResourceExhausted).
+				Severity(SeverityHigh).
+				Message("resource exhausted: %s")
 
 	// UnavailableError creates unavailable errors
 	UnavailableError = NewTemplate().
@@ -383,9 +361,9 @@ var (
 
 	// CancelledError creates cancelled errors
 	CancelledError = NewTemplate().
-				Class(ClassCancelled).
-				Severity(SeverityLow).
-				Message("operation cancelled: %s")
+			Class(ClassCancelled).
+			Severity(SeverityLow).
+			Message("operation cancelled: %s")
 
 	// NotImplementedError creates not implemented errors
 	NotImplementedError = NewTemplate().

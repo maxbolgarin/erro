@@ -3,6 +3,7 @@ package erro
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,8 +17,8 @@ type baseError struct {
 	created     time.Time // Creation timestamp
 
 	// Metadata
+	id        string          // Error id
 	fields    []any           // Key-value fields
-	code      string          // Error code
 	category  Category        // Error category
 	class     Class           // Error class
 	severity  Severity        // Error severity
@@ -56,8 +57,14 @@ func (e *baseError) Unwrap() error {
 }
 
 // Chaining methods for baseError
-func (e *baseError) Code(code string) Error {
-	e.code = truncateString(code, maxCodeLength)
+func (e *baseError) ID(idRaw ...string) Error {
+	var id string
+	if len(idRaw) > 0 {
+		id = truncateString(idRaw[0], maxCodeLength)
+	} else {
+		id = newID(e.class, e.category, e.created)
+	}
+	e.id = id
 	return e
 }
 
@@ -104,13 +111,18 @@ func (e *baseError) Span(span Span) Error {
 // Getter methods for baseError
 func (e *baseError) GetBase() Error              { return e }
 func (e *baseError) GetContext() context.Context { return e.ctx }
-func (e *baseError) GetCode() string             { return e.code }
-func (e *baseError) GetCategory() Category       { return e.category }
-func (e *baseError) GetClass() Class             { return e.class }
-func (e *baseError) IsRetryable() bool           { return e.retryable }
-func (e *baseError) GetSpan() Span               { return e.span }
-func (e *baseError) GetFields() []any            { return e.fields }
-func (e *baseError) GetCreated() time.Time       { return e.created }
+func (e *baseError) GetID() string {
+	if e.id == "" {
+		e.id = newID(e.class, e.category, e.created)
+	}
+	return e.id
+}
+func (e *baseError) GetCategory() Category { return e.category }
+func (e *baseError) GetClass() Class       { return e.class }
+func (e *baseError) IsRetryable() bool     { return e.retryable }
+func (e *baseError) GetSpan() Span         { return e.span }
+func (e *baseError) GetFields() []any      { return e.fields }
+func (e *baseError) GetCreated() time.Time { return e.created }
 
 // Severity checking methods
 func (e *baseError) GetSeverity() Severity {
@@ -143,13 +155,12 @@ func (e *baseError) Is(target error) bool {
 		return true
 	}
 
-	// Check if target is an erro error and compare by code and message
+	// Check if target is an erro error and compare by id and message
 	if targetErro, ok := target.(Error); ok {
-		// Compare by code if both have codes
-		if e.code != "" && targetErro.GetCode() != "" {
-			return e.code == targetErro.GetCode()
+		// Compare by id if both have ids
+		if e.id != "" && e.id == targetErro.GetID() {
+			return true
 		}
-		// Compare by message if no codes
 		return e.message == targetErro.Error()
 	}
 
@@ -254,4 +265,21 @@ func formatError(err Error, s fmt.State, verb rune) {
 	case 's':
 		fmt.Fprint(s, err.Error())
 	}
+}
+
+func newID(class Class, category Category, created time.Time) string {
+	if class == "" || len(class) < 2 {
+		class = "XX"
+	}
+	if category == "" || len(category) < 2 {
+		category = "XX"
+	}
+	if created.IsZero() {
+		created = time.Now()
+	}
+	classStr := strings.ToUpper(string(class[:2]))
+	categoryStr := strings.ToUpper(string(category[:2]))
+
+	timestampStr := strconv.FormatInt(created.UnixNano(), 10)
+	return classStr + categoryStr + "-" + timestampStr[len(timestampStr)-4:]
 }
