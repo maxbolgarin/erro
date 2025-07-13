@@ -19,6 +19,8 @@ type Error interface {
 	Context(ctx context.Context) Error
 	Span(span Span) Error
 
+	RecordMetrics(metrics Metrics) Error
+
 	// Extraction methods
 	GetBase() Error
 	GetCreated() time.Time
@@ -49,8 +51,12 @@ type Error interface {
 	Is(target error) bool
 }
 
+type Metrics interface {
+	RecordError(err Error)
+}
+
 type Span interface {
-	RecordError(err error)
+	RecordError(err Error)
 	SetAttributes(attributes ...any)
 	TraceID() string
 	SpanID() string

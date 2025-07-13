@@ -8,16 +8,18 @@ import (
 
 type lightError struct {
 	message     string
-	id          string
-	class       Class
-	category    Category
-	severity    Severity
-	retryable   bool
-	ctx         context.Context
-	span        Span
-	fields      []any
-	fullMessage string
 	cause       error // For wrapping external errors
+	fullMessage string
+
+	id        string
+	class     Class
+	category  Category
+	severity  Severity
+	retryable bool
+	fields    []any
+
+	ctx  context.Context
+	span Span
 }
 
 func NewLight(message string, fields ...any) Error {
@@ -138,6 +140,11 @@ func (e *lightError) Span(span Span) Error {
 func (e *lightError) Fields(fields ...any) Error {
 	e.fields = fields
 	e.fullMessage = ""
+	return e
+}
+
+func (e *lightError) RecordMetrics(metrics Metrics) Error {
+	metrics.RecordError(e)
 	return e
 }
 

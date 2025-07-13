@@ -104,19 +104,16 @@ func (e *wrapError) ID(idRaw ...string) Error {
 		id = e.base.GetID()
 	}
 	e.base.id = id
-	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Category(category Category) Error {
 	e.base.category = category
-	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Class(class Class) Error {
 	e.base.class = class
-	e.fullMessage = ""
 	return e
 }
 
@@ -140,13 +137,11 @@ func (e *wrapError) Fields(fields ...any) Error {
 
 func (e *wrapError) Context(ctx context.Context) Error {
 	e.base.ctx = ctx
-	e.fullMessage = ""
 	return e
 }
 
 func (e *wrapError) Retryable(retryable bool) Error {
 	e.base.retryable = retryable
-	e.fullMessage = ""
 	return e
 }
 
@@ -155,7 +150,11 @@ func (e *wrapError) Span(span Span) Error {
 	span.SetAttributes(e.wrapFields...)
 	span.RecordError(e)
 	e.base.span = span
-	e.fullMessage = ""
+	return e
+}
+
+func (e *wrapError) RecordMetrics(metrics Metrics) Error {
+	metrics.RecordError(e)
 	return e
 }
 

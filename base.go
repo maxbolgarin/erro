@@ -144,6 +144,11 @@ func (e *baseError) Span(span Span) Error {
 	return e
 }
 
+func (e *baseError) RecordMetrics(metrics Metrics) Error {
+	metrics.RecordError(e)
+	return e
+}
+
 // Getter methods for baseError
 func (e *baseError) GetBase() Error              { return e }
 func (e *baseError) GetContext() context.Context { return e.ctx }
