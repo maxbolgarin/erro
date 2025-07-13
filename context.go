@@ -537,13 +537,19 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 	if opts.IncludeSeverity && ec.Severity != "" {
 		fields = append(fields, opts.FieldNamePrefix+"severity", ec.Severity)
 	}
-	if opts.IncludeTracing && ec.TraceID != "" {
-		fields = append(fields, "trace_id", ec.TraceID)
-		fields = append(fields, "span_id", ec.SpanID)
-		fields = append(fields, "parent_span_id", ec.ParentSpanID)
+	if opts.IncludeTracing {
+		if ec.TraceID != "" {
+			fields = append(fields, "trace_id", ec.TraceID)
+		}
+		if ec.SpanID != "" {
+			fields = append(fields, "span_id", ec.SpanID)
+		}
+		if ec.ParentSpanID != "" {
+			fields = append(fields, "parent_span_id", ec.ParentSpanID)
+		}
 	}
 	if opts.IncludeRetryable && ec.Retryable {
-		fields = append(fields, opts.FieldNamePrefix+"retryable", true)
+		fields = append(fields, opts.FieldNamePrefix+"retryable", ec.Retryable)
 	}
 
 	if ec.Context != nil && len(opts.ContextFields) > 0 {
@@ -556,7 +562,7 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 	}
 
 	// Add timing information
-	if opts.IncludeCreatedTime {
+	if opts.IncludeCreatedTime && !ec.Created.IsZero() {
 		fields = append(fields, opts.FieldNamePrefix+"created_at", ec.Created)
 	}
 
@@ -576,7 +582,10 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 
 	// Add stack trace if requested
 	if opts.IncludeStack {
-		fields = append(fields, opts.FieldNamePrefix+"stack", ec.getStackTrace(opts))
+		stack := ec.getStackTrace(opts)
+		if stack != nil {
+			fields = append(fields, opts.FieldNamePrefix+"stack", stack)
+		}
 	}
 
 	return fields
@@ -626,13 +635,19 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 		fields[opts.FieldNamePrefix+"severity"] = ec.Severity
 	}
 
-	if opts.IncludeTracing && ec.TraceID != "" {
-		fields["trace_id"] = ec.TraceID
-		fields["span_id"] = ec.SpanID
-		fields["parent_span_id"] = ec.ParentSpanID
+	if opts.IncludeTracing {
+		if ec.TraceID != "" {
+			fields["trace_id"] = ec.TraceID
+		}
+		if ec.SpanID != "" {
+			fields["span_id"] = ec.SpanID
+		}
+		if ec.ParentSpanID != "" {
+			fields["parent_span_id"] = ec.ParentSpanID
+		}
 	}
 	if opts.IncludeRetryable && ec.Retryable {
-		fields[opts.FieldNamePrefix+"retryable"] = true
+		fields[opts.FieldNamePrefix+"retryable"] = ec.Retryable
 	}
 
 	if ec.Context != nil && len(opts.ContextFields) > 0 {
@@ -645,7 +660,7 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 	}
 
 	// Add timing information
-	if opts.IncludeCreatedTime {
+	if opts.IncludeCreatedTime && !ec.Created.IsZero() {
 		fields[opts.FieldNamePrefix+"created"] = ec.Created
 	}
 
@@ -665,7 +680,10 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 
 	// Add stack trace if requested
 	if opts.IncludeStack {
-		fields[opts.FieldNamePrefix+"stack"] = ec.getStackTrace(opts)
+		stack := ec.getStackTrace(opts)
+		if stack != nil {
+			fields[opts.FieldNamePrefix+"stack"] = stack
+		}
 	}
 
 	return fields

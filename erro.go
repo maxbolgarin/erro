@@ -87,6 +87,16 @@ func Wrapf(err error, message string, args ...any) Error {
 	return newBaseError(err, message, args...)
 }
 
+func Erro(err error) Error {
+	if err == nil {
+		return nil
+	}
+	if erroErr, ok := err.(Error); ok {
+		return erroErr
+	}
+	return newBaseError(err, "")
+}
+
 // Is reports whether any error in err's chain matches target
 func Is(err error, target error) bool {
 	if target == nil {
@@ -194,4 +204,25 @@ func Unwrap(err error) error {
 		}
 	}
 	return nil
+}
+
+func Join(errs ...error) error {
+	n := 0
+	for _, err := range errs {
+		if err != nil {
+			n++
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	e := &multiError{
+		errors: make([]error, 0, n),
+	}
+	for _, err := range errs {
+		if err != nil {
+			e.errors = append(e.errors, err)
+		}
+	}
+	return e
 }

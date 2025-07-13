@@ -101,10 +101,7 @@ func (t *ErrorTemplate) Errorf(message string, fields ...any) Error {
 
 	// It behaves like New if there is no format verbs in the message
 	err := Errorf(message, fields...)
-
-	t.setErrorMetadata(err)
-
-	return err
+	return t.applyMetadata(err)
 }
 
 func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
@@ -145,18 +142,25 @@ func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) 
 
 	// It behaves like Wrap if there is no format verbs in the message
 	err := Wrapf(originalErr, message, fields...)
-
-	t.setErrorMetadata(err)
-
-	return err
+	return t.applyMetadata(err)
 }
 
-func (t *ErrorTemplate) setErrorMetadata(err Error) {
-	err.Class(t.class)
-	err.Category(t.category)
-	err.Severity(t.severity)
+func (t *ErrorTemplate) applyMetadata(err Error) Error {
+	if t.class != "" {
+		err.Class(t.class)
+	}
+	if t.category != "" {
+		err.Category(t.category)
+	}
+	if t.severity != "" {
+		err.Severity(t.severity)
+	}
+	if len(t.fields) > 0 {
+		err.Fields(t.fields...)
+	}
 	err.Retryable(t.retryable)
-	err.Fields(t.fields...)
+
+	return err
 }
 
 // formatTemplate formats a template string using fields

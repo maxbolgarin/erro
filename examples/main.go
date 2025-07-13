@@ -22,11 +22,11 @@ func test() erro.Error {
 }
 
 func main() {
-	err := test().Category(erro.CategoryDatabase)
-	erro.LogError(err, func(message string, fields ...any) {
+	//err := test().Category(erro.CategoryDatabase)
+	err2 := erro.NewLight("test2").Class(erro.ClassValidation).Category(erro.CategoryAPI).Severity(erro.SeverityHigh)
+	erro.LogError(err2, func(message string, fields ...any) {
 		slog.Info(message, fields...)
 	}, erro.WithStackFormat(erro.StackFormatList))
 
-	err2 := erro.AIError.New("test2")
-	fmt.Printf("%+v\n", err2)
+	fmt.Printf("%+v\n", erro.NewLight("test").Fields("f", "v"))
 }

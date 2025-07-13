@@ -90,7 +90,11 @@ func (g *List) Err() error {
 	if len(g.errors) == 1 {
 		return g.errors[0]
 	}
-	return &multiError{errors: g.errors}
+	errorsCopy := make([]error, len(g.errors))
+	for i, err := range g.errors {
+		errorsCopy[i] = err
+	}
+	return &multiError{errors: errorsCopy}
 }
 
 // Remove removes error at index i from the list.
@@ -345,8 +349,10 @@ func (s *Set) Err() error {
 	}
 
 	// Create a copy of the errors for the multiError
-	errorsCopy := make([]Error, len(s.errors))
-	copy(errorsCopy, s.errors)
+	errorsCopy := make([]error, len(s.errors))
+	for i, err := range s.errors {
+		errorsCopy[i] = err
+	}
 	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
 }
 
@@ -533,8 +539,10 @@ func (g *SafeList) Err() error {
 	}
 
 	// Create a copy of the errors for the multiError
-	errorsCopy := make([]Error, len(g.errors))
-	copy(errorsCopy, g.errors)
+	errorsCopy := make([]error, len(g.errors))
+	for i, err := range g.errors {
+		errorsCopy[i] = err
+	}
 	return &multiError{errors: errorsCopy}
 }
 
@@ -882,8 +890,10 @@ func (s *SafeSet) Err() error {
 	}
 
 	// Create a copy of the errors for the multiError
-	errorsCopy := make([]Error, len(s.errors))
-	copy(errorsCopy, s.errors)
+	errorsCopy := make([]error, len(s.errors))
+	for i, err := range s.errors {
+		errorsCopy[i] = err
+	}
 	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
 }
 
@@ -974,7 +984,7 @@ func (s *SafeSet) add(err Error) *SafeSet {
 
 // multiError represents multiple errors combined into one
 type multiError struct {
-	errors []Error
+	errors []error
 }
 
 // Error implements the error interface for multiError
@@ -1008,16 +1018,12 @@ func (m *multiError) Error() string {
 
 // Unwrap returns the underlying errors for error chain traversal
 func (m *multiError) Unwrap() []error {
-	result := make([]error, len(m.errors))
-	for i, err := range m.errors {
-		result[i] = err
-	}
-	return result
+	return m.errors
 }
 
 // multiError represents multiple errors combined into one
 type multiErrorSet struct {
-	errors    []Error
+	errors    []error
 	counter   map[string]int
 	keyGetter func(error) string
 }
@@ -1057,9 +1063,5 @@ func (m *multiErrorSet) Error() string {
 
 // Unwrap returns the underlying errors for error chain traversal
 func (m *multiErrorSet) Unwrap() []error {
-	result := make([]error, len(m.errors))
-	for i, err := range m.errors {
-		result[i] = err
-	}
-	return result
+	return m.errors
 }

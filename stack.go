@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 var (
@@ -34,6 +35,19 @@ const (
 	defaultHiddenFrame      = "[hidden]"
 )
 
+// SetStackSamplingRate sets the rate at which stack traces are captured (0.0 - 1.0)
+func SetStackSamplingRate(rate float64) {
+	if rate < 0 {
+		rate = 0
+	}
+	if rate > 1 {
+		rate = 1
+	}
+	cfgMutex.Lock()
+	globalStackTraceConfig.SamplingRate = rate
+	cfgMutex.Unlock()
+}
+
 // StackTraceConfig controls what information is included in stack traces
 type StackTraceConfig struct {
 	Enabled       bool // Whether to show stack traces
@@ -50,6 +64,9 @@ type StackTraceConfig struct {
 	FileNameRedacted string // Placeholder for redacted file names (default: "[some_file]")
 
 	MaxFrames int // Maximum number of frames to show
+
+	SamplingRate    float64 // Sampling rate for stack traces (0.0 - 1.0)
+	samplingCounter uint64
 }
 
 // DevelopmentStackTraceConfig returns the development-safe stack trace configuration
@@ -63,6 +80,7 @@ func DevelopmentStackTraceConfig() *StackTraceConfig {
 		ShowLineNumbers:   true,
 		ShowAllCodeFrames: true,
 		PathElements:      -1, // Show full path
+		SamplingRate:      1.0,
 	}
 }
 
@@ -79,7 +97,8 @@ func ProductionStackTraceConfig() *StackTraceConfig {
 		ShowLineNumbers:   true,  // Show line numbers for debugging
 		ShowAllCodeFrames: false,
 
-		MaxFrames: 10,
+		MaxFrames:    10,
+		SamplingRate: 1.0,
 	}
 }
 
@@ -97,6 +116,8 @@ func StrictStackTraceConfig() *StackTraceConfig {
 		ShowAllCodeFrames: true,
 
 		MaxFrames: 3, // Very limited frames for strict mode
+
+		SamplingRate: 1.0,
 	}
 }
 
@@ -654,6 +675,22 @@ type rawStack []uintptr
 
 // captureStack captures just the program counters for maximum performance
 func captureStack(skip int) rawStack {
+	cfg := GetStackTraceConfig()
+	rate := cfg.SamplingRate
+
+	if rate <= 0.0 {
+		return nil
+	}
+
+	if rate < 1.0 {
+		// Deterministic sampling using atomic counter
+		counter := atomic.AddUint64(&cfg.samplingCounter, 1)
+		threshold := uint64(1.0 / rate)
+		if counter%threshold == 0 {
+			return nil
+		}
+	}
+
 	pcs := make([]uintptr, maxStackDepth)
 	n := runtime.Callers(skip+1, pcs)
 

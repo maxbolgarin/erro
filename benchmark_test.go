@@ -1,6 +1,7 @@
 package erro_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -12,14 +13,37 @@ import (
 func BenchmarkErrorsNew(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = errors.New("connection failed")
+		err := errors.New("connection failed")
+		_ = err.Error()
 	}
 }
 
 func BenchmarkErroNew(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.New("connection failed")
+		err := erro.New("connection failed", "key1", "value1", "key2", "value2", "key3", "value3", "key4", "value4", "key5", "value5", "key6", "value6", "key7", "value7", "key8", "value8")
+		_ = err.Error()
+	}
+}
+
+func BenchmarkErroNewLight(b *testing.B) {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "key", "value")
+	fields := []any{"key1", "value1"}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		err := erro.NewLight("connection failed", fields...).Context(ctx).Span(nil).Severity(erro.SeverityHigh)
+		_ = err.Error()
+	}
+}
+
+func BenchmarkErroWrapLight(b *testing.B) {
+	baseErr := erro.NewLight("connection refused")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		err := erro.WrapLight(baseErr, "connection failed")
+		_ = err.Error()
 	}
 }
 

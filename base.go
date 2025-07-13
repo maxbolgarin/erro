@@ -3,6 +3,7 @@ package erro
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,19 +99,16 @@ func (e *baseError) ID(idRaw ...string) Error {
 		id = newID(e.class, e.category, e.created)
 	}
 	e.id = id
-	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Category(category Category) Error {
 	e.category = category
-	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Class(class Class) Error {
 	e.class = class
-	e.fullMessage = ""
 	return e
 }
 
@@ -131,13 +129,11 @@ func (e *baseError) Fields(fields ...any) Error {
 
 func (e *baseError) Context(ctx context.Context) Error {
 	e.ctx = ctx
-	e.fullMessage = ""
 	return e
 }
 
 func (e *baseError) Retryable(retryable bool) Error {
 	e.retryable = retryable
-	e.fullMessage = ""
 	return e
 }
 
@@ -145,7 +141,6 @@ func (e *baseError) Span(span Span) Error {
 	span.SetAttributes(e.fields...)
 	span.RecordError(e)
 	e.span = span
-	e.fullMessage = ""
 	return e
 }
 
@@ -270,13 +265,18 @@ func (e *baseError) initStack() (changed bool) {
 
 // newBaseError creates a new base error with security validation
 func newBaseError(originalErr error, message string, fields ...any) *baseError {
-	return &baseError{
+	return newBaseErrorWithStackSkip(3, originalErr, message, fields...)
+}
+
+func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fields ...any) *baseError {
+	e := &baseError{
 		originalErr: originalErr,
 		message:     truncateString(message, maxMessageLength),
-		stack:       captureStack(3), // Skip New, newBaseError and caller
 		created:     time.Now(),
 		fields:      prepareFields(fields),
+		stack:       captureStack(skip),
 	}
+	return e
 }
 
 // buildFieldsMessage creates message with fields appended
@@ -451,8 +451,8 @@ func formatError(err Error, s fmt.State, verb rune) {
 	}
 }
 
-func newID(class Class, category Category, created time.Time) string {
-	var buf [16]byte
+func newID(class Class, category Category, created ...time.Time) string {
+	var buf [8]byte
 
 	if len(class) < 2 {
 		buf[0] = 'X'
@@ -468,14 +468,20 @@ func newID(class Class, category Category, created time.Time) string {
 		buf[2] = toUpperByte(category[0])
 		buf[3] = toUpperByte(category[1])
 	}
-	buf[4] = '-'
+	buf[4] = '_'
 
-	if created.IsZero() {
-		created = time.Now()
+	// Always use a 4-digit unique value (0-9999), padded to 4 bytes
+	var unique int
+	if len(created) == 0 || created[0].IsZero() {
+		unique = rand.Intn(1000)
+	} else {
+		unique = int(created[0].UnixMicro() % 1000)
 	}
-	unique := (created.UnixMicro() % 10000) * 10000
+	// Format unique as 3-digit zero-padded string
+	buf[5] = '0' + byte(unique/100)
+	buf[6] = '0' + byte((unique/10)%10)
+	buf[7] = '0' + byte(unique%10)
 
-	strconv.AppendUint(buf[5:5], uint64(unique), 10)
 	return string(buf[:])
 }
 
