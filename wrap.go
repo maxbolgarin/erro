@@ -13,6 +13,7 @@ type wrapError struct {
 	wrapMessage string     // Wrap message
 	wrapFields  []any      // Additional fields for this wrap
 	createdAt   time.Time  // When this wrap was created
+	wrapDepth   int        // Depth of this specific wrap (without mutating base)
 }
 
 func (e *wrapError) Error() (out string) {
@@ -21,9 +22,16 @@ func (e *wrapError) Error() (out string) {
 	// Build the complete chain by getting the wrapped error's message
 	var wrappedMsg string
 	if e.wrapped != nil {
-		wrappedMsg = e.wrapped.Error()
+		// For wrapped errors, get the error message without severity label to avoid duplication
+		if baseErr, ok := e.wrapped.(*baseError); ok {
+			wrappedMsg = baseErr.errorWithoutSeverity()
+		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
+			wrappedMsg = wrapErr.errorWithoutSeverity()
+		} else {
+			wrappedMsg = e.wrapped.Error()
+		}
 	} else {
-		wrappedMsg = e.base.Error()
+		wrappedMsg = e.base.errorWithoutSeverity()
 	}
 
 	if out == "" {
@@ -32,6 +40,31 @@ func (e *wrapError) Error() (out string) {
 
 	if e.base.severity != "" {
 		out = e.base.severity.Label() + " " + out
+	}
+
+	return out + ": " + wrappedMsg
+}
+
+// errorWithoutSeverity returns the error message without severity label
+func (e *wrapError) errorWithoutSeverity() string {
+	out := buildFieldsMessage(e.wrapMessage, e.wrapFields)
+
+	// Build the complete chain by getting the wrapped error's message without severity
+	var wrappedMsg string
+	if e.wrapped != nil {
+		if baseErr, ok := e.wrapped.(*baseError); ok {
+			wrappedMsg = baseErr.errorWithoutSeverity()
+		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
+			wrappedMsg = wrapErr.errorWithoutSeverity()
+		} else {
+			wrappedMsg = e.wrapped.Error()
+		}
+	} else {
+		wrappedMsg = e.base.errorWithoutSeverity()
+	}
+
+	if out == "" {
+		return wrappedMsg
 	}
 
 	return out + ": " + wrappedMsg
@@ -123,12 +156,32 @@ func (e *wrapError) IsInfo() bool          { return e.base.IsInfo() }
 func (e *wrapError) IsUnknown() bool {
 	return e.base.IsUnknown()
 }
-func (e *wrapError) Stack() Stack           { return e.base.stack.toFrames() }
-func (e *wrapError) StackFormat() string    { return e.base.stack.formatFull() }
-func (e *wrapError) StackWithError() string { return e.Error() + "\n" + e.StackFormat() }
+func (e *wrapError) Stack() Stack {
+	if e.base.frames == nil {
+		e.base.frames = e.base.stack.toFrames()
+	}
+	return e.base.frames
+}
+func (e *wrapError) StackFormat() string {
+	if e.base.frames == nil {
+		e.base.frames = e.base.stack.toFrames()
+	}
+	return e.base.frames.FormatFull()
+}
+func (e *wrapError) StackWithError() string {
+	if e.base.frames == nil {
+		e.base.frames = e.base.stack.toFrames()
+	}
+	return e.Error() + "\n" + e.base.frames.FormatFull()
+}
 
 // Is checks if this error or any wrapped error matches the target
 func (e *wrapError) Is(target error) bool {
+	return e.isWithVisited(target, make(map[*baseError]bool))
+}
+
+// isWithVisited implements Is with cycle detection
+func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) bool {
 	if target == nil {
 		return false
 	}
@@ -138,13 +191,26 @@ func (e *wrapError) Is(target error) bool {
 		return true
 	}
 
+	// Cycle detection: if we've already visited this base error, return false
+	if e.base != nil && visited[e.base] {
+		return false
+	}
+
+	if e.base != nil {
+		visited[e.base] = true
+	}
+
 	// Check if the wrapped error matches directly (most common case)
 	if e.wrapped != nil {
 		if e.wrapped == target {
 			return true
 		}
-		// Use the wrapped error's Is method if it has one
-		if e.wrapped.Is(target) {
+		// Use the wrapped error's Is method with cycle detection
+		if wrapErr, ok := e.wrapped.(*wrapError); ok {
+			if wrapErr.isWithVisited(target, visited) {
+				return true
+			}
+		} else if e.wrapped.Is(target) {
 			return true
 		}
 	}
@@ -180,17 +246,18 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		wrapped = New(message, fields...)
 	}
 
-	var depth int
-
-	baseInt := wrapped.GetBase()
-	base, ok := baseInt.(*baseError)
-	if ok {
-		depth = base.depth
-		base.depth++
-	}
+	// Calculate the depth without mutating the original base error
+	depth := calculateWrapDepth(wrapped)
 
 	if depth > maxWrapDepth {
 		return Wrap(ErrMaxWrapDepthExceeded, message, fields...)
+	}
+
+	baseInt := wrapped.GetBase()
+	base, ok := baseInt.(*baseError)
+	if !ok {
+		// This shouldn't happen, but handle gracefully
+		return New(message, fields...)
 	}
 
 	if base.span != nil {
@@ -203,5 +270,31 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		wrapMessage: truncateString(message, maxMessageLength),
 		wrapFields:  fields,
 		createdAt:   time.Now(),
+		wrapDepth:   depth,
 	}
+}
+
+// calculateWrapDepth calculates the wrap depth without mutating any errors
+func calculateWrapDepth(err Error) int {
+	depth := 0
+	current := err
+	visited := make(map[Error]bool) // Cycle detection
+
+	for current != nil {
+		// Cycle detection
+		if visited[current] {
+			break
+		}
+		visited[current] = true
+
+		if wrapErr, ok := current.(*wrapError); ok {
+			depth++
+			current = wrapErr.wrapped
+		} else {
+			// This is a base error, stop counting
+			break
+		}
+	}
+
+	return depth
 }

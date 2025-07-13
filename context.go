@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrorContext contains all extractable context from an error
@@ -510,7 +511,22 @@ func (ec *ErrorContext) LogFields(optsRaw ...*LogOptions) []any {
 
 	// Add user fields
 	if opts.IncludeUserFields {
-		fields = append(fields, ec.fields...)
+		for i := 0; i < len(ec.fields); i += 2 {
+			if i+1 >= len(ec.fields) {
+				break
+			}
+			key := valueToString(ec.fields[i])
+			if utf8.RuneCountInString(key) > maxFieldKeyLength {
+				runes := []rune(key)
+				key = string(runes[:maxFieldKeyLength])
+			}
+			value := valueToString(ec.fields[i+1])
+			if utf8.RuneCountInString(value) > maxFieldValueLength {
+				runes := []rune(value)
+				value = string(runes[:maxFieldValueLength])
+			}
+			fields = append(fields, key, value)
+		}
 	}
 
 	// Add error metadata
@@ -583,7 +599,20 @@ func (ec *ErrorContext) LogFieldsMap(optsRaw ...*LogOptions) map[string]any {
 
 	// Add user fields
 	if opts.IncludeUserFields {
-		for key, value := range ec.Fields {
+		for i := 0; i < len(ec.fields); i += 2 {
+			if i+1 >= len(ec.fields) {
+				break
+			}
+			key := valueToString(ec.fields[i])
+			if utf8.RuneCountInString(key) > maxFieldKeyLength {
+				runes := []rune(key)
+				key = string(runes[:maxFieldKeyLength])
+			}
+			value := valueToString(ec.fields[i+1])
+			if utf8.RuneCountInString(value) > maxFieldValueLength {
+				runes := []rune(value)
+				value = string(runes[:maxFieldValueLength])
+			}
 			fields[key] = value
 		}
 	}
@@ -699,6 +728,9 @@ func extractFullMessageWithoutFields(err Error) string {
 
 // valueToString converts any value to string
 func valueToString(value any) string {
+	if value == nil {
+		return ""
+	}
 	switch v := value.(type) {
 	case string:
 		return v
@@ -707,8 +739,14 @@ func valueToString(value any) string {
 	case time.Time:
 		return v.Format(time.RFC3339)
 	case fmt.Stringer:
+		if v == nil {
+			return ""
+		}
 		return v.String()
 	case error:
+		if v == nil {
+			return ""
+		}
 		return v.Error()
 	case int:
 		return strconv.FormatInt(int64(v), 10)

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // baseError holds the root error with all context and metadata
@@ -13,7 +14,6 @@ type baseError struct {
 	// Core error info
 	originalErr error     // Original error if wrapping external error
 	message     string    // Base message
-	stack       rawStack  // Stack trace (program counters only - resolved on demand)
 	created     time.Time // Creation timestamp
 
 	// Metadata
@@ -25,17 +25,32 @@ type baseError struct {
 	retryable bool            // Retryable flag
 	ctx       context.Context // Associated context
 
-	span Span // Span
+	stack  rawStack // Stack trace (program counters only - resolved on demand)
+	frames Stack    // Stack trace frames (for caching)
 
-	depth int // Tracks wrapping depth to prevent stack overflow
+	span Span // Span
 }
 
 // Error implements the error interface
 func (e *baseError) Error() (out string) {
 	out = buildFieldsMessage(e.message, e.fields)
-	if e.depth == 0 && e.severity != "" {
+	// Always show severity label for base errors
+	if e.severity != "" {
 		out = e.severity.Label() + " " + out
 	}
+
+	if e.originalErr != nil {
+		if out == "" {
+			return e.originalErr.Error()
+		}
+		return out + ": " + e.originalErr.Error()
+	}
+	return out
+}
+
+// errorWithoutSeverity returns the error message without severity label
+func (e *baseError) errorWithoutSeverity() string {
+	out := buildFieldsMessage(e.message, e.fields)
 
 	if e.originalErr != nil {
 		if out == "" {
@@ -141,9 +156,24 @@ func (e *baseError) IsUnknown() bool {
 	return e.severity == "" || e.severity == SeverityUnknown
 }
 
-func (e *baseError) Stack() Stack           { return e.stack.toFrames() }
-func (e *baseError) StackFormat() string    { return e.stack.formatFull() }
-func (e *baseError) StackWithError() string { return e.Error() + "\n" + e.StackFormat() }
+func (e *baseError) Stack() Stack {
+	if e.frames == nil {
+		e.frames = e.stack.toFrames()
+	}
+	return e.frames
+}
+func (e *baseError) StackFormat() string {
+	if e.frames == nil {
+		e.frames = e.stack.toFrames()
+	}
+	return e.frames.FormatFull()
+}
+func (e *baseError) StackWithError() string {
+	if e.frames == nil {
+		e.frames = e.stack.toFrames()
+	}
+	return e.Error() + "\n" + e.frames.FormatFull()
+}
 
 // Is checks if this error matches the target error
 func (e *baseError) Is(target error) bool {
@@ -156,29 +186,30 @@ func (e *baseError) Is(target error) bool {
 		return true
 	}
 
-	// Check if target is an erro error and compare by id and message
+	// Check if target is an erro error
 	if targetErro, ok := target.(Error); ok {
-		// Compare by id if both have ids
-		if e.id != "" && e.id == targetErro.GetID() {
+		// Compare by id if both have non-empty ids
+		if e.id != "" && targetErro.GetID() != "" && e.id == targetErro.GetID() {
 			return true
 		}
-		return e.message == targetErro.Error()
+		// Compare base messages (without fields) for erro errors
+		return e.message == targetErro.GetMessage()
 	}
 
-	// For external errors, compare by message or check if we wrap it
+	// For external errors, check if we wrap it first
 	if e.originalErr != nil {
-		// Check if the wrapped error matches
+		// Check if the wrapped error matches directly
 		if e.originalErr == target {
 			return true
 		}
-		// Check if the wrapped error is also a complex error that might match
+		// Check if the wrapped error has an Is method and use it
 		if x, ok := e.originalErr.(interface{ Is(error) bool }); ok {
 			return x.Is(target)
 		}
 	}
 
-	// Final fallback: compare by message
-	return e.message == target.Error()
+	// Final fallback: compare error strings for external errors
+	return e.Error() == target.Error()
 }
 
 // newBaseError creates a new base error with security validation
@@ -213,14 +244,17 @@ func buildFieldsMessage(message string, fields []any) string {
 		}
 		builder.WriteString(" ")
 		key := valueToString(fields[i])
-		if len(key) > maxFieldKeyLength {
-			key = key[:maxFieldKeyLength]
+		if utf8.RuneCountInString(key) > maxFieldKeyLength {
+			runes := []rune(key)
+			key = string(runes[:maxFieldKeyLength])
 		}
 		builder.WriteString(key)
+
 		builder.WriteString("=")
 		value := valueToString(fields[i+1])
-		if len(value) > maxFieldValueLength {
-			value = value[:maxFieldValueLength]
+		if utf8.RuneCountInString(value) > maxFieldValueLength {
+			runes := []rune(value)
+			value = string(runes[:maxFieldValueLength])
 		}
 		builder.WriteString(value)
 	}
