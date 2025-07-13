@@ -98,10 +98,16 @@ func Erro(err error) Error {
 }
 
 // Is reports whether any error in err's chain matches target
-func Is(err error, target error) bool {
+func Is(err error, target error) (ok bool) {
 	if target == nil {
 		return err == target
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
 
 	// Check current error
 	if isComparable(err, target) {
@@ -149,20 +155,27 @@ func isComparable(err, target error) bool {
 }
 
 // As finds the first error in err's chain that matches target
-func As(err error, target any) bool {
+func As(err error, target any) (ok bool) {
 	if target == nil {
-		panic("errors: target cannot be nil")
+		return false
 	}
 
 	if err == nil {
 		return false
 	}
 
+	defer func() {
+		if r := recover(); r != nil {
+			// Return false instead of panicking
+			ok = false
+		}
+	}()
+
 	// Check if target is a pointer
 	val := reflect.ValueOf(target)
 	typ := val.Type()
 	if typ.Kind() != reflect.Ptr {
-		panic("errors: target must be a non-nil pointer")
+		return false
 	}
 
 	targetType := typ.Elem()

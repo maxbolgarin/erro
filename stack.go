@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 )
 
@@ -34,19 +33,6 @@ const (
 	defaultStackRedacted    = "[disabled]"
 	defaultHiddenFrame      = "[hidden]"
 )
-
-// SetStackSamplingRate sets the rate at which stack traces are captured (0.0 - 1.0)
-func SetStackSamplingRate(rate float64) {
-	if rate < 0 {
-		rate = 0
-	}
-	if rate > 1 {
-		rate = 1
-	}
-	cfgMutex.Lock()
-	globalStackTraceConfig.SamplingRate = rate
-	cfgMutex.Unlock()
-}
 
 // StackTraceConfig controls what information is included in stack traces
 type StackTraceConfig struct {
@@ -126,26 +112,38 @@ func NoStackTraceConfig() *StackTraceConfig {
 	return &StackTraceConfig{}
 }
 
+type atomicConfig struct {
+	config atomic.Value // Stores *StackTraceConfig
+}
+
 // Global stack trace configuration
 var (
-	globalStackTraceConfig = DevelopmentStackTraceConfig()
-	cfgMutex               sync.Mutex
+	globalStackTraceConfig atomicConfig
 )
+
+func init() {
+	globalStackTraceConfig.config.Store(DevelopmentStackTraceConfig())
+}
 
 // SetStackTraceConfig sets the global stack trace configuration
 func SetStackTraceConfig(config *StackTraceConfig) {
-	cfgMutex.Lock()
-	defer cfgMutex.Unlock()
-
-	globalStackTraceConfig = config
+	if config == nil {
+		config = NoStackTraceConfig()
+	}
+	globalStackTraceConfig.config.Store(config)
 }
 
 // GetStackTraceConfig returns the current global stack trace configuration
 func GetStackTraceConfig() *StackTraceConfig {
-	cfgMutex.Lock()
-	defer cfgMutex.Unlock()
-
-	return globalStackTraceConfig
+	cfgRaw := globalStackTraceConfig.config.Load()
+	if cfgRaw == nil {
+		return DevelopmentStackTraceConfig()
+	}
+	cfg, ok := cfgRaw.(*StackTraceConfig)
+	if !ok {
+		return DevelopmentStackTraceConfig()
+	}
+	return cfg
 }
 
 // SetDevelopmentStackTrace enables development-safe stack trace configuration
@@ -166,6 +164,20 @@ func SetStrictStackTrace() {
 // DisableStackTrace completely disables stack traces
 func DisableStackTrace() {
 	SetStackTraceConfig(NoStackTraceConfig())
+}
+
+// SetStackSamplingRate sets the rate at which stack traces are captured (0.0 - 1.0)
+func SetStackSamplingRate(rate float64) {
+	if rate < 0 {
+		rate = 0
+	}
+	if rate > 1 {
+		rate = 1
+	}
+	current := GetStackTraceConfig()
+	newConfig := *current // Copy the current config
+	newConfig.SamplingRate = rate
+	SetStackTraceConfig(&newConfig)
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -686,10 +698,15 @@ func captureStack(skip int) rawStack {
 		// Deterministic sampling using atomic counter
 		counter := atomic.AddUint64(&cfg.samplingCounter, 1)
 		threshold := uint64(1.0 / rate)
-		if counter%threshold == 0 {
+		if counter%threshold != 0 {
 			return nil
 		}
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+		}
+	}()
 
 	pcs := make([]uintptr, maxStackDepth)
 	n := runtime.Callers(skip+1, pcs)
@@ -777,11 +794,6 @@ func isUselessRuntimeFrame(function, file string) bool {
 // isEmpty returns true if the stack is empty
 func (rs rawStack) isEmpty() bool {
 	return len(rs) == 0
-}
-
-// formatFull returns detailed formatted stack trace (lazy evaluation)
-func (rs rawStack) formatFull() string {
-	return rs.toFrames().FormatFull()
 }
 
 // extractPathElements extracts the desired number of path elements from a file path

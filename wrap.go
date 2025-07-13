@@ -3,6 +3,7 @@ package erro
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -37,7 +38,7 @@ func (e *wrapError) Error() (out string) {
 		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
 			wrappedMsg = wrapErr.errorWithoutSeverity()
 		} else {
-			wrappedMsg = e.wrapped.Error()
+			wrappedMsg = safeErrorString(e.wrapped)
 		}
 	} else {
 		wrappedMsg = e.base.errorWithoutSeverity()
@@ -73,7 +74,7 @@ func (e *wrapError) errorWithoutSeverity() (out string) {
 		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
 			wrappedMsg = wrapErr.errorWithoutSeverity()
 		} else {
-			wrappedMsg = e.wrapped.Error()
+			wrappedMsg = safeErrorString(e.wrapped)
 		}
 	} else {
 		wrappedMsg = e.base.errorWithoutSeverity()
@@ -203,14 +204,34 @@ func (e *wrapError) StackWithError() string {
 	return e.Error() + "\n" + e.base.frames.FormatFull()
 }
 
-// Is checks if this error or any wrapped error matches the target
-func (e *wrapError) Is(target error) bool {
-	return e.isWithVisited(target, make(map[*baseError]bool))
+var visitedMapPool = sync.Pool{
+	New: func() any {
+		return make(map[*baseError]bool, 16) // Pre-allocate with reasonable capacity
+	},
 }
 
+// Is checks if this error or any wrapped error matches the target
+func (e *wrapError) Is(target error) bool {
+	visited, ok := visitedMapPool.Get().(map[*baseError]bool)
+	if !ok {
+		visited = make(map[*baseError]bool, 16)
+	}
+	defer func() {
+		recover()
+		// Clear the map before returning to pool
+		for k := range visited {
+			delete(visited, k)
+		}
+		visitedMapPool.Put(visited)
+	}()
+	return e.isWithVisited(target, visited, 0)
+}
+
+const maxCycleDetectionDepth = 50
+
 // isWithVisited implements Is with cycle detection
-func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) bool {
-	if target == nil {
+func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool, depth int) bool {
+	if target == nil || depth > maxCycleDetectionDepth {
 		return false
 	}
 
@@ -228,8 +249,6 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) boo
 	// Mark this base as visited for cycle detection
 	if e.base != nil {
 		visited[e.base] = true
-		// Clean up after this branch to allow other paths to visit the same base
-		defer func() { delete(visited, e.base) }()
 	}
 
 	// Fast path: Check if target is an erro error and use optimized comparison
@@ -240,7 +259,6 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) boo
 				return true
 			}
 		}
-
 		// Compare base messages (fast)
 		if e.base != nil && e.base.message == targetErro.GetMessage() {
 			return true
@@ -255,7 +273,7 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool) boo
 
 		// Recursive check with cycle detection
 		if wrapErr, ok := e.wrapped.(*wrapError); ok {
-			if wrapErr.isWithVisited(target, visited) {
+			if wrapErr.isWithVisited(target, visited, depth+1) {
 				return true
 			}
 		} else if e.wrapped.Is(target) {

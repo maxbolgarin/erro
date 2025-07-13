@@ -2,6 +2,7 @@ package erro
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"unsafe"
 )
@@ -35,6 +36,10 @@ func (e *lightError) Error() (res string) {
 		return e.fullMessage
 	}
 	defer func() {
+		if r := recover(); r != nil {
+			// Fallback to safe error message
+			res = fmt.Sprintf("error formatting failed: %v", r)
+		}
 		e.fullMessage = res
 	}()
 	if e.cause == nil && e.severity == "" && len(e.fields) == 0 {
@@ -45,7 +50,7 @@ func (e *lightError) Error() (res string) {
 
 	var errMsg, label string
 	if e.cause != nil {
-		errMsg = e.cause.Error()
+		errMsg = safeErrorString(e.cause)
 		capacity += len(errMsg) + 2
 	}
 	if e.severity != "" {
@@ -165,8 +170,8 @@ func (e *lightError) GetID() string {
 func (e *lightError) GetCategory() Category { return e.category }
 func (e *lightError) GetClass() Class       { return e.class }
 func (e *lightError) IsRetryable() bool     { return e.retryable }
-func (e *lightError) GetSpan() Span         { return nil }
-func (e *lightError) GetFields() []any      { return nil }
+func (e *lightError) GetSpan() Span         { return e.span }
+func (e *lightError) GetFields() []any      { return e.fields }
 func (e *lightError) GetCreated() time.Time { return time.Time{} }
 func (e *lightError) GetMessage() string    { return e.message }
 
@@ -198,7 +203,7 @@ func (e *lightError) StackWithError() string {
 }
 
 // Is method optimized for lightweight comparison
-func (e *lightError) Is(target error) bool {
+func (e *lightError) Is(target error) (ok bool) {
 	if target == nil {
 		return false
 	}
@@ -207,6 +212,12 @@ func (e *lightError) Is(target error) bool {
 	if e == target {
 		return true
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
 
 	// Fast comparison with other erro errors
 	if targetErro, ok := target.(Error); ok {

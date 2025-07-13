@@ -27,45 +27,6 @@ const (
 	maxStackDepth = 50 // Maximum stack depth
 )
 
-// wrapDepthTracker tracks the depth of error wrapping to prevent stack overflow
-type wrapDepthTracker struct {
-	depth int
-}
-
-// getWrapDepth extracts the current wrap depth from an error by counting the wrap chain
-func getWrapDepth(err error) int {
-	if err == nil {
-		return 0
-	}
-
-	depth := 0
-	current := err
-
-	// Count wrap depth by traversing the error chain
-	for current != nil {
-		if _, ok := current.(Error); ok {
-			// If this is a wrapError, count it and continue to wrapped error
-			if wrapErr, isWrap := current.(*wrapError); isWrap {
-				depth++
-				current = wrapErr.wrapped
-				continue
-			}
-			// If this is a baseError, we've reached the base
-			break
-		}
-		// For non-erro errors, we can't traverse further
-		break
-	}
-
-	return depth
-}
-
-// incrementWrapDepth creates a new depth tracker with incremented depth
-func incrementWrapDepth(err error) wrapDepthTracker {
-	currentDepth := getWrapDepth(err)
-	return wrapDepthTracker{depth: currentDepth + 1}
-}
-
 // SafeAppendFields safely appends fields with validation
 func safeAppendFields[T any](existing []T, newFields []T) []T {
 	if len(newFields) == 0 {

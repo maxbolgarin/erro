@@ -53,10 +53,11 @@ func (e *baseError) Error() (out string) {
 
 	if e.originalErr != nil {
 		if out == "" {
-			return e.originalErr.Error()
+			return safeErrorString(e.originalErr)
 		}
-		return out + ": " + e.originalErr.Error()
+		return out + ": " + safeErrorString(e.originalErr)
 	}
+
 	return out
 }
 
@@ -73,9 +74,9 @@ func (e *baseError) errorWithoutSeverity() (out string) {
 
 	if e.originalErr != nil {
 		if out == "" {
-			return e.originalErr.Error()
+			return safeErrorString(e.originalErr)
 		}
-		return out + ": " + e.originalErr.Error()
+		return out + ": " + safeErrorString(e.originalErr)
 	}
 	return out
 }
@@ -207,7 +208,7 @@ func (e *baseError) StackWithError() string {
 }
 
 // Is checks if this error matches the target error
-func (e *baseError) Is(target error) bool {
+func (e *baseError) Is(target error) (ok bool) {
 	if target == nil {
 		return false
 	}
@@ -216,6 +217,12 @@ func (e *baseError) Is(target error) bool {
 	if e == target {
 		return true
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
 
 	// Fast path for erro errors - compare by metadata first
 	if targetErro, ok := target.(Error); ok {
@@ -290,10 +297,17 @@ func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fiel
 }
 
 // buildFieldsMessage creates message with fields appended
-func buildFieldsMessage(message string, fields []any) string {
+func buildFieldsMessage(message string, fields []any) (out string) {
 	if len(fields) == 0 {
 		return message
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Fallback to safe string conversion
+			out = message
+		}
+	}()
 
 	msg := make([]byte, 0, len(message)+len(fields)*20)
 	msg = append(msg, message...)
@@ -500,4 +514,16 @@ func toUpperByte(b byte) byte {
 		return b - 'a' + 'A'
 	}
 	return b
+}
+
+func safeErrorString(err error) (res string) {
+	if err == nil {
+		return ""
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			res = "external error (formatting failed)"
+		}
+	}()
+	return err.Error()
 }
