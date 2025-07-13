@@ -281,6 +281,6 @@ func newID(class Class, category Category, created time.Time) string {
 	classStr := strings.ToUpper(string(class[:2]))
 	categoryStr := strings.ToUpper(string(category[:2]))
 
-	timestampStr := strconv.FormatInt(created.UnixNano(), 10)
+	timestampStr := strconv.FormatInt(created.UnixMicro(), 10)
 	return classStr + categoryStr + "-" + timestampStr[len(timestampStr)-4:]
 }

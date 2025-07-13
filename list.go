@@ -987,6 +987,10 @@ func (m *multiError) Error() string {
 	}
 
 	var builder strings.Builder
+	// Estimate capacity: prefix + count + each error (approx 100 chars) + separators
+	estimatedSize := 50 + len(m.errors)*100
+	builder.Grow(estimatedSize)
+
 	builder.WriteString("multiple errors (")
 	builder.WriteString(strconv.Itoa(len(m.errors)))
 	builder.WriteString("): ")
@@ -1028,6 +1032,10 @@ func (m *multiErrorSet) Error() string {
 	}
 
 	var builder strings.Builder
+	// Estimate capacity: prefix + count + each error (approx 100 chars) + counters + separators
+	estimatedSize := 50 + len(m.errors)*120
+	builder.Grow(estimatedSize)
+
 	builder.WriteString("multiple errors (")
 	builder.WriteString(strconv.Itoa(len(m.errors)))
 	builder.WriteString("): ")

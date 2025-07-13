@@ -3,8 +3,10 @@ package erro_test
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"math/rand"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/maxbolgarin/erro"
 )
@@ -271,34 +273,19 @@ func BenchmarkMultipleWrapsNew(b *testing.B) {
 func BenchmarkUnixNano(b *testing.B) {
 	a := "1"
 	c := "3"
-	d := "4"
-	e := "5"
-	f := "6"
-	g := "7"
-	h := "8"
-	builder := strings.Builder{}
-	builder.Grow(20)
+
+	t := time.Now()
 	for i := 0; i < b.N; i++ {
-		builder.Reset()
-		builder.WriteString(a)
-		builder.WriteString(c)
-		builder.WriteString(d)
-		builder.WriteString(e)
-		builder.WriteString(f)
-		builder.WriteString(g)
-		builder.WriteString(h)
+		timestamp := strconv.FormatInt(t.UnixNano(), 10)
+		_ = a + c + timestamp[len(timestamp)-4:]
 	}
 }
 
 func BenchmarkUnix(b *testing.B) {
 	a := "1"
 	c := "3"
-	d := "4"
-	e := "5"
-	f := "6"
-	g := "7"
-	h := "8"
+
 	for i := 0; i < b.N; i++ {
-		_ = a + c + d + e + f + g + h
+		_ = a + c + strconv.Itoa(rand.Intn(10000))
 	}
 }

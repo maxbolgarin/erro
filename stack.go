@@ -328,6 +328,12 @@ type Stack []StackFrame
 // String returns a formatted string representation of the entire stack
 func (s Stack) String() string {
 	var builder strings.Builder
+	// Estimate capacity: approximate 50 chars per frame + separators
+	estimatedSize := len(s) * 50
+	if estimatedSize > 0 {
+		builder.Grow(estimatedSize)
+	}
+
 	for i, frame := range s {
 		if i > 0 {
 			builder.WriteString(" -> ")
@@ -340,6 +346,12 @@ func (s Stack) String() string {
 // FormatFull returns detailed formatted stack trace
 func (s Stack) FormatFull() string {
 	var builder strings.Builder
+	// Estimate capacity: approximate 100 chars per frame for detailed formatting
+	estimatedSize := len(s) * 100
+	if estimatedSize > 0 {
+		builder.Grow(estimatedSize)
+	}
+
 	for i, frame := range s {
 		if i > 0 {
 			builder.WriteString("\n")
@@ -370,7 +382,8 @@ func (s Stack) ToJSONUserFrames() []map[string]any {
 
 // UserFrames returns only the user code frames, filtering out runtime and stdlib
 func (s Stack) UserFrames() Stack {
-	var userFrames Stack
+	// Pre-allocate with reasonable capacity (usually most frames are user code)
+	userFrames := make(Stack, 0, len(s))
 	for _, frame := range s {
 		if frame.IsUser() {
 			userFrames = append(userFrames, frame)
@@ -402,8 +415,13 @@ func (s Stack) GetOriginContext() *StackContext {
 
 // GetCallChain returns the call chain of user functions leading to the error
 func (s Stack) GetCallChain() []string {
-	var chain []string
 	userFrames := s.UserFrames()
+	// Pre-allocate with reasonable capacity, limited to 5 items max
+	capacity := len(userFrames)
+	if capacity > 5 {
+		capacity = 5
+	}
+	chain := make([]string, 0, capacity)
 
 	for _, frame := range userFrames {
 		if len(chain) < 5 { // Limit to prevent too much noise
@@ -416,10 +434,12 @@ func (s Stack) GetCallChain() []string {
 
 // ExtractPackages returns unique packages involved in the error
 func (s Stack) ExtractPackages() []string {
-	packageMap := make(map[string]bool)
-	var packages []string
+	userFrames := s.UserFrames()
+	packageMap := make(map[string]bool, len(userFrames))
+	// Pre-allocate with reasonable capacity (usually fewer packages than frames)
+	packages := make([]string, 0, len(userFrames)/2+1)
 
-	for _, frame := range s.UserFrames() {
+	for _, frame := range userFrames {
 		if frame.Package != "" && !packageMap[frame.Package] {
 			packageMap[frame.Package] = true
 			packages = append(packages, frame.Package)
@@ -479,7 +499,8 @@ func (s Stack) ContainsFunction(functionName string) bool {
 
 // FilterByPackage returns frames that belong to the specified package
 func (s Stack) FilterByPackage(packageName string) Stack {
-	var filtered Stack
+	// Pre-allocate with reasonable capacity (often fewer matches than total)
+	filtered := make(Stack, 0, len(s)/4+1)
 	for _, frame := range s {
 		if frame.Package == packageName {
 			filtered = append(filtered, frame)

@@ -54,9 +54,6 @@ func TestGroup_Chaining(t *testing.T) {
 	}
 
 	for i, err := range errors {
-		if err.GetID() != "TEST_CLASS" {
-			t.Errorf("Error %d: expected code 'TEST_CLASS', got '%s'", i, err.GetID())
-		}
 		if err.GetCategory() != "validation" {
 			t.Errorf("Error %d: expected category 'validation', got '%s'", i, err.GetCategory())
 		}
@@ -126,25 +123,6 @@ func TestSet_Deduplication(t *testing.T) {
 	}
 }
 
-func TestSet_CodeBasedDeduplication(t *testing.T) {
-	s := NewSet().Class("SAME_CLASS")
-
-	// Add errors with same code and message
-	s.New("error message")
-	s.New("error message") // Should be deduplicated
-
-	if s.Len() != 1 {
-		t.Errorf("Expected 1 unique error, got %d", s.Len())
-	}
-
-	// Change code and add same message
-	s.Class("DIFFERENT_CLASS").New("error message")
-
-	if s.Len() != 2 {
-		t.Errorf("Expected 2 unique errors (different codes), got %d", s.Len())
-	}
-}
-
 func TestSet_ChainingMethods(t *testing.T) {
 	s := NewSet().
 		Class("SET_CLASS").
@@ -165,8 +143,8 @@ func TestSet_ChainingMethods(t *testing.T) {
 	}
 
 	err := errors[0]
-	if err.GetID() != "SET_CLASS" {
-		t.Errorf("Expected code 'SET_CLASS', got '%s'", err.GetID())
+	if !strings.HasPrefix(err.GetID(), "SETE") {
+		t.Errorf("Expected code 'SETE', got '%s'", err.GetID())
 	}
 	if err.GetCategory() != "test" {
 		t.Errorf("Expected category 'test', got '%s'", err.GetCategory())

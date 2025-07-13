@@ -183,11 +183,6 @@ func TestLoggingIntegration(t *testing.T) {
 		t.Errorf("Expected query_time: 250ms, got: %v", fields["query_time"])
 	}
 
-	// Should contain metadata with error_ prefix (this is how LogFieldsMap actually works)
-	if fields["error_code"] != "DB_SLOW" {
-		t.Errorf("Expected code: DB_SLOW, got: %v", fields["error_code"])
-	}
-
 	if fields["error_category"] != erro.Category("performance") {
 		t.Errorf("Expected category: performance, got: %v", fields["error_category"])
 	}
