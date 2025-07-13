@@ -149,6 +149,11 @@ func (e *baseError) RecordMetrics(metrics Metrics) Error {
 	return e
 }
 
+func (e *baseError) SendEvent(dispatcher Dispatcher) Error {
+	dispatcher.SendEvent(e.ctx, e)
+	return e
+}
+
 // Getter methods for baseError
 func (e *baseError) GetBase() Error              { return e }
 func (e *baseError) GetContext() context.Context { return e.ctx }

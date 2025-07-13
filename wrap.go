@@ -158,6 +158,11 @@ func (e *wrapError) RecordMetrics(metrics Metrics) Error {
 	return e
 }
 
+func (e *wrapError) SendEvent(dispatcher Dispatcher) Error {
+	dispatcher.SendEvent(e.base.ctx, e)
+	return e
+}
+
 // Getter methods for wrapError
 func (e *wrapError) GetBase() Error              { return e.base }
 func (e *wrapError) GetContext() context.Context { return e.base.ctx }

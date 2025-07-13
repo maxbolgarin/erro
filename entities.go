@@ -20,6 +20,7 @@ type Error interface {
 	Span(span Span) Error
 
 	RecordMetrics(metrics Metrics) Error
+	SendEvent(dispatcher Dispatcher) Error
 
 	// Extraction methods
 	GetBase() Error
@@ -53,6 +54,10 @@ type Error interface {
 
 type Metrics interface {
 	RecordError(err Error)
+}
+
+type Dispatcher interface {
+	SendEvent(ctx context.Context, err Error)
 }
 
 type Span interface {

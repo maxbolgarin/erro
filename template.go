@@ -1,17 +1,24 @@
 package erro
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
 
 // ErrorTemplate represents a template for creating errors with predefined metadata
 type ErrorTemplate struct {
+	id        string
 	class     Class
 	category  Category
 	severity  Severity
 	fields    []any
 	retryable bool
+	ctx       context.Context
+	span      Span
+
+	metrics    Metrics
+	dispatcher Dispatcher
 
 	messageTemplate string
 }
@@ -21,6 +28,11 @@ func NewTemplate(fields ...any) *ErrorTemplate {
 	return &ErrorTemplate{
 		fields: fields,
 	}
+}
+
+func (t *ErrorTemplate) ID(id string) *ErrorTemplate {
+	t.id = id
+	return t
 }
 
 // Class sets the error class for the template
@@ -59,6 +71,30 @@ func (t *ErrorTemplate) Fields(fields ...any) *ErrorTemplate {
 // Message sets a message template with placeholders
 func (t *ErrorTemplate) Message(template string) *ErrorTemplate {
 	t.messageTemplate = template
+	return t
+}
+
+// Metrics sets the metrics for the template
+func (t *ErrorTemplate) Metrics(metrics Metrics) *ErrorTemplate {
+	t.metrics = metrics
+	return t
+}
+
+// Dispatcher sets the dispatcher for the template
+func (t *ErrorTemplate) Dispatcher(dispatcher Dispatcher) *ErrorTemplate {
+	t.dispatcher = dispatcher
+	return t
+}
+
+// Context sets the context for the template
+func (t *ErrorTemplate) Context(ctx context.Context) *ErrorTemplate {
+	t.ctx = ctx
+	return t
+}
+
+// Span sets the span for the template
+func (t *ErrorTemplate) Span(span Span) *ErrorTemplate {
+	t.span = span
 	return t
 }
 
@@ -101,7 +137,14 @@ func (t *ErrorTemplate) Errorf(message string, fields ...any) Error {
 
 	// It behaves like New if there is no format verbs in the message
 	err := Errorf(message, fields...)
-	return t.applyMetadata(err)
+	err = t.applyMetadata(err)
+	if t.metrics != nil {
+		t.metrics.RecordError(err)
+	}
+	if t.dispatcher != nil {
+		t.dispatcher.SendEvent(err.GetContext(), err)
+	}
+	return err
 }
 
 func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
@@ -142,23 +185,25 @@ func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) 
 
 	// It behaves like Wrap if there is no format verbs in the message
 	err := Wrapf(originalErr, message, fields...)
-	return t.applyMetadata(err)
+	err = t.applyMetadata(err)
+	if t.metrics != nil {
+		t.metrics.RecordError(err)
+	}
+	if t.dispatcher != nil {
+		t.dispatcher.SendEvent(err.GetContext(), err)
+	}
+	return err
 }
 
 func (t *ErrorTemplate) applyMetadata(err Error) Error {
-	if t.class != "" {
-		err.Class(t.class)
-	}
-	if t.category != "" {
-		err.Category(t.category)
-	}
-	if t.severity != "" {
-		err.Severity(t.severity)
-	}
-	if len(t.fields) > 0 {
-		err.Fields(t.fields...)
-	}
+	err.Class(t.class)
+	err.Category(t.category)
+	err.Severity(t.severity)
+	err.Fields(t.fields...)
 	err.Retryable(t.retryable)
+	err.Context(t.ctx)
+	err.Span(t.span)
+	err.ID(t.id)
 
 	return err
 }

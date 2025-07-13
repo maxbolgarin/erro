@@ -148,6 +148,11 @@ func (e *lightError) RecordMetrics(metrics Metrics) Error {
 	return e
 }
 
+func (e *lightError) SendEvent(dispatcher Dispatcher) Error {
+	dispatcher.SendEvent(e.ctx, e)
+	return e
+}
+
 // Getter methods
 func (e *lightError) GetBase() Error              { return e }
 func (e *lightError) GetContext() context.Context { return nil }
