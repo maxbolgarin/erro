@@ -1,7 +1,6 @@
 package erro_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -9,284 +8,302 @@ import (
 	"github.com/maxbolgarin/erro"
 )
 
-// Benchmark error creation (hot path - should be very fast now)
-func BenchmarkErrorsNew(b *testing.B) {
+// New
+
+func BenchmarkStdErrorsNew(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := errors.New("connection failed")
-		_ = err.Error()
+		_ = errors.New("connection failed")
 	}
 }
 
-func BenchmarkErroNew(b *testing.B) {
+func BenchmarkLightNew(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := erro.New("connection failed", "key1", "value1", "key2", "value2", "key3", "value3", "key4", "value4", "key5", "value5", "key6", "value6", "key7", "value7", "key8", "value8")
-		_ = err.Error()
+		_ = erro.NewLight("connection failed")
 	}
 }
 
-func BenchmarkErroNewLight(b *testing.B) {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, "key", "value")
-	fields := []any{"key1", "value1"}
-	b.ResetTimer()
+func BenchmarkLightNewWithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := erro.NewLight("connection failed", fields...).Context(ctx).Span(nil).Severity(erro.SeverityHigh)
-		_ = err.Error()
+		_ = erro.NewLight("connection failed", "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
-func BenchmarkErroWrapLight(b *testing.B) {
-	baseErr := erro.NewLight("connection refused")
+func BenchmarkNewWithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := erro.WrapLight(baseErr, "connection failed")
-		_ = err.Error()
+		_ = erro.New("connection failed", "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
-func BenchmarkErroNewWithFields(b *testing.B) {
+func BenchmarkNewfWithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.New("connection failed", "host", "localhost", "port", 5432)
+		_ = erro.New("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
-// Benchmark formatted error creation
-func BenchmarkFmtErrorf(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = fmt.Errorf("connection failed to %s:%d", "localhost", 5432)
-	}
-}
+// Wrapping
 
-func BenchmarkErroErrorf(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = erro.Errorf("connection failed to %s:%d", "localhost", 5432)
-	}
-}
-
-func BenchmarkErroErrorfWithFields(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = erro.Errorf("connection failed to %s:%d", "localhost", 5432, "timeout", "30s", "retries", 3)
-	}
-}
-
-// Benchmark error wrapping (should be much faster now - only single PC capture)
-func BenchmarkFmtErrorfWrap(b *testing.B) {
+func BenchmarkStdErrorf(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = fmt.Errorf("failed to connect to database: %w", baseErr)
+		_ = fmt.Errorf("connection failed to address=%s:%d: %w", "localhost", 5432, baseErr)
 	}
 }
 
-func BenchmarkErroWrap(b *testing.B) {
+func BenchmarkWrapLight(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.Wrap(baseErr, "failed to connect to database")
+		_ = erro.WrapLight(baseErr, "connection failed")
 	}
 }
 
-func BenchmarkErroWrapWithFields(b *testing.B) {
+func BenchmarkWrapLightWithFields(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.Wrap(baseErr, "failed to connect to database", "host", "localhost", "port", 5432)
+		_ = erro.WrapLight(baseErr, "connection failed", "host", "localhost", "port", 5432)
 	}
 }
 
-func BenchmarkErroWrapErroError(b *testing.B) {
-	baseErr := erro.New("connection refused", "host", "localhost")
+func BenchmarkWrap(b *testing.B) {
+	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.Wrap(baseErr, "failed to connect to database", "operation", "save_user")
+		_ = erro.Wrap(baseErr, "connection failed")
 	}
 }
 
-// Benchmark deep error wrapping (should show big improvements - no duplicate stack frames)
-func BenchmarkDeepWrappingStdLib(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		err1 := errors.New("network timeout")
-		err2 := fmt.Errorf("connection failed: %w", err1)
-		err3 := fmt.Errorf("database operation failed: %w", err2)
-		err4 := fmt.Errorf("user save failed: %w", err3)
-		_ = fmt.Errorf("API request failed: %w", err4)
-	}
-}
-
-func BenchmarkDeepWrappingErro(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		err1 := erro.New("network timeout", "host", "db.example.com")
-		err2 := erro.Wrap(err1, "connection failed", "port", 5432)
-		err3 := erro.Wrap(err2, "database operation failed", "table", "users")
-		err4 := erro.Wrap(err3, "user save failed", "user_id", "123")
-		_ = erro.Wrap(err4, "API request failed", "endpoint", "/api/users")
-	}
-}
-
-// Benchmark error message building (should be unchanged)
-func BenchmarkErrorsNewError(b *testing.B) {
-	err := errors.New("connection failed")
+func BenchmarkWrapWithFields(b *testing.B) {
+	baseErr := errors.New("connection refused")
 	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = erro.Wrap(baseErr, "connection failed", "host", "localhost", "port", 5432)
+	}
+}
+
+func BenchmarkWrapfWithFields(b *testing.B) {
+	baseErr := errors.New("connection refused")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = erro.Wrapf(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
+	}
+}
+
+func BenchmarkWrapWithoutStackGetting(b *testing.B) {
+	baseErr := erro.New("connection refused")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = erro.Wrap(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
+	}
+}
+
+// Error
+
+func BenchmarkGeneralErrorString(b *testing.B) {
+	baseErr := erro.New("base error message")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = baseErr.Error()
+	}
+}
+
+func BenchmarkGeneralErrorStringWithFields(b *testing.B) {
+	baseErr := erro.New("base error message", "foo", 123, "bar", true)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = baseErr.Error()
+	}
+}
+
+func BenchmarkErrorStringWrapErrorDeep(b *testing.B) {
+	err := erro.New("root error", "key1", "val1", "key2", 42)
+	for i := 0; i < 10; i++ {
+		err = erro.Wrap(err, fmt.Sprintf("wrap level %d", i), "key3", 3.14, "key4", true)
+	}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = err.Error()
 	}
 }
 
-func BenchmarkErroNewError(b *testing.B) {
-	err := erro.New("connection failed")
+// Log fields
+
+func BenchmarkErrorContextBuilding(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		erro.New("context build", "key1", "val1", "key2", 42).
+			WithCategory("test").
+			WithClass("test").
+			WithSeverity("test").
+			WithID("test").
+			WithRetryable(true).
+			WithSpan(nil).
+			WithFields("key3", "val3", "key4", 43)
+	}
+}
+
+func BenchmarkErrorLightContextBuilding(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		erro.NewLight("context build", "key1", "val1", "key2", 42).
+			WithCategory("test").
+			WithClass("test").
+			WithSeverity("test").
+			WithID("test").
+			WithRetryable(true).
+			WithSpan(nil).
+			WithFields("key3", "val3", "key4", 43)
+	}
+}
+
+func BenchmarkErrorContextRetrieving(b *testing.B) {
+	err := erro.New("context retrieve", "key1", "val1", "key2", 42)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = err.Error()
+		ctx := err.Context()
+		_ = ctx.ID()
+		_ = ctx.Class()
+		_ = ctx.Category()
+		_ = ctx.Message()
+		_ = ctx.Fields()
+		_ = ctx.Severity()
+		_ = ctx.IsRetryable()
+		_ = ctx.Span()
+		_ = ctx.Created()
+		_ = ctx.Stack()
 	}
 }
 
-func BenchmarkErroNewWithFieldsError(b *testing.B) {
-	err := erro.New("connection failed", "host", "localhost", "port", 5432, "timeout", "30s")
+func BenchmarkErrorFieldsGetting(b *testing.B) {
+	err := erro.New("full error", "key1", "val1", "key2", 42, "key3", 3.14, "key4", true).
+		WithClass("test").
+		WithCategory("test").
+		WithSeverity("test").
+		WithID("test").
+		WithRetryable(true).
+		WithSpan(nil).
+		WithFields("key5", "val5", "key6", 44)
+
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = err.Error()
+		erro.LogFields(err)
 	}
 }
 
-// Benchmark stack access (lazy evaluation - only pays cost when used)
-func BenchmarkErroGetStack(b *testing.B) {
-	err := erro.New("connection failed", "host", "localhost")
+func BenchmarkErrorFieldsGettingWithWrap(b *testing.B) {
+	baseErr := erro.New("base error", "key1", "val1", "key2", 42)
+	wrappedErr := erro.Wrap(baseErr, "wrapped error", "key3", 3.14, "key4", true).
+		WithClass("test").
+		WithCategory("test").
+		WithSeverity("test").
+		WithID("test").
+		WithRetryable(true).
+		WithSpan(nil).
+		WithFields("key5", "val5", "key6", 44)
+
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = err.Stack() // This should be slower (lazy evaluation)
+		erro.LogFields(wrappedErr)
 	}
 }
 
-func BenchmarkErroWrappedGetStack(b *testing.B) {
-	baseErr := erro.New("connection refused", "host", "localhost")
-	wrappedErr := erro.Wrap(baseErr, "operation failed", "table", "users")
-	b.ResetTimer()
+// Template benchmarks
+
+func BenchmarkTemplateCreationWithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = wrappedErr.Stack() // Should resolve wrap point + base stack
+		_ = erro.NewTemplate("key1", "value1", "key2", 123).
+			WithClass(erro.ClassValidation).
+			WithCategory(erro.CategoryUserInput).
+			WithSeverity(erro.SeverityHigh).
+			WithRetryable(true).
+			WithID("TEMPLATE_ID").
+			WithMessageTemplate("template error: %s")
 	}
 }
 
-// Benchmark context extraction (rare operations - acceptable to be slower)
-func BenchmarkErroExtractContext(b *testing.B) {
-	err := erro.New("connection failed", "host", "localhost").
-		ID("DB_001").
-		Category("infrastructure").
-		Severity("high")
-	b.ResetTimer()
+func BenchmarkTemplateNewError(b *testing.B) {
+	tmpl := erro.NewTemplate().
+		WithClass(erro.ClassValidation).
+		WithCategory(erro.CategoryUserInput).
+		WithSeverity(erro.SeverityHigh).
+		WithRetryable(true).
+		WithID("TEMPLATE_ID")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.ExtractContext(err) // Should be slower (lazy evaluation)
+		_ = tmpl.New("something went wrong")
 	}
 }
 
-func BenchmarkErroLogFieldsMap(b *testing.B) {
-	err := erro.New("connection failed", "host", "localhost").
-		ID("DB_001").
-		Category("infrastructure").
-		Severity("high")
-	b.ResetTimer()
+func BenchmarkTemplateNewErrorWithMessageAndFields(b *testing.B) {
+	tmpl := erro.NewTemplate().
+		WithClass(erro.ClassValidation).
+		WithCategory(erro.CategoryUserInput).
+		WithSeverity(erro.SeverityHigh).
+		WithRetryable(true).
+		WithID("TEMPLATE_ID").
+		WithMessageTemplate("template error: %s")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.LogFieldsMap(err) // Should be slower (lazy evaluation)
+		_ = tmpl.New("something went wrong", "key1", "value1", "key2", 123)
 	}
 }
 
-// Benchmark realistic usage patterns
-func BenchmarkRealisticStdLibUsage(b *testing.B) {
+func BenchmarkTemplateWrapErrorNoStack(b *testing.B) {
+	tmpl := erro.NewTemplate().
+		WithClass(erro.ClassValidation).
+		WithCategory(erro.CategoryUserInput).
+		WithSeverity(erro.SeverityHigh).
+		WithRetryable(true).
+		WithID("TEMPLATE_ID").
+		WithMessageTemplate("template error: %s")
+	baseErr := erro.New("base error")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		baseErr := errors.New("connection refused")
-		wrappedErr := fmt.Errorf("failed to connect to database: %w", baseErr)
-		finalErr := fmt.Errorf("user operation failed: %w", wrappedErr)
-		_ = finalErr.Error()
+		_ = tmpl.Wrap(baseErr, "wrapped by template")
 	}
 }
 
-func BenchmarkRealisticErroUsage(b *testing.B) {
+func BenchmarkTemplateWrapErrorWithFieldsNoStack(b *testing.B) {
+	tmpl := erro.NewTemplate().
+		WithClass(erro.ClassValidation).
+		WithCategory(erro.CategoryUserInput).
+		WithSeverity(erro.SeverityHigh).
+		WithRetryable(true).
+		WithID("TEMPLATE_ID").
+		WithMessageTemplate("template error: %s")
+	baseErr := erro.New("base error")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		baseErr := erro.New("connection refused", "host", "db.example.com", "port", 5432).
-			ID("CONN_001").
-			Category("infrastructure")
-		wrappedErr := erro.Wrap(baseErr, "failed to connect to database", "timeout", "30s")
-		finalErr := erro.Wrap(wrappedErr, "user operation failed", "user_id", "123", "operation", "save")
-		_ = finalErr.Error()
+		_ = tmpl.Wrap(baseErr, "wrapped by template", "key1", "value1", "key2", 123)
 	}
 }
 
-// Benchmark memory usage with different field counts
-func BenchmarkErroNewNoFields(b *testing.B) {
+func BenchmarkTemplateWrapErrorWithFieldsWithStack(b *testing.B) {
+	tmpl := erro.NewTemplate().
+		WithClass(erro.ClassValidation).
+		WithCategory(erro.CategoryUserInput).
+		WithSeverity(erro.SeverityHigh).
+		WithRetryable(true).
+		WithID("TEMPLATE_ID").
+		WithMessageTemplate("template error: %s")
+	baseErr := errors.New("base error")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = erro.New("simple error")
-	}
-}
-
-func BenchmarkErroNew2Fields(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = erro.New("error", "key1", "value1")
-	}
-}
-
-func BenchmarkErroNew8Fields(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = erro.New("error", "key1", "value1", "key2", "value2", "key3", "value3", "key4", "value4")
-	}
-}
-
-// Benchmark chaining performance
-func BenchmarkErroNewWithChaining(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_ = erro.New("connection failed", "host", "localhost").
-			ID("DB_001").
-			Category("infrastructure").
-			Severity("high").
-			Retryable(true)
-	}
-}
-
-// Benchmark the optimization: wrap points vs full stacks
-func BenchmarkMultipleWrapsOld(b *testing.B) {
-	// Simulate old behavior with full stack capture on each wrap
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		err1 := erro.New("base error")
-		err2 := erro.Wrap(err1, "wrap 1")
-		err3 := erro.Wrap(err2, "wrap 2")
-		err4 := erro.Wrap(err3, "wrap 3")
-		_ = erro.Wrap(err4, "wrap 4")
-	}
-}
-
-func BenchmarkMultipleWrapsNew(b *testing.B) {
-	// Our optimized approach with single PC capture per wrap
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		err1 := erro.New("base error")
-		err2 := erro.Wrap(err1, "wrap 1")
-		err3 := erro.Wrap(err2, "wrap 2")
-		err4 := erro.Wrap(err3, "wrap 3")
-		_ = erro.Wrap(err4, "wrap 4")
+		_ = tmpl.Wrap(baseErr, "wrapped by template", "key1", "value1", "key2", 123)
 	}
 }

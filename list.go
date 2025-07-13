@@ -49,12 +49,14 @@ func (g *List) Add(err error) *List {
 
 // New creates a new error with message and fields and adds it to the list
 func (g *List) New(message string, fields ...any) *List {
-	return g.add(New(message, fields...))
+	erroErr := New(message, fields...)
+	return g.add(erroErr)
 }
 
 // Errorf creates a new error with formatted message and adds it to the list
 func (g *List) Errorf(message string, args ...any) *List {
-	return g.add(Errorf(message, args...))
+	erroErr := Newf(message, args...)
+	return g.add(erroErr)
 }
 
 // Wrap wraps an error with additional context and adds it to the list
@@ -62,7 +64,8 @@ func (g *List) Wrap(err error, message string, fields ...any) *List {
 	if err == nil {
 		return g.New(message, fields...)
 	}
-	return g.add(Wrap(err, message, fields...))
+	erroErr := Wrap(err, message, fields...)
+	return g.add(erroErr)
 }
 
 // WrapEmpty wraps an error without a message to create an erro.Error from it.
@@ -70,7 +73,8 @@ func (g *List) WrapEmpty(err error) *List {
 	if err == nil {
 		return g
 	}
-	return g.add(WrapEmpty(err))
+	erroErr := WrapEmpty(err)
+	return g.add(erroErr)
 }
 
 // Wrapf wraps an error with formatted message and adds it to the list
@@ -78,7 +82,8 @@ func (g *List) Wrapf(err error, message string, args ...any) *List {
 	if err == nil {
 		return g.Errorf(message, args...)
 	}
-	return g.add(Wrapf(err, message, args...))
+	erroErr := Wrapf(err, message, args...)
+	return g.add(erroErr)
 }
 
 // Err returns a combined error from all errors in the list, or nil if empty.
@@ -246,24 +251,22 @@ func (g *List) add(err Error) *List {
 
 // applyMetadata applies accumulated metadata to an error
 func (g *List) applyMetadata(err Error) {
-	if g.class != ClassUnknown && err.GetClass() == ClassUnknown {
-		err.Class(g.class)
+	if g.class != ClassUnknown && err.Context().Class() == ClassUnknown {
+		err.WithClass(g.class)
 	}
-	if g.category != CategoryUnknown && err.GetCategory() == CategoryUnknown {
-		err.Category(g.category)
+	if g.category != CategoryUnknown && err.Context().Category() == CategoryUnknown {
+		err.WithCategory(g.category)
 	}
-	if g.severity != SeverityUnknown && err.GetSeverity() == SeverityUnknown {
-		err.Severity(g.severity)
+	if g.severity != SeverityUnknown && err.Context().Severity() == SeverityUnknown {
+		err.WithSeverity(g.severity)
 	}
 	if g.retryable {
-		err.Retryable(g.retryable)
+		err.WithRetryable(g.retryable)
 	}
 	if len(g.fields) > 0 {
-		err.Fields(g.fields...)
+		err.WithFields(g.fields...)
 	}
-	if g.ctx != nil && err.GetContext() == nil {
-		err.Context(g.ctx)
-	}
+
 }
 
 // Set collects unique errors and provides the same chaining API as Error.
@@ -309,12 +312,14 @@ func (s *Set) Add(err error) *Set {
 
 // New creates a new error with message and fields and adds it to the set if unique
 func (s *Set) New(message string, fields ...any) *Set {
-	return s.add(New(message, fields...))
+	erroErr := New(message, fields...)
+	return s.add(erroErr)
 }
 
 // Errorf creates a new error with formatted message and adds it to the set if unique
 func (s *Set) Errorf(message string, args ...any) *Set {
-	return s.add(Errorf(message, args...))
+	erroErr := Newf(message, args...)
+	return s.add(erroErr)
 }
 
 // Wrap wraps an error with additional context and adds it to the set if unique
@@ -322,7 +327,8 @@ func (s *Set) Wrap(err error, message string, fields ...any) *Set {
 	if err == nil {
 		return s.New(message, fields...)
 	}
-	return s.add(Wrap(err, message, fields...))
+	erroErr := Wrap(err, message, fields...)
+	return s.add(erroErr)
 }
 
 // WrapEmpty wraps an error without a message to create an erro.Error from it.
@@ -330,7 +336,8 @@ func (s *Set) WrapEmpty(err error) *Set {
 	if err == nil {
 		return s
 	}
-	return s.add(WrapEmpty(err))
+	erroErr := WrapEmpty(err)
+	return s.add(erroErr)
 }
 
 // Wrapf wraps an error with formatted message and adds it to the set if unique
@@ -338,7 +345,8 @@ func (s *Set) Wrapf(err error, message string, args ...any) *Set {
 	if err == nil {
 		return s.Errorf(message, args...)
 	}
-	return s.add(Wrapf(err, message, args...))
+	erroErr := Wrapf(err, message, args...)
+	return s.add(erroErr)
 }
 
 // Err returns a combined error from all errors in the list, or nil if empty.
@@ -436,15 +444,15 @@ func (s *Set) add(err Error) *Set {
 }
 
 func MessageKeyGetter(err error) string {
-	if e, ok := err.(Error); ok {
-		return e.GetMessage()
+	if e, ok := err.(ErrorContext); ok {
+		return e.Message()
 	}
 	return err.Error()
 }
 
 func IDKeyGetter(err error) string {
-	if e, ok := err.(Error); ok {
-		return e.GetID()
+	if e, ok := err.(ErrorContext); ok {
+		return e.ID()
 	}
 	return err.Error()
 }
@@ -493,12 +501,14 @@ func (g *SafeList) Add(err error) *SafeList {
 
 // New creates a new error with message and fields and adds it to the list
 func (g *SafeList) New(message string, fields ...any) *SafeList {
-	return g.add(New(message, fields...))
+	erroErr := New(message, fields...)
+	return g.add(erroErr)
 }
 
 // Errorf creates a new error with formatted message and adds it to the list
 func (g *SafeList) Errorf(message string, args ...any) *SafeList {
-	return g.add(Errorf(message, args...))
+	erroErr := Newf(message, args...)
+	return g.add(erroErr)
 }
 
 // Wrap wraps an error with additional context and adds it to the list
@@ -506,7 +516,8 @@ func (g *SafeList) Wrap(err error, message string, fields ...any) *SafeList {
 	if err == nil {
 		return g.New(message, fields...)
 	}
-	return g.add(Wrap(err, message, fields...))
+	erroErr := Wrap(err, message, fields...)
+	return g.add(erroErr)
 }
 
 // WrapEmpty wraps an error without a message to create an erro.Error from it.
@@ -514,7 +525,8 @@ func (g *SafeList) WrapEmpty(err error) *SafeList {
 	if err == nil {
 		return g
 	}
-	return g.add(WrapEmpty(err))
+	erroErr := WrapEmpty(err)
+	return g.add(erroErr)
 }
 
 // Wrapf wraps an error with formatted message and adds it to the list
@@ -522,7 +534,8 @@ func (g *SafeList) Wrapf(err error, message string, args ...any) *SafeList {
 	if err == nil {
 		return g.Errorf(message, args...)
 	}
-	return g.add(Wrapf(err, message, args...))
+	erroErr := Wrapf(err, message, args...)
+	return g.add(erroErr)
 }
 
 // Err returns a combined error from all errors in the list, or nil if empty.
@@ -784,23 +797,20 @@ func (g *SafeList) add(err Error) *SafeList {
 
 // applyMetadata applies accumulated metadata to an error
 func (g *SafeList) applyMetadata(err Error) {
-	if g.class != ClassUnknown && err.GetClass() == ClassUnknown {
-		err.Class(g.class)
+	if g.class != ClassUnknown && err.Context().Class() == ClassUnknown {
+		err.WithClass(g.class)
 	}
-	if g.category != CategoryUnknown && err.GetCategory() == CategoryUnknown {
-		err.Category(g.category)
+	if g.category != CategoryUnknown && err.Context().Category() == CategoryUnknown {
+		err.WithCategory(g.category)
 	}
-	if g.severity != SeverityUnknown && err.GetSeverity() == SeverityUnknown {
-		err.Severity(g.severity)
+	if g.severity != SeverityUnknown && err.Context().Severity() == SeverityUnknown {
+		err.WithSeverity(g.severity)
 	}
 	if len(g.fields) > 0 {
-		err.Fields(g.fields...)
-	}
-	if g.ctx != nil && err.GetContext() == nil {
-		err.Context(g.ctx)
+		err.WithFields(g.fields...)
 	}
 	if g.retryable {
-		err.Retryable(g.retryable)
+		err.WithRetryable(g.retryable)
 	}
 }
 
@@ -847,12 +857,14 @@ func (s *SafeSet) Add(err error) *SafeSet {
 
 // New creates a new error with message and fields and adds it to the set if unique
 func (s *SafeSet) New(message string, fields ...any) *SafeSet {
-	return s.add(New(message, fields...))
+	erroErr := New(message, fields...)
+	return s.add(erroErr)
 }
 
 // Errorf creates a new error with formatted message and adds it to the set if unique
 func (s *SafeSet) Errorf(message string, args ...any) *SafeSet {
-	return s.add(Errorf(message, args...))
+	erroErr := Newf(message, args...)
+	return s.add(erroErr)
 }
 
 // Wrap wraps an error with additional context and adds it to the set if unique
@@ -860,7 +872,8 @@ func (s *SafeSet) Wrap(err error, message string, fields ...any) *SafeSet {
 	if err == nil {
 		return s.New(message, fields...)
 	}
-	return s.add(Wrap(err, message, fields...))
+	erroErr := Wrap(err, message, fields...)
+	return s.add(erroErr)
 }
 
 // WrapEmpty wraps an error without a message to create an erro.Error from it.
@@ -868,7 +881,8 @@ func (s *SafeSet) WrapEmpty(err error) *SafeSet {
 	if err == nil {
 		return s
 	}
-	return s.add(WrapEmpty(err))
+	erroErr := WrapEmpty(err)
+	return s.add(erroErr)
 }
 
 // Wrapf wraps an error with formatted message and adds it to the set if unique
@@ -876,7 +890,8 @@ func (s *SafeSet) Wrapf(err error, message string, args ...any) *SafeSet {
 	if err == nil {
 		return s.Errorf(message, args...)
 	}
-	return s.add(Wrapf(err, message, args...))
+	erroErr := Wrapf(err, message, args...)
+	return s.add(erroErr)
 }
 
 // Err returns a combined error from all errors in the list, or nil if empty.

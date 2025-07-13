@@ -10,8 +10,8 @@ func New(message string, fields ...any) Error {
 	return newBaseError(nil, message, fields...)
 }
 
-// Errorf creates a new error with formatted message and optional fields
-func Errorf(message string, args ...any) Error {
+// Newf creates a new error with formatted message and optional fields
+func Newf(message string, args ...any) Error {
 	// Count format verbs in the message
 	formats := countFormatVerbs(message)
 
@@ -37,7 +37,8 @@ func Wrap(err error, message string, fields ...any) Error {
 	}
 
 	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(Error); ok {
+	if erroErr, ok := err.(Error); ok && erroErr != nil {
+		// TODO: handle light
 		return newWrapError(erroErr, message, fields...)
 	}
 
@@ -45,25 +46,10 @@ func Wrap(err error, message string, fields ...any) Error {
 	return newBaseError(err, message, fields...)
 }
 
-// WrapEmpty wraps an error without a message to create an erro.Error from it.
-func WrapEmpty(err error) Error {
-	if err == nil {
-		return nil
-	}
-
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(Error); ok {
-		return newWrapError(erroErr, "")
-	}
-
-	// For external errors, create a new base error that wraps it
-	return newBaseError(err, "")
-}
-
 // Wrapf wraps an existing error with formatted message and optional fields
 func Wrapf(err error, message string, args ...any) Error {
 	if err == nil {
-		return Errorf(message, args...)
+		return Newf(message, args...)
 	}
 
 	// Find where format args end and fields begin
@@ -79,7 +65,7 @@ func Wrapf(err error, message string, args ...any) Error {
 	}
 
 	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(Error); ok {
+	if erroErr, ok := err.(Error); ok && erroErr != nil {
 		return newWrapError(erroErr, message, args...)
 	}
 
@@ -87,13 +73,18 @@ func Wrapf(err error, message string, args ...any) Error {
 	return newBaseError(err, message, args...)
 }
 
-func Erro(err error) Error {
+// WrapEmpty wraps an error without a message to create an erro.Error from it.
+func WrapEmpty(err error) Error {
 	if err == nil {
 		return nil
 	}
-	if erroErr, ok := err.(Error); ok {
-		return erroErr
+
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(Error); ok && erroErr != nil {
+		return newWrapError(erroErr, "")
 	}
+
+	// For external errors, create a new base error that wraps it
 	return newBaseError(err, "")
 }
 
@@ -124,14 +115,6 @@ func Is(err error, target error) (ok bool) {
 		return Is(x.Unwrap(), target)
 	}
 
-	// For erro errors, also check the error chain via GetBase
-	if erroErr, ok := err.(Error); ok {
-		base := erroErr.GetBase()
-		if base != err && Is(base, target) {
-			return true
-		}
-	}
-
 	return false
 }
 
@@ -148,7 +131,7 @@ func isComparable(err, target error) bool {
 
 	// For erro errors, delegate to their Is method
 	if erroErr, ok := err.(Error); ok {
-		return erroErr.Is(target)
+		return erroErr.Context().Is(target)
 	}
 
 	return false
@@ -196,25 +179,18 @@ func As(err error, target any) (ok bool) {
 		return As(x.Unwrap(), target)
 	}
 
-	// For erro errors, also check the error chain via GetBase
-	if erroErr, ok := err.(Error); ok {
-		base := erroErr.GetBase()
-		if base != err && As(base, target) {
-			return true
-		}
-	}
-
 	return false
 }
 
 // Unwrap returns the underlying error if this wraps an external error
 func Unwrap(err error) error {
 	if erroErr, ok := err.(Error); ok {
-		base := erroErr.GetBase()
+		base := erroErr.Context().BaseError()
 		baseInt, ok := base.(*baseError)
 		if ok {
 			return baseInt.originalErr
 		}
+		return erroErr.Unwrap()
 	}
 	return nil
 }

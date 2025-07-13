@@ -54,11 +54,11 @@ func TestGroup_Chaining(t *testing.T) {
 	}
 
 	for i, err := range errors {
-		if err.GetCategory() != "validation" {
-			t.Errorf("Error %d: expected category 'validation', got '%s'", i, err.GetCategory())
+		if err.Context().Category() != "validation" {
+			t.Errorf("Error %d: expected category 'validation', got '%s'", i, err.Context().Category())
 		}
-		if err.GetSeverity() != "high" {
-			t.Errorf("Error %d: expected severity 'high', got '%s'", i, err.GetSeverity())
+		if err.Context().Severity() != "high" {
+			t.Errorf("Error %d: expected severity 'high', got '%s'", i, err.Context().Severity())
 		}
 	}
 }
@@ -143,11 +143,11 @@ func TestSet_ChainingMethods(t *testing.T) {
 	}
 
 	err := errors[0]
-	if !strings.HasPrefix(err.GetID(), "SETE") {
-		t.Errorf("Expected code 'SETE', got '%s'", err.GetID())
+	if !strings.HasPrefix(err.Context().ID(), "SETE") {
+		t.Errorf("Expected code 'SETE', got '%s'", err.Context().ID())
 	}
-	if err.GetCategory() != "test" {
-		t.Errorf("Expected category 'test', got '%s'", err.GetCategory())
+	if err.Context().Category() != "test" {
+		t.Errorf("Expected category 'test', got '%s'", err.Context().Category())
 	}
 }
 

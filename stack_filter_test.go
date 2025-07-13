@@ -12,7 +12,7 @@ func TestStackFrameFiltering(t *testing.T) {
 	err := erro.New("test error")
 
 	// Get the stack frames
-	frames := err.Stack()
+	frames := err.Context().Stack()
 
 	// Print each frame for manual inspection
 	fmt.Println("Stack frames (should NOT contain runtime.main or runtime.goexit):")
@@ -46,7 +46,7 @@ func TestStackFrameFilteringWithDeepStack(t *testing.T) {
 	// Create error through helper functions to get a deeper stack
 	err := helperFunction()
 
-	frames := err.Stack()
+	frames := err.Context().Stack()
 
 	fmt.Println("\nDeep stack frames (should show user functions only):")
 	for i, frame := range frames {

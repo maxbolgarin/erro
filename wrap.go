@@ -19,44 +19,12 @@ type wrapError struct {
 	fullMessage string // Full message with fields (caching)
 }
 
-func (e *wrapError) Error() (out string) {
-	if e.fullMessage != "" {
-		return e.fullMessage
-	}
-	defer func() {
-		e.fullMessage = out
-	}()
-
-	out = buildFieldsMessage(e.wrapMessage, e.wrapFields)
-
-	// Build the complete chain by getting the wrapped error's message
-	var wrappedMsg string
-	if e.wrapped != nil {
-		// For wrapped errors, get the error message without severity label to avoid duplication
-		if baseErr, ok := e.wrapped.(*baseError); ok {
-			wrappedMsg = baseErr.errorWithoutSeverity()
-		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
-			wrappedMsg = wrapErr.errorWithoutSeverity()
-		} else {
-			wrappedMsg = safeErrorString(e.wrapped)
-		}
-	} else {
-		wrappedMsg = e.base.errorWithoutSeverity()
-	}
-
-	if out == "" {
-		return wrappedMsg
-	}
-
-	if e.base.severity != "" {
-		out = e.base.severity.Label() + " " + out
-	}
-
-	return out + ": " + wrappedMsg
+func (e *wrapError) Error() string {
+	return e.errorString()
 }
 
 // errorWithoutSeverity returns the error message without severity label
-func (e *wrapError) errorWithoutSeverity() (out string) {
+func (e *wrapError) errorString(ignoreSeverity ...bool) (out string) {
 	if e.fullMessage != "" {
 		return e.fullMessage
 	}
@@ -70,18 +38,22 @@ func (e *wrapError) errorWithoutSeverity() (out string) {
 	var wrappedMsg string
 	if e.wrapped != nil {
 		if baseErr, ok := e.wrapped.(*baseError); ok {
-			wrappedMsg = baseErr.errorWithoutSeverity()
+			wrappedMsg = baseErr.errorString(true)
 		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
-			wrappedMsg = wrapErr.errorWithoutSeverity()
+			wrappedMsg = wrapErr.errorString(true)
 		} else {
 			wrappedMsg = safeErrorString(e.wrapped)
 		}
 	} else {
-		wrappedMsg = e.base.errorWithoutSeverity()
+		wrappedMsg = e.base.errorString(true)
 	}
 
 	if out == "" {
 		return wrappedMsg
+	}
+
+	if (len(ignoreSeverity) == 0 || !ignoreSeverity[0]) && e.base.severity != SeverityUnknown {
+		out = e.base.severity.Label() + " " + out
 	}
 
 	return out + ": " + wrappedMsg
@@ -97,28 +69,28 @@ func (e *wrapError) Unwrap() error {
 }
 
 // Chaining methods for wrapError - these modify the base error
-func (e *wrapError) ID(idRaw ...string) Error {
+func (e *wrapError) WithID(idRaw ...string) Error {
 	var id string
 	if len(idRaw) > 0 {
 		id = truncateString(idRaw[0], maxCodeLength)
 	} else {
-		id = e.base.GetID()
+		id = e.base.ID()
 	}
 	e.base.id = id
 	return e
 }
 
-func (e *wrapError) Category(category Category) Error {
+func (e *wrapError) WithCategory(category Category) Error {
 	e.base.category = category
 	return e
 }
 
-func (e *wrapError) Class(class Class) Error {
+func (e *wrapError) WithClass(class Class) Error {
 	e.base.class = class
 	return e
 }
 
-func (e *wrapError) Severity(severity Severity) Error {
+func (e *wrapError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
@@ -127,7 +99,7 @@ func (e *wrapError) Severity(severity Severity) Error {
 	return e
 }
 
-func (e *wrapError) Fields(fields ...any) Error {
+func (e *wrapError) WithFields(fields ...any) Error {
 	e.wrapFields = safeAppendFields(e.wrapFields, prepareFields(fields))
 	if e.base.span != nil {
 		e.base.span.SetAttributes(e.wrapFields...)
@@ -136,17 +108,15 @@ func (e *wrapError) Fields(fields ...any) Error {
 	return e
 }
 
-func (e *wrapError) Context(ctx context.Context) Error {
-	e.base.ctx = ctx
-	return e
-}
-
-func (e *wrapError) Retryable(retryable bool) Error {
+func (e *wrapError) WithRetryable(retryable bool) Error {
 	e.base.retryable = retryable
 	return e
 }
 
-func (e *wrapError) Span(span Span) Error {
+func (e *wrapError) WithSpan(span Span) Error {
+	if span == nil {
+		return e
+	}
 	span.SetAttributes(e.base.fields...)
 	span.SetAttributes(e.wrapFields...)
 	span.RecordError(e)
@@ -155,53 +125,52 @@ func (e *wrapError) Span(span Span) Error {
 }
 
 func (e *wrapError) RecordMetrics(metrics Metrics) Error {
+	if metrics == nil {
+		return e
+	}
 	metrics.RecordError(e)
 	return e
 }
 
-func (e *wrapError) SendEvent(dispatcher Dispatcher) Error {
-	dispatcher.SendEvent(e.base.ctx, e)
+func (e *wrapError) SendEvent(ctx context.Context, dispatcher Dispatcher) Error {
+	if dispatcher == nil {
+		return e
+	}
+	dispatcher.SendEvent(ctx, e)
 	return e
 }
 
 // Getter methods for wrapError
-func (e *wrapError) GetBase() Error              { return e.base }
-func (e *wrapError) GetContext() context.Context { return e.base.ctx }
-func (e *wrapError) GetID() string               { return e.base.GetID() }
-func (e *wrapError) GetCategory() Category       { return e.base.category }
-func (e *wrapError) GetClass() Class             { return e.base.class }
-func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
-func (e *wrapError) GetSpan() Span               { return e.base.span }
-func (e *wrapError) GetCreated() time.Time       { return e.base.created }
-func (e *wrapError) GetMessage() string          { return e.base.message }
+func (e *wrapError) Context() ErrorContext   { return e }
+func (e *wrapError) ID() string              { return e.base.ID() }
+func (e *wrapError) Class() Class            { return e.base.Class() }
+func (e *wrapError) Category() Category      { return e.base.Category() }
+func (e *wrapError) IsRetryable() bool       { return e.base.IsRetryable() }
+func (e *wrapError) Span() Span              { return e.base.Span() }
+func (e *wrapError) Created() time.Time      { return e.base.Created() }
+func (e *wrapError) Severity() Severity      { return e.base.Severity() }
+func (e *wrapError) Stack() Stack            { return e.base.Stack() }
+func (e *wrapError) BaseError() ErrorContext { return e.base }
 
-// Severity checking methods
-func (e *wrapError) GetSeverity() Severity { return e.base.GetSeverity() }
-func (e *wrapError) IsCritical() bool      { return e.base.IsCritical() }
-func (e *wrapError) IsHigh() bool          { return e.base.IsHigh() }
-func (e *wrapError) IsMedium() bool        { return e.base.IsMedium() }
-func (e *wrapError) IsLow() bool           { return e.base.IsLow() }
-func (e *wrapError) IsInfo() bool          { return e.base.IsInfo() }
-func (e *wrapError) IsUnknown() bool {
-	return e.base.IsUnknown()
+func (e *wrapError) Message() string {
+	return e.wrapMessage + ": " + e.wrapped.Context().Message()
 }
-func (e *wrapError) Stack() Stack {
-	if e.base.initStack() {
-		e.fullMessage = ""
+
+func (e *wrapError) Fields() []any {
+	// Add fields from wrapped error (if it exists)
+	var wrappedFields []any
+	if e.wrapped != nil {
+		wrappedFields = e.wrapped.Context().Fields()
+	} else {
+		wrappedFields = e.base.fields
 	}
-	return e.base.frames
-}
-func (e *wrapError) StackFormat() string {
-	if e.base.initStack() {
-		e.fullMessage = ""
-	}
-	return e.base.frames.FormatFull()
-}
-func (e *wrapError) StackWithError() string {
-	if e.base.initStack() {
-		e.fullMessage = ""
-	}
-	return e.Error() + "\n" + e.base.frames.FormatFull()
+
+	// Create with exact capacity to avoid reallocations
+	allFields := make([]any, len(e.wrapFields)+len(wrappedFields))
+	copy(allFields, e.wrapFields)
+	copy(allFields[len(e.wrapFields):], wrappedFields)
+
+	return allFields
 }
 
 var visitedMapPool = sync.Pool{
@@ -252,15 +221,15 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool, dep
 	}
 
 	// Fast path: Check if target is an erro error and use optimized comparison
-	if targetErro, ok := target.(Error); ok {
+	if targetErro, ok := target.(ErrorContext); ok {
 		// Compare by id if both have non-empty ids (very fast)
-		if e.base != nil && e.base.id != "" && targetErro.GetID() != "" {
-			if e.base.id == targetErro.GetID() {
+		if e.base != nil && e.base.id != "" && targetErro.ID() != "" {
+			if e.base.id == targetErro.ID() {
 				return true
 			}
 		}
 		// Compare base messages (fast)
-		if e.base != nil && e.base.message == targetErro.GetMessage() {
+		if e.base != nil && e.base.message == targetErro.Message() {
 			return true
 		}
 	}
@@ -276,7 +245,7 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool, dep
 			if wrapErr.isWithVisited(target, visited, depth+1) {
 				return true
 			}
-		} else if e.wrapped.Is(target) {
+		} else if e.wrapped.Context().Is(target) { // Recursive check with cycle detection
 			return true
 		}
 	}
@@ -289,27 +258,10 @@ func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool, dep
 	return false
 }
 
-func (e *wrapError) GetFields() []any {
-	// Add fields from wrapped error (if it exists)
-	var wrappedFields []any
-	if e.wrapped != nil {
-		wrappedFields = e.wrapped.GetFields()
-	} else {
-		wrappedFields = e.base.fields
-	}
-
-	// Create with exact capacity to avoid reallocations
-	allFields := make([]any, len(e.wrapFields)+len(wrappedFields))
-	copy(allFields, e.wrapFields)
-	copy(allFields[len(e.wrapFields):], wrappedFields)
-
-	return allFields
-}
-
 func newWrapError(wrapped Error, message string, fields ...any) Error {
 	fields = prepareFields(fields)
 	if wrapped == nil {
-		wrapped = New(message, fields...)
+		wrapped = newBaseError(nil, message, fields...)
 	}
 
 	// Calculate the depth without mutating the original base error
@@ -319,7 +271,7 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		return Wrap(ErrMaxWrapDepthExceeded, message, fields...)
 	}
 
-	baseInt := wrapped.GetBase()
+	baseInt := wrapped.Context().BaseError()
 	base, ok := baseInt.(*baseError)
 	if !ok {
 		// This shouldn't happen, but handle gracefully

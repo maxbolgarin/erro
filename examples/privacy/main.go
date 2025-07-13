@@ -63,8 +63,8 @@ func main() {
 	fmt.Println("\n=== SECURE FORMATTING METHODS ===")
 	erro.SetProductionStackTrace()
 	err = handleRequest()
-	fmt.Printf("SecureString: %s\n", err.Stack().String())
-	fmt.Printf("SecureFormatFull:\n%s\n", err.Stack().FormatFull())
+	fmt.Printf("SecureString: %s\n", err.Context().Stack().String())
+	fmt.Printf("SecureFormatFull:\n%s\n", err.Context().Stack().FormatFull())
 
 	erro.LogError(err, func(message string, fields ...any) {
 		slog.Error(message, fields...)

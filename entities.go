@@ -2,62 +2,56 @@ package erro
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
-// Error represents the common interface for all erro errors
 type Error interface {
 	error
+	fmt.Formatter
+	Unwrap() error
 
-	// Chaining methods for building errors
-	ID(id ...string) Error
-	Class(class Class) Error
-	Category(category Category) Error
-	Severity(severity Severity) Error
-	Retryable(retryable bool) Error
-	Fields(fields ...any) Error
-	Context(ctx context.Context) Error
-	Span(span Span) Error
+	WithID(id ...string) Error
+	WithClass(class Class) Error
+	WithCategory(category Category) Error
+	WithSeverity(severity Severity) Error
+	WithRetryable(retryable bool) Error
+	WithFields(fields ...any) Error
+	WithSpan(span Span) Error
 
 	RecordMetrics(metrics Metrics) Error
-	SendEvent(dispatcher Dispatcher) Error
+	SendEvent(ctx context.Context, dispatcher Dispatcher) Error
 
+	Context() ErrorContext
+}
+
+// Error represents the common interface for all erro errors
+type ErrorContext interface {
 	// Extraction methods
-	GetBase() Error
-	GetCreated() time.Time
-	GetID() string
-	GetClass() Class
-	GetCategory() Category
+	ID() string
+	Class() Class
+	Category() Category
+	Severity() Severity
+	Created() time.Time
+	Message() string
+	Fields() []any
+	Span() Span
 	IsRetryable() bool
-	GetFields() []any
-	GetContext() context.Context
-	GetSpan() Span
-	GetMessage() string
 
-	// Severity checking methods
-	GetSeverity() Severity
-	IsCritical() bool
-	IsHigh() bool
-	IsMedium() bool
-	IsLow() bool
-	IsInfo() bool
-	IsUnknown() bool
-
-	// Stack trace access
+	// Stack and base error
 	Stack() Stack
-	StackFormat() string
-	StackWithError() string
+	BaseError() ErrorContext
 
 	// Error comparison
 	Is(target error) bool
 }
 
 type Metrics interface {
-	RecordError(err Error)
+	RecordError(err ErrorContext)
 }
 
 type Dispatcher interface {
-	SendEvent(ctx context.Context, err Error)
+	SendEvent(ctx context.Context, err ErrorContext)
 }
 
 type Span interface {
@@ -162,6 +156,30 @@ func (s Severity) Label() string {
 	default:
 		return ""
 	}
+}
+
+func (s Severity) IsCritical() bool {
+	return s == SeverityCritical
+}
+
+func (s Severity) IsHigh() bool {
+	return s == SeverityHigh
+}
+
+func (s Severity) IsMedium() bool {
+	return s == SeverityMedium
+}
+
+func (s Severity) IsLow() bool {
+	return s == SeverityLow
+}
+
+func (s Severity) IsInfo() bool {
+	return s == SeverityInfo
+}
+
+func (s Severity) IsUnknown() bool {
+	return s == SeverityUnknown
 }
 
 func (c Class) String() string {

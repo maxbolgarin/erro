@@ -1,7 +1,7 @@
 package erro
 
 var (
-	ErrMaxWrapDepthExceeded = New("maximum wrap depth exceeded")
+	ErrMaxWrapDepthExceeded = NewLight("maximum wrap depth exceeded")
 )
 
 // Security configuration constants

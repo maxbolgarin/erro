@@ -19,7 +19,6 @@ type lightError struct {
 	retryable bool
 	fields    []any
 
-	ctx  context.Context
 	span Span
 }
 
@@ -98,7 +97,7 @@ func (e *lightError) Unwrap() error {
 }
 
 // Implement Error interface methods (lightweight versions)
-func (e *lightError) ID(idRaw ...string) Error {
+func (e *lightError) WithID(idRaw ...string) Error {
 	if len(idRaw) > 0 {
 		e.id = truncateString(idRaw[0], maxCodeLength)
 	} else if e.id == "" {
@@ -107,17 +106,17 @@ func (e *lightError) ID(idRaw ...string) Error {
 	return e
 }
 
-func (e *lightError) Class(class Class) Error {
+func (e *lightError) WithClass(class Class) Error {
 	e.class = class
 	return e
 }
 
-func (e *lightError) Category(category Category) Error {
+func (e *lightError) WithCategory(category Category) Error {
 	e.category = category
 	return e
 }
 
-func (e *lightError) Severity(severity Severity) Error {
+func (e *lightError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
@@ -126,80 +125,84 @@ func (e *lightError) Severity(severity Severity) Error {
 	return e
 }
 
-func (e *lightError) Retryable(retryable bool) Error {
+func (e *lightError) WithRetryable(retryable bool) Error {
 	e.retryable = retryable
 	return e
 }
 
-func (e *lightError) Context(ctx context.Context) Error {
-	e.ctx = ctx
-	return e
-}
-
-func (e *lightError) Span(span Span) Error {
-	e.span = span
-	return e
-}
-
-// Lightweight implementations - these don't do expensive operations
-func (e *lightError) Fields(fields ...any) Error {
+func (e *lightError) WithFields(fields ...any) Error {
 	e.fields = fields
 	e.fullMessage = ""
 	return e
 }
 
+func (e *lightError) WithSpan(span Span) Error {
+	if span == nil {
+		return e
+	}
+	span.SetAttributes(e.fields...)
+	span.RecordError(e)
+	e.span = span
+	return e
+}
+
+// Lightweight implementations - these don't do expensive operations
 func (e *lightError) RecordMetrics(metrics Metrics) Error {
+	if metrics == nil {
+		return e
+	}
 	metrics.RecordError(e)
 	return e
 }
 
-func (e *lightError) SendEvent(dispatcher Dispatcher) Error {
-	dispatcher.SendEvent(e.ctx, e)
+func (e *lightError) SendEvent(ctx context.Context, dispatcher Dispatcher) Error {
+	if dispatcher == nil {
+		return e
+	}
+	dispatcher.SendEvent(ctx, e)
 	return e
 }
 
 // Getter methods
-func (e *lightError) GetBase() Error              { return e }
-func (e *lightError) GetContext() context.Context { return nil }
-func (e *lightError) GetID() string {
+func (e *lightError) Context() ErrorContext { return e }
+func (e *lightError) ID() string {
 	if e.id == "" {
 		e.id = newID(e.class, e.category)
 	}
 	return e.id
 }
-func (e *lightError) GetCategory() Category { return e.category }
-func (e *lightError) GetClass() Class       { return e.class }
-func (e *lightError) IsRetryable() bool     { return e.retryable }
-func (e *lightError) GetSpan() Span         { return e.span }
-func (e *lightError) GetFields() []any      { return e.fields }
-func (e *lightError) GetCreated() time.Time { return time.Time{} }
-func (e *lightError) GetMessage() string    { return e.message }
+func (e *lightError) Class() Class       { return e.class }
+func (e *lightError) Category() Category { return e.category }
+func (e *lightError) IsRetryable() bool  { return e.retryable }
+func (e *lightError) Span() Span         { return e.span }
+func (e *lightError) Fields() []any      { return e.fields }
+func (e *lightError) Created() time.Time { return time.Time{} }
+func (e *lightError) Message() string    { return e.message }
 
 // Severity checking methods
-func (e *lightError) GetSeverity() Severity {
+func (e *lightError) Severity() Severity {
 	if e.severity == "" {
 		return SeverityUnknown
 	}
 	return e.severity
 }
-func (e *lightError) IsCritical() bool { return e.severity == SeverityCritical }
-func (e *lightError) IsHigh() bool     { return e.severity == SeverityHigh }
-func (e *lightError) IsMedium() bool   { return e.severity == SeverityMedium }
-func (e *lightError) IsLow() bool      { return e.severity == SeverityLow }
-func (e *lightError) IsInfo() bool     { return e.severity == SeverityInfo }
-func (e *lightError) IsUnknown() bool {
-	return e.severity == "" || e.severity == SeverityUnknown
+
+func (e *lightError) BaseError() ErrorContext {
+	if e.cause == nil {
+		if causeErro, ok := e.cause.(Error); ok {
+			return causeErro.Context().BaseError()
+		}
+	}
+	return e
 }
 
 // Stack methods - lightweight errors have no stack traces
 func (e *lightError) Stack() Stack {
 	return e.toFullError().Stack()
 }
-func (e *lightError) StackFormat() string {
-	return e.toFullError().StackFormat()
-}
-func (e *lightError) StackWithError() string {
-	return e.toFullError().StackWithError()
+
+func (e *lightError) Format(s fmt.State, verb rune) {
+	fmt.Fprintf(s, "%s", e.Error())
 }
 
 // Is method optimized for lightweight comparison
@@ -220,20 +223,20 @@ func (e *lightError) Is(target error) (ok bool) {
 	}()
 
 	// Fast comparison with other erro errors
-	if targetErro, ok := target.(Error); ok {
+	if targetErro, ok := target.(ErrorContext); ok {
 		// Compare by ID first (fastest)
-		if e.id != "" && targetErro.GetID() != "" {
-			return e.id == targetErro.GetID()
+		if e.id != "" && targetErro.ID() != "" {
+			return e.id == targetErro.ID()
 		}
 
 		// Compare messages
-		if e.message == targetErro.GetMessage() {
+		if e.message == targetErro.Message() {
 			return true
 		}
 
 		// Compare class/category
-		if e.class != "" && targetErro.GetClass() != "" && e.class == targetErro.GetClass() {
-			if e.category != "" && targetErro.GetCategory() != "" && e.category == targetErro.GetCategory() {
+		if e.class != "" && targetErro.Class() != "" && e.class == targetErro.Class() {
+			if e.category != "" && targetErro.Category() != "" && e.category == targetErro.Category() {
 				return true
 			}
 		}
@@ -259,7 +262,7 @@ func (e *lightError) Is(target error) (ok bool) {
 }
 
 // toFullError converts a lightError to a full baseError when needed
-func (e *lightError) toFullError() Error {
+func (e *lightError) toFullError() ErrorContext {
 	fullErr := newBaseErrorWithStackSkip(4, e.cause, e.message)
 	fullErr.id = e.id
 	fullErr.class = e.class
@@ -267,7 +270,6 @@ func (e *lightError) toFullError() Error {
 	fullErr.severity = e.severity
 	fullErr.retryable = e.retryable
 	fullErr.fields = e.fields
-	fullErr.ctx = e.ctx
 	fullErr.span = e.span
 	return fullErr
 }

@@ -30,25 +30,25 @@ func NewTemplate(fields ...any) *ErrorTemplate {
 	}
 }
 
-func (t *ErrorTemplate) ID(id string) *ErrorTemplate {
+func (t *ErrorTemplate) WithID(id string) *ErrorTemplate {
 	t.id = id
 	return t
 }
 
-// Class sets the error class for the template
-func (t *ErrorTemplate) Class(class Class) *ErrorTemplate {
+// WithClass sets the error class for the template
+func (t *ErrorTemplate) WithClass(class Class) *ErrorTemplate {
 	t.class = class
 	return t
 }
 
-// Category sets the error category for the template
-func (t *ErrorTemplate) Category(category Category) *ErrorTemplate {
+// WithCategory sets the error category for the template
+func (t *ErrorTemplate) WithCategory(category Category) *ErrorTemplate {
 	t.category = category
 	return t
 }
 
-// Severity sets the error severity for the template
-func (t *ErrorTemplate) Severity(severity Severity) *ErrorTemplate {
+// WithSeverity sets the error severity for the template
+func (t *ErrorTemplate) WithSeverity(severity Severity) *ErrorTemplate {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
@@ -56,44 +56,44 @@ func (t *ErrorTemplate) Severity(severity Severity) *ErrorTemplate {
 	return t
 }
 
-// Retryable sets the retryable flag for the template
-func (t *ErrorTemplate) Retryable(retryable bool) *ErrorTemplate {
+// WithRetryable sets the retryable flag for the template
+func (t *ErrorTemplate) WithRetryable(retryable bool) *ErrorTemplate {
 	t.retryable = retryable
 	return t
 }
 
-// Fields adds fields to the template
-func (t *ErrorTemplate) Fields(fields ...any) *ErrorTemplate {
+// WithFields adds fields to the template
+func (t *ErrorTemplate) WithFields(fields ...any) *ErrorTemplate {
 	t.fields = safeAppendFields(t.fields, prepareFields(fields))
 	return t
 }
 
-// Message sets a message template with placeholders
-func (t *ErrorTemplate) Message(template string) *ErrorTemplate {
+// WithMessageTemplate sets a message template with placeholders
+func (t *ErrorTemplate) WithMessageTemplate(template string) *ErrorTemplate {
 	t.messageTemplate = template
 	return t
 }
 
-// Metrics sets the metrics for the template
-func (t *ErrorTemplate) Metrics(metrics Metrics) *ErrorTemplate {
+// WithMetrics sets the metrics for the template
+func (t *ErrorTemplate) WithMetrics(metrics Metrics) *ErrorTemplate {
 	t.metrics = metrics
 	return t
 }
 
-// Dispatcher sets the dispatcher for the template
-func (t *ErrorTemplate) Dispatcher(dispatcher Dispatcher) *ErrorTemplate {
+// WithDispatcher sets the dispatcher for the template
+func (t *ErrorTemplate) WithDispatcher(dispatcher Dispatcher) *ErrorTemplate {
 	t.dispatcher = dispatcher
 	return t
 }
 
-// Context sets the context for the template
-func (t *ErrorTemplate) Context(ctx context.Context) *ErrorTemplate {
+// WithGoContext sets the context for the template
+func (t *ErrorTemplate) WithGoContext(ctx context.Context) *ErrorTemplate {
 	t.ctx = ctx
 	return t
 }
 
-// Span sets the span for the template
-func (t *ErrorTemplate) Span(span Span) *ErrorTemplate {
+// WithSpan sets the span for the template
+func (t *ErrorTemplate) WithSpan(span Span) *ErrorTemplate {
 	t.span = span
 	return t
 }
@@ -109,7 +109,7 @@ func (t *ErrorTemplate) New(fields ...any) Error {
 		} else {
 			message = strings.TrimSuffix(t.messageTemplate, ": %s")
 		}
-		return t.Errorf(message)
+		return t.Newf(message)
 	}
 
 	// Fallback to first field as message
@@ -122,11 +122,11 @@ func (t *ErrorTemplate) New(fields ...any) Error {
 		}
 	}
 
-	return t.Errorf(message, fields...)
+	return t.Newf(message, fields...)
 }
 
-// CreateWithMessage creates an error with a custom message, overriding the template
-func (t *ErrorTemplate) Errorf(message string, fields ...any) Error {
+// Newf creates an error with a custom message, overriding the template
+func (t *ErrorTemplate) Newf(message string, fields ...any) Error {
 	if message == "" && t.messageTemplate != "" {
 		if len(fields) > 0 {
 			message = t.formatTemplate(t.messageTemplate, fields...)
@@ -136,14 +136,16 @@ func (t *ErrorTemplate) Errorf(message string, fields ...any) Error {
 	}
 
 	// It behaves like New if there is no format verbs in the message
-	err := Errorf(message, fields...)
+	err := Newf(message, fields...)
 	err = t.applyMetadata(err)
+
 	if t.metrics != nil {
-		t.metrics.RecordError(err)
+		t.metrics.RecordError(err.Context())
 	}
 	if t.dispatcher != nil {
-		t.dispatcher.SendEvent(err.GetContext(), err)
+		t.dispatcher.SendEvent(t.ctx, err.Context())
 	}
+
 	return err
 }
 
@@ -173,7 +175,7 @@ func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
 	return t.Wrapf(originalErr, message, fields...)
 }
 
-// CreateWithMessage creates an error with a custom message, overriding the template
+// Wrapf creates an error with a custom message, overriding the template
 func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) Error {
 	if message == "" && t.messageTemplate != "" {
 		if len(fields) > 0 {
@@ -187,23 +189,23 @@ func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) 
 	err := Wrapf(originalErr, message, fields...)
 	err = t.applyMetadata(err)
 	if t.metrics != nil {
-		t.metrics.RecordError(err)
+		t.metrics.RecordError(err.Context())
 	}
 	if t.dispatcher != nil {
-		t.dispatcher.SendEvent(err.GetContext(), err)
+		t.dispatcher.SendEvent(t.ctx, err.Context())
 	}
+
 	return err
 }
 
 func (t *ErrorTemplate) applyMetadata(err Error) Error {
-	err.Class(t.class)
-	err.Category(t.category)
-	err.Severity(t.severity)
-	err.Fields(t.fields...)
-	err.Retryable(t.retryable)
-	err.Context(t.ctx)
-	err.Span(t.span)
-	err.ID(t.id)
+	err.WithClass(t.class)
+	err.WithCategory(t.category)
+	err.WithSeverity(t.severity)
+	err.WithFields(t.fields...)
+	err.WithRetryable(t.retryable)
+	err.WithSpan(t.span)
+	err.WithID(t.id)
 
 	return err
 }
@@ -220,209 +222,209 @@ func (t *ErrorTemplate) formatTemplate(template string, fields ...any) string {
 var (
 	// ValidationError creates validation errors
 	ValidationError = NewTemplate().
-			Class(ClassValidation).
-			Category(CategoryUserInput).
-			Severity(SeverityLow).
-			Message("failed validation: %s")
+			WithClass(ClassValidation).
+			WithCategory(CategoryUserInput).
+			WithSeverity(SeverityLow).
+			WithMessageTemplate("failed validation: %s")
 
 	// NotFoundError creates not found errors
 	NotFoundError = NewTemplate().
-			Class(ClassNotFound).
-			Severity(SeverityMedium).
-			Message("%s not found")
+			WithClass(ClassNotFound).
+			WithSeverity(SeverityMedium).
+			WithMessageTemplate("%s not found")
 
 	// DatabaseError creates database errors
 	DatabaseError = NewTemplate().
-			Category(CategoryDatabase).
-			Severity(SeverityHigh).
-			Message("database error: %s")
+			WithCategory(CategoryDatabase).
+			WithSeverity(SeverityHigh).
+			WithMessageTemplate("database error: %s")
 
 	// NetworkError creates network errors
 	NetworkError = NewTemplate().
-			Category(CategoryNetwork).
-			Severity(SeverityMedium).
-			Retryable(true).
-			Message("network error: %s")
+			WithCategory(CategoryNetwork).
+			WithSeverity(SeverityMedium).
+			WithRetryable(true).
+			WithMessageTemplate("network error: %s")
 
 	// AuthenticationError creates authentication errors
 	AuthenticationError = NewTemplate().
-				Category(CategoryAuth).
-				Class(ClassUnauthenticated).
-				Severity(SeverityMedium).
-				Message("authentication failed: %s")
+				WithCategory(CategoryAuth).
+				WithClass(ClassUnauthenticated).
+				WithSeverity(SeverityMedium).
+				WithMessageTemplate("authentication failed: %s")
 
 	// AuthorizationError creates authorization errors
 	AuthorizationError = NewTemplate().
-				Category(CategoryAuth).
-				Class(ClassPermissionDenied).
-				Severity(SeverityHigh).
-				Message("permission denied: %s")
+				WithCategory(CategoryAuth).
+				WithClass(ClassPermissionDenied).
+				WithSeverity(SeverityHigh).
+				WithMessageTemplate("permission denied: %s")
 
 	// TimeoutError creates timeout errors
 	TimeoutError = NewTemplate().
-			Class(ClassTimeout).
-			Severity(SeverityLow).
-			Retryable(true).
-			Message("operation timeout: %s")
+			WithClass(ClassTimeout).
+			WithSeverity(SeverityLow).
+			WithRetryable(true).
+			WithMessageTemplate("operation timeout: %s")
 
 	// ConflictError creates conflict errors
 	ConflictError = NewTemplate().
-			Class(ClassConflict).
-			Severity(SeverityMedium).
-			Message("conflict: %s")
+			WithClass(ClassConflict).
+			WithSeverity(SeverityMedium).
+			WithMessageTemplate("conflict: %s")
 
 	// RateLimitError creates rate limit errors
 	RateLimitError = NewTemplate().
-			Class(ClassRateLimited).
-			Severity(SeverityLow).
-			Retryable(true).
-			Message("rate limit exceeded: %s")
+			WithClass(ClassRateLimited).
+			WithSeverity(SeverityLow).
+			WithRetryable(true).
+			WithMessageTemplate("rate limit exceeded: %s")
 
 	// InternalError creates internal errors
 	InternalError = NewTemplate().
-			Class(ClassInternal).
-			Severity(SeverityHigh).
-			Message("internal error: %s")
+			WithClass(ClassInternal).
+			WithSeverity(SeverityHigh).
+			WithMessageTemplate("internal error: %s")
 
 	// SecurityError creates security errors
 	SecurityError = NewTemplate().
-			Class(ClassSecurity).
-			Category(CategorySecurity).
-			Severity(SeverityCritical).
-			Message("security violation: %s")
+			WithClass(ClassSecurity).
+			WithCategory(CategorySecurity).
+			WithSeverity(SeverityCritical).
+			WithMessageTemplate("security violation: %s")
 
 	// ExternalError creates external service errors
 	ExternalError = NewTemplate().
-			Class(ClassExternal).
-			Category(CategoryExternal).
-			Severity(SeverityMedium).
-			Retryable(true).
-			Message("external error: %s")
+			WithClass(ClassExternal).
+			WithCategory(CategoryExternal).
+			WithSeverity(SeverityMedium).
+			WithRetryable(true).
+			WithMessageTemplate("external error: %s")
 
 	// PaymentError creates payment errors
 	PaymentError = NewTemplate().
-			Category(CategoryPayment).
-			Severity(SeverityCritical).
-			Retryable(true).
-			Message("payment error: %s")
+			WithCategory(CategoryPayment).
+			WithSeverity(SeverityCritical).
+			WithRetryable(true).
+			WithMessageTemplate("payment error: %s")
 
 	// CacheError creates cache errors
 	CacheError = NewTemplate().
-			Category(CategoryCache).
-			Class(ClassTemporary).
-			Severity(SeverityMedium).
-			Retryable(true).
-			Message("cache error: %s")
+			WithCategory(CategoryCache).
+			WithClass(ClassTemporary).
+			WithSeverity(SeverityMedium).
+			WithRetryable(true).
+			WithMessageTemplate("cache error: %s")
 
 	// ConfigError creates configuration errors
 	ConfigError = NewTemplate().
-			Category(CategoryConfig).
-			Class(ClassInternal).
-			Severity(SeverityCritical).
-			Message("configuration error: %s")
+			WithCategory(CategoryConfig).
+			WithClass(ClassInternal).
+			WithSeverity(SeverityCritical).
+			WithMessageTemplate("configuration error: %s")
 
 	// APIError creates API errors
 	APIError = NewTemplate().
-			Category(CategoryAPI).
-			Severity(SeverityHigh).
-			Message("API error: %s")
+			WithCategory(CategoryAPI).
+			WithSeverity(SeverityHigh).
+			WithMessageTemplate("API error: %s")
 
 	// BusinessLogicError creates business logic errors
 	BusinessLogicError = NewTemplate().
-				Category(CategoryBusinessLogic).
-				Severity(SeverityHigh).
-				Message("business logic error: %s")
+				WithCategory(CategoryBusinessLogic).
+				WithSeverity(SeverityHigh).
+				WithMessageTemplate("business logic error: %s")
 
 	// StorageError creates storage errors
 	StorageError = NewTemplate().
-			Category(CategoryStorage).
-			Severity(SeverityHigh).
-			Message("storage error: %s")
+			WithCategory(CategoryStorage).
+			WithSeverity(SeverityHigh).
+			WithMessageTemplate("storage error: %s")
 
 	// ProcessingError creates processing errors
 	ProcessingError = NewTemplate().
-			Category(CategoryProcessing).
-			Class(ClassInternal).
-			Severity(SeverityHigh).
-			Message("processing error: %s")
+			WithCategory(CategoryProcessing).
+			WithClass(ClassInternal).
+			WithSeverity(SeverityHigh).
+			WithMessageTemplate("processing error: %s")
 
 	// MonitoringError creates monitoring errors
 	MonitoringError = NewTemplate().
-			Category(CategoryMonitoring).
-			Severity(SeverityMedium).
-			Message("monitoring error: %s")
+			WithCategory(CategoryMonitoring).
+			WithSeverity(SeverityMedium).
+			WithMessageTemplate("monitoring error: %s")
 
 	// NotificationError creates notification errors
 	NotificationError = NewTemplate().
-				Category(CategoryNotifications).
-				Class(ClassTemporary).
-				Severity(SeverityLow).
-				Message("notification error: %s")
+				WithCategory(CategoryNotifications).
+				WithClass(ClassTemporary).
+				WithSeverity(SeverityLow).
+				WithMessageTemplate("notification error: %s")
 
 	// AIError creates AI/ML errors
 	AIError = NewTemplate().
-		Category(CategoryAI).
-		Class(ClassInternal).
-		Severity(SeverityHigh).
-		Message("AI error: %s")
+		WithCategory(CategoryAI).
+		WithClass(ClassInternal).
+		WithSeverity(SeverityHigh).
+		WithMessageTemplate("AI error: %s")
 
 		// AnalyticsError creates analytics errors
 	AnalyticsError = NewTemplate().
-			Category(CategoryAnalytics).
-			Severity(SeverityLow).
-			Message("analytics error: %s")
+			WithCategory(CategoryAnalytics).
+			WithSeverity(SeverityLow).
+			WithMessageTemplate("analytics error: %s")
 
 	// EventsTemplate creates events errors
 	EventsTemplate = NewTemplate().
-			Category(CategoryEvents).
-			Severity(SeverityMedium).
-			Message("events error: %s")
+			WithCategory(CategoryEvents).
+			WithSeverity(SeverityMedium).
+			WithMessageTemplate("events error: %s")
 
 	// CriticalError creates critical errors
 	CriticalError = NewTemplate().
-			Class(ClassCritical).
-			Severity(SeverityCritical).
-			Message("critical error: %s")
+			WithClass(ClassCritical).
+			WithSeverity(SeverityCritical).
+			WithMessageTemplate("critical error: %s")
 
 	// TemporaryError creates temporary errors
 	TemporaryError = NewTemplate().
-			Class(ClassTemporary).
-			Severity(SeverityMedium).
-			Message("temporary error: %s")
+			WithClass(ClassTemporary).
+			WithSeverity(SeverityMedium).
+			WithMessageTemplate("temporary error: %s")
 
 	// DataLossError creates data loss errors
 	DataLossError = NewTemplate().
-			Class(ClassDataLoss).
-			Severity(SeverityCritical).
-			Message("data loss: %s")
+			WithClass(ClassDataLoss).
+			WithSeverity(SeverityCritical).
+			WithMessageTemplate("data loss: %s")
 
 	// ResourceExhaustedError creates resource exhausted errors
 	ResourceExhaustedError = NewTemplate().
-				Class(ClassResourceExhausted).
-				Severity(SeverityHigh).
-				Message("resource exhausted: %s")
+				WithClass(ClassResourceExhausted).
+				WithSeverity(SeverityHigh).
+				WithMessageTemplate("resource exhausted: %s")
 
 	// UnavailableError creates unavailable errors
 	UnavailableError = NewTemplate().
-				Class(ClassUnavailable).
-				Severity(SeverityHigh).
-				Message("service unavailable: %s")
+				WithClass(ClassUnavailable).
+				WithSeverity(SeverityHigh).
+				WithMessageTemplate("service unavailable: %s")
 
 	// CancelledError creates cancelled errors
 	CancelledError = NewTemplate().
-			Class(ClassCancelled).
-			Severity(SeverityLow).
-			Message("operation cancelled: %s")
+			WithClass(ClassCancelled).
+			WithSeverity(SeverityLow).
+			WithMessageTemplate("operation cancelled: %s")
 
 	// NotImplementedError creates not implemented errors
 	NotImplementedError = NewTemplate().
-				Class(ClassNotImplemented).
-				Severity(SeverityMedium).
-				Message("not implemented: %s")
+				WithClass(ClassNotImplemented).
+				WithSeverity(SeverityMedium).
+				WithMessageTemplate("not implemented: %s")
 
 	// AlreadyExistsError creates already exists errors
 	AlreadyExistsError = NewTemplate().
-				Class(ClassAlreadyExists).
-				Severity(SeverityMedium).
-				Message("already exists: %s")
+				WithClass(ClassAlreadyExists).
+				WithSeverity(SeverityMedium).
+				WithMessageTemplate("already exists: %s")
 )
