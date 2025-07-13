@@ -29,6 +29,7 @@ type Error interface {
 	GetFields() []any
 	GetContext() context.Context
 	GetSpan() Span
+	GetMessage() string
 
 	// Severity checking methods
 	GetSeverity() Severity

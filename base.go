@@ -123,6 +123,7 @@ func (e *baseError) IsRetryable() bool     { return e.retryable }
 func (e *baseError) GetSpan() Span         { return e.span }
 func (e *baseError) GetFields() []any      { return e.fields }
 func (e *baseError) GetCreated() time.Time { return e.created }
+func (e *baseError) GetMessage() string    { return e.message }
 
 // Severity checking methods
 func (e *baseError) GetSeverity() Severity {

@@ -40,7 +40,7 @@ func TestGroup_Basic(t *testing.T) {
 
 func TestGroup_Chaining(t *testing.T) {
 	g := NewList().
-		Code("TEST_CODE").
+		Class("TEST_CLASS").
 		Category("validation").
 		Severity("high").
 		Fields("user", "test-user")
@@ -54,8 +54,8 @@ func TestGroup_Chaining(t *testing.T) {
 	}
 
 	for i, err := range errors {
-		if err.GetID() != "TEST_CODE" {
-			t.Errorf("Error %d: expected code 'TEST_CODE', got '%s'", i, err.GetID())
+		if err.GetID() != "TEST_CLASS" {
+			t.Errorf("Error %d: expected code 'TEST_CLASS', got '%s'", i, err.GetID())
 		}
 		if err.GetCategory() != "validation" {
 			t.Errorf("Error %d: expected category 'validation', got '%s'", i, err.GetCategory())
@@ -127,7 +127,7 @@ func TestSet_Deduplication(t *testing.T) {
 }
 
 func TestSet_CodeBasedDeduplication(t *testing.T) {
-	s := NewSet().Code("SAME_CODE")
+	s := NewSet().Class("SAME_CLASS")
 
 	// Add errors with same code and message
 	s.New("error message")
@@ -138,7 +138,7 @@ func TestSet_CodeBasedDeduplication(t *testing.T) {
 	}
 
 	// Change code and add same message
-	s.Code("DIFFERENT_CODE").New("error message")
+	s.Class("DIFFERENT_CLASS").New("error message")
 
 	if s.Len() != 2 {
 		t.Errorf("Expected 2 unique errors (different codes), got %d", s.Len())
@@ -147,7 +147,7 @@ func TestSet_CodeBasedDeduplication(t *testing.T) {
 
 func TestSet_ChainingMethods(t *testing.T) {
 	s := NewSet().
-		Code("SET_CODE").
+		Class("SET_CLASS").
 		Category("test").
 		Severity("low")
 
@@ -165,8 +165,8 @@ func TestSet_ChainingMethods(t *testing.T) {
 	}
 
 	err := errors[0]
-	if err.GetID() != "SET_CODE" {
-		t.Errorf("Expected code 'SET_CODE', got '%s'", err.GetID())
+	if err.GetID() != "SET_CLASS" {
+		t.Errorf("Expected code 'SET_CLASS', got '%s'", err.GetID())
 	}
 	if err.GetCategory() != "test" {
 		t.Errorf("Expected category 'test', got '%s'", err.GetCategory())
@@ -192,7 +192,7 @@ func TestMultiError_Unwrap(t *testing.T) {
 
 func ExampleList() {
 	g := NewList().
-		Code("VALIDATION").
+		Class("VALIDATION").
 		Category("input").
 		Severity("high")
 
@@ -213,7 +213,7 @@ func ExampleList() {
 
 func ExampleSet() {
 	s := NewSet().
-		Code("RETRY").
+		Class("RETRY").
 		Category("network").
 		Severity("medium")
 

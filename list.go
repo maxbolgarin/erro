@@ -12,7 +12,6 @@ import (
 type List struct {
 	errors []Error
 	// Metadata that will be applied to errors added to this list
-	code      string
 	class     Class
 	category  Category
 	severity  Severity
@@ -124,7 +123,6 @@ func (g *List) Clear() *List {
 func (g *List) Copy() *List {
 	clone := NewList(cap(g.errors))
 	clone.errors = append(make([]Error, 0, len(g.errors)), g.errors...)
-	clone.code = g.code
 	clone.class = g.class
 	clone.category = g.category
 	clone.severity = g.severity
@@ -181,11 +179,6 @@ func (g *List) Last() Error {
 	return g.errors[len(g.errors)-1]
 }
 
-func (g *List) Code(code string) *List {
-	g.code = code
-	return g
-}
-
 func (g *List) Class(class Class) *List {
 	g.class = class
 	return g
@@ -204,7 +197,6 @@ func (g *List) Severity(severity Severity) *List {
 	return g
 }
 
-func (g *List) GetCode() string       { return g.code }
 func (g *List) GetClass() Class       { return g.class }
 func (g *List) GetCategory() Category { return g.category }
 func (g *List) GetFields() []any      { return g.fields }
@@ -250,26 +242,23 @@ func (g *List) add(err Error) *List {
 
 // applyMetadata applies accumulated metadata to an error
 func (g *List) applyMetadata(err Error) {
-	if g.code != "" {
-		err.ID(g.code)
-	}
-	if g.category != CategoryUnknown {
-		err.Category(g.category)
-	}
-	if g.class != ClassUnknown {
+	if g.class != ClassUnknown && err.GetClass() == ClassUnknown {
 		err.Class(g.class)
 	}
-	if g.severity != SeverityUnknown {
+	if g.category != CategoryUnknown && err.GetCategory() == CategoryUnknown {
+		err.Category(g.category)
+	}
+	if g.severity != SeverityUnknown && err.GetSeverity() == SeverityUnknown {
 		err.Severity(g.severity)
+	}
+	if g.retryable {
+		err.Retryable(g.retryable)
 	}
 	if len(g.fields) > 0 {
 		err.Fields(g.fields...)
 	}
-	if g.ctx != nil {
+	if g.ctx != nil && err.GetContext() == nil {
 		err.Context(g.ctx)
-	}
-	if g.retryable {
-		err.Retryable(g.retryable)
 	}
 }
 
@@ -277,7 +266,8 @@ func (g *List) applyMetadata(err Error) {
 // It deduplicates errors based on their message and code.
 type Set struct {
 	*List
-	seen map[string]struct{} // key format: "code:message"
+	seen      map[string]int
+	keyGetter func(error) string
 }
 
 // NewSet creates a new error set that stores only unique errors
@@ -287,9 +277,14 @@ func NewSet(capacityRaw ...int) *Set {
 		capacity = capacityRaw[0]
 	}
 	return &Set{
-		List: NewList(capacity),
-		seen: make(map[string]struct{}, capacity),
+		List:      NewList(capacity),
+		seen:      make(map[string]int, capacity),
+		keyGetter: MessageKeyGetter,
 	}
+}
+func (s *Set) WithKeyGetter(keyGetter func(error) string) *Set {
+	s.keyGetter = keyGetter
+	return s
 }
 
 // Add adds an error to the set only if it's unique
@@ -342,29 +337,37 @@ func (s *Set) Wrapf(err error, message string, args ...any) *Set {
 	return s.add(Wrapf(err, message, args...))
 }
 
+// Err returns a combined error from all errors in the list, or nil if empty.
+// This prevents returning a non-nil error that represents an empty list.
+func (s *Set) Err() error {
+	if len(s.errors) == 0 {
+		return nil
+	}
+
+	// Create a copy of the errors for the multiError
+	errorsCopy := make([]Error, len(s.errors))
+	copy(errorsCopy, s.errors)
+	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
+}
+
 // Clear removes all errors from the set.
 func (s *Set) Clear() *Set {
 	s.errors = make([]Error, 0, cap(s.errors))
-	s.seen = make(map[string]struct{}, cap(s.errors))
+	s.seen = make(map[string]int, cap(s.errors))
 	return s
 }
 
 // Copy returns a copy of the set.
 func (s *Set) Copy() *Set {
-	newSeen := make(map[string]struct{}, len(s.seen))
+	newSeen := make(map[string]int, len(s.seen))
 	for k := range s.seen {
-		newSeen[k] = struct{}{}
+		newSeen[k] = s.seen[k]
 	}
 	return &Set{
-		List: s.List.Copy(),
-		seen: newSeen,
+		List:      s.List.Copy(),
+		seen:      newSeen,
+		keyGetter: s.keyGetter,
 	}
-}
-
-// Override chaining methods to return *Set instead of *list
-func (s *Set) Code(code string) *Set {
-	s.List.Code(code)
-	return s
 }
 
 func (s *Set) Class(class Class) *Set {
@@ -382,7 +385,6 @@ func (s *Set) Severity(severity Severity) *Set {
 	return s
 }
 
-func (s *Set) GetCode() string       { return s.List.GetCode() }
 func (s *Set) GetClass() Class       { return s.List.GetClass() }
 func (s *Set) GetCategory() Category { return s.List.GetCategory() }
 func (s *Set) GetFields() []any      { return s.List.GetFields() }
@@ -417,24 +419,34 @@ func (s *Set) Retryable(retryable bool) *Set {
 
 func (s *Set) add(err Error) *Set {
 	s.applyMetadata(err)
-	key := s.errorKey(err)
+	key := s.keyGetter(err)
 	if _, ok := s.seen[key]; !ok {
-		s.seen[key] = struct{}{}
+		s.seen[key] = 1
 		s.errors = append(s.errors, err)
+	} else {
+		s.seen[key]++
 	}
 	return s
 }
 
-// errorKey generates a unique key for an error based on code and message
-func (s *Set) errorKey(err Error) string {
-	return err.GetID() + ":" + err.Error()
+func MessageKeyGetter(err error) string {
+	if e, ok := err.(Error); ok {
+		return e.GetMessage()
+	}
+	return err.Error()
+}
+
+func IDKeyGetter(err error) string {
+	if e, ok := err.(Error); ok {
+		return e.GetID()
+	}
+	return err.Error()
 }
 
 // SafeList is a thread-safe version of List that can be used safely across multiple goroutines
 type SafeList struct {
 	errors []Error
 	// Metadata that will be applied to errors added to this list
-	code      string
 	class     Class
 	category  Category
 	severity  Severity
@@ -567,7 +579,6 @@ func (g *SafeList) Copy() *SafeList {
 
 	clone := NewSafeList(cap(g.errors))
 	clone.errors = append(make([]Error, 0, len(g.errors)), g.errors...)
-	clone.code = g.code
 	clone.class = g.class
 	clone.category = g.category
 	clone.severity = g.severity
@@ -642,13 +653,6 @@ func (g *SafeList) Last() Error {
 	return g.errors[len(g.errors)-1]
 }
 
-func (g *SafeList) Code(code string) *SafeList {
-	g.mu.Lock()
-	g.code = code
-	g.mu.Unlock()
-	return g
-}
-
 func (g *SafeList) Class(class Class) *SafeList {
 	g.mu.Lock()
 	g.class = class
@@ -673,11 +677,6 @@ func (g *SafeList) Severity(severity Severity) *SafeList {
 	return g
 }
 
-func (g *SafeList) GetCode() string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.code
-}
 func (g *SafeList) GetClass() Class {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -777,19 +776,19 @@ func (g *SafeList) add(err Error) *SafeList {
 
 // applyMetadata applies accumulated metadata to an error
 func (g *SafeList) applyMetadata(err Error) {
-	if g.code != "" {
-		err.ID(g.code)
+	if g.class != ClassUnknown && err.GetClass() == ClassUnknown {
+		err.Class(g.class)
 	}
-	if g.category != "" {
+	if g.category != CategoryUnknown && err.GetCategory() == CategoryUnknown {
 		err.Category(g.category)
 	}
-	if g.severity != "" {
+	if g.severity != SeverityUnknown && err.GetSeverity() == SeverityUnknown {
 		err.Severity(g.severity)
 	}
 	if len(g.fields) > 0 {
 		err.Fields(g.fields...)
 	}
-	if g.ctx != nil {
+	if g.ctx != nil && err.GetContext() == nil {
 		err.Context(g.ctx)
 	}
 	if g.retryable {
@@ -800,7 +799,8 @@ func (g *SafeList) applyMetadata(err Error) {
 // SafeSet is a thread-safe version of Set that collects unique errors
 type SafeSet struct {
 	*SafeList
-	seen map[string]struct{} // key format: "code:message"
+	seen      map[string]int
+	keyGetter func(error) string
 }
 
 // NewSafeSet creates a new thread-safe error set that stores only unique errors
@@ -810,9 +810,15 @@ func NewSafeSet(capacityRaw ...int) *SafeSet {
 		capacity = capacityRaw[0]
 	}
 	return &SafeSet{
-		SafeList: NewSafeList(capacity),
-		seen:     make(map[string]struct{}, capacity),
+		SafeList:  NewSafeList(capacity),
+		seen:      make(map[string]int, capacity),
+		keyGetter: MessageKeyGetter,
 	}
+}
+
+func (s *SafeSet) WithKeyGetter(keyGetter func(error) string) *SafeSet {
+	s.keyGetter = keyGetter
+	return s
 }
 
 // Add adds an error to the set only if it's unique
@@ -865,11 +871,27 @@ func (s *SafeSet) Wrapf(err error, message string, args ...any) *SafeSet {
 	return s.add(Wrapf(err, message, args...))
 }
 
+// Err returns a combined error from all errors in the list, or nil if empty.
+// This prevents returning a non-nil error that represents an empty list.
+func (s *SafeSet) Err() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.errors) == 0 {
+		return nil
+	}
+
+	// Create a copy of the errors for the multiError
+	errorsCopy := make([]Error, len(s.errors))
+	copy(errorsCopy, s.errors)
+	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
+}
+
 // Clear removes all errors from the set.
 func (s *SafeSet) Clear() *SafeSet {
 	s.mu.Lock()
 	s.errors = make([]Error, 0, cap(s.errors))
-	s.seen = make(map[string]struct{}, cap(s.errors))
+	s.seen = make(map[string]int, cap(s.errors))
 	s.mu.Unlock()
 	return s
 }
@@ -879,20 +901,15 @@ func (s *SafeSet) Copy() *SafeSet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	newSeen := make(map[string]struct{}, len(s.seen))
+	newSeen := make(map[string]int, len(s.seen))
 	for k := range s.seen {
-		newSeen[k] = struct{}{}
+		newSeen[k] = s.seen[k]
 	}
 	return &SafeSet{
-		SafeList: s.SafeList.Copy(),
-		seen:     newSeen,
+		SafeList:  s.SafeList.Copy(),
+		seen:      newSeen,
+		keyGetter: s.keyGetter,
 	}
-}
-
-// Override chaining methods to return *SafeSet instead of *SafeList
-func (s *SafeSet) Code(code string) *SafeSet {
-	s.SafeList.Code(code)
-	return s
 }
 
 func (s *SafeSet) Class(class Class) *SafeSet {
@@ -910,7 +927,6 @@ func (s *SafeSet) Severity(severity Severity) *SafeSet {
 	return s
 }
 
-func (s *SafeSet) GetCode() string             { return s.SafeList.GetCode() }
 func (s *SafeSet) GetClass() Class             { return s.SafeList.GetClass() }
 func (s *SafeSet) GetCategory() Category       { return s.SafeList.GetCategory() }
 func (s *SafeSet) GetFields() []any            { return s.SafeList.GetFields() }
@@ -946,17 +962,14 @@ func (s *SafeSet) add(err Error) *SafeSet {
 	defer s.mu.Unlock()
 
 	s.applyMetadata(err)
-	key := s.errorKey(err)
+	key := s.keyGetter(err)
 	if _, ok := s.seen[key]; !ok {
-		s.seen[key] = struct{}{}
+		s.seen[key] = 1
 		s.errors = append(s.errors, err)
+	} else {
+		s.seen[key]++
 	}
 	return s
-}
-
-// errorKey generates a unique key for an error based on code and message
-func (s *SafeSet) errorKey(err Error) string {
-	return err.GetID() + ":" + err.Error()
 }
 
 // multiError represents multiple errors combined into one
@@ -991,6 +1004,51 @@ func (m *multiError) Error() string {
 
 // Unwrap returns the underlying errors for error chain traversal
 func (m *multiError) Unwrap() []error {
+	result := make([]error, len(m.errors))
+	for i, err := range m.errors {
+		result[i] = err
+	}
+	return result
+}
+
+// multiError represents multiple errors combined into one
+type multiErrorSet struct {
+	errors    []Error
+	counter   map[string]int
+	keyGetter func(error) string
+}
+
+// Error implements the error interface for multiError
+func (m *multiErrorSet) Error() string {
+	if len(m.errors) == 0 {
+		return ""
+	}
+	if len(m.errors) == 1 {
+		return m.errors[0].Error()
+	}
+
+	var builder strings.Builder
+	builder.WriteString("multiple errors (")
+	builder.WriteString(strconv.Itoa(len(m.errors)))
+	builder.WriteString("): ")
+	for i, err := range m.errors {
+		builder.WriteString("(")
+		builder.WriteString(strconv.Itoa(i + 1))
+		builder.WriteString("): ")
+		builder.WriteString(err.Error())
+		builder.WriteString(" [")
+		builder.WriteString(strconv.Itoa(m.counter[m.keyGetter(err)]))
+		builder.WriteString("]")
+
+		if i < len(m.errors)-1 {
+			builder.WriteString("; ")
+		}
+	}
+	return builder.String()
+}
+
+// Unwrap returns the underlying errors for error chain traversal
+func (m *multiErrorSet) Unwrap() []error {
 	result := make([]error, len(m.errors))
 	for i, err := range m.errors {
 		result[i] = err

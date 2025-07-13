@@ -111,6 +111,7 @@ func (e *wrapError) GetClass() Class             { return e.base.class }
 func (e *wrapError) IsRetryable() bool           { return e.base.retryable }
 func (e *wrapError) GetSpan() Span               { return e.base.span }
 func (e *wrapError) GetCreated() time.Time       { return e.base.created }
+func (e *wrapError) GetMessage() string          { return e.base.message }
 
 // Severity checking methods
 func (e *wrapError) GetSeverity() Severity { return e.base.GetSeverity() }
