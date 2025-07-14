@@ -2,6 +2,7 @@ package erro
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -111,6 +112,21 @@ func (e *baseError) Is(target error) bool {
 	return false
 }
 
+func (e *baseError) As(target any) bool {
+	targetPtr, ok := target.(**baseError)
+	if ok && targetPtr != nil {
+		*targetPtr = e
+		return true
+	}
+	if e.wrappedErr != nil {
+		return e.wrappedErr.As(target)
+	}
+	if e.originalErr != nil {
+		return errors.As(e.originalErr, target)
+	}
+	return false
+}
+
 func (e *baseError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ErrorToJSON(e))
 }
@@ -203,10 +219,16 @@ func (e *baseError) Span() Span {
 }
 
 func (e *baseError) AllFields() []any {
-	if len(e.fields) == 0 && e.wrappedErr != nil {
-		return e.wrappedErr.AllFields()
+	var wrappedFields []any
+	if e.wrappedErr != nil {
+		wrappedFields = e.wrappedErr.AllFields()
 	}
-	return e.Fields()
+
+	fields := make([]any, 0, len(e.fields)+len(wrappedFields))
+	fields = append(fields, e.fields...)
+	fields = append(fields, wrappedFields...)
+
+	return fields
 }
 
 func (e *baseError) BaseError() Error {
@@ -246,12 +268,12 @@ func (e *baseError) Formatter() FormatErrorFunc {
 	return e.formatter
 }
 
-// newBaseError creates a new base error with security validation
-func newBaseError(originalErr error, message string, fields ...any) *baseError {
+// newBaseErrorWithStack creates a new base error with security validation
+func newBaseErrorWithStack(originalErr error, message string, fields ...any) *baseError {
 	return newBaseErrorWithStackSkip(3, originalErr, message, fields...)
 }
 
-func newBaseErrorLight(originalErr error, message string, fields ...any) *baseError {
+func newBaseError(originalErr error, message string, fields ...any) *baseError {
 	return newBaseErrorWithStackSkip(0, originalErr, message, fields...)
 }
 

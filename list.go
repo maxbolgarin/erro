@@ -620,12 +620,12 @@ func (m *multiErrorSet) Unwrap() []error {
 
 // New creates a new error and adds it to the list.
 func addNew[T interface{ add(Error) }](g T, message string, fields ...any) T {
-	g.add(newBaseError(nil, message, fields...))
+	g.add(newBaseErrorWithStack(nil, message, fields...))
 	return g
 }
 
 func addNewLight[T interface{ add(Error) }](g T, message string, fields ...any) T {
-	g.add(newBaseErrorLight(nil, message, fields...))
+	g.add(newBaseError(nil, message, fields...))
 	return g
 }
 
@@ -636,7 +636,7 @@ func addErrorf[T interface{ add(Error) }](g T, message string, args ...any) T {
 
 	// If there are no format verbs, all args are fields
 	if formats == 0 {
-		g.add(newBaseError(nil, message, args...))
+		g.add(newBaseErrorWithStack(nil, message, args...))
 		return g
 	}
 	if formats > len(args) {
@@ -647,12 +647,27 @@ func addErrorf[T interface{ add(Error) }](g T, message string, args ...any) T {
 	args = args[formats:]
 
 	// Create a new error with the formatted message and remaining args as fields
-	g.add(newBaseError(nil, message, args...))
+	g.add(newBaseErrorWithStack(nil, message, args...))
 	return g
 }
 
 // Wrap wraps an existing error and adds it to the list.
 func addWrap[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
+	if err == nil {
+		g.add(newBaseErrorWithStack(nil, message, fields...))
+		return g
+	}
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
+		g.add(newWrapError(erroErr, message, fields...))
+		return g
+	}
+	// For external errors, create a new base error that wraps it
+	g.add(newBaseErrorWithStack(err, message, fields...))
+	return g
+}
+
+func addWrapLight[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
 	if err == nil {
 		g.add(newBaseError(nil, message, fields...))
 		return g
@@ -662,22 +677,7 @@ func addWrap[T interface{ add(Error) }](g T, err error, message string, fields .
 		g.add(newWrapError(erroErr, message, fields...))
 		return g
 	}
-	// For external errors, create a new base error that wraps it
 	g.add(newBaseError(err, message, fields...))
-	return g
-}
-
-func addWrapLight[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
-	if err == nil {
-		g.add(newBaseErrorLight(nil, message, fields...))
-		return g
-	}
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
-		g.add(newWrapError(erroErr, message, fields...))
-		return g
-	}
-	g.add(newBaseErrorLight(err, message, fields...))
 	return g
 }
 
@@ -694,14 +694,14 @@ func addWrapEmpty[T interface{ add(Error) }](g T, err error) T {
 	}
 
 	// For external errors, create a new base error that wraps it
-	g.add(newBaseError(err, ""))
+	g.add(newBaseErrorWithStack(err, ""))
 	return g
 }
 
 // Wrapf wraps an existing error with a formatted message and adds it to the list.
 func addWrapf[T interface{ add(Error) }](g T, err error, message string, args ...any) T {
 	if err == nil {
-		g.add(newBaseError(nil, message, args...))
+		g.add(newBaseErrorWithStack(nil, message, args...))
 		return g
 	}
 	// If it's already an erro error, create a wrap that points to its base
@@ -710,6 +710,6 @@ func addWrapf[T interface{ add(Error) }](g T, err error, message string, args ..
 		return g
 	}
 	// For external errors, create a new base error that wraps it
-	g.add(newBaseError(err, message, args...))
+	g.add(newBaseErrorWithStack(err, message, args...))
 	return g
 }

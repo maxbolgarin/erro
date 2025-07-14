@@ -1,8 +1,9 @@
 package erro
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -232,18 +233,10 @@ func formatError(err Error, s fmt.State, verb rune) {
 
 func newID() string {
 	var buf [8]byte
-
-	rnd := rand.Int63()
-	for i := 0; i < len(buf); i++ {
-		n := int((rnd >> (6 * i)) & 0x3F)
-		n = n % 36
-		if n < 10 {
-			buf[i] = '0' + byte(n)
-		} else {
-			buf[i] = 'a' + byte(n-10)
-		}
+	if _, err := rand.Read(buf[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 10)[:8]
 	}
-	return string(buf[:])
+	return hex.EncodeToString(buf[:])
 }
 
 type atomicValue[T any] struct {

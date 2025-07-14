@@ -19,19 +19,11 @@ func Benchmark_New_STD(b *testing.B) {
 	}
 }
 
-func Benchmark_New_Light_Empty(b *testing.B) {
+func Benchmark_New(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.NewLight("connection failed")
-	}
-}
-
-func Benchmark_New_Light_WithFields(b *testing.B) {
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = erro.NewLight("connection failed", "key1", "value1", "key2", 123, "key3", 1.23)
+		_ = erro.New("connection failed")
 	}
 }
 
@@ -39,15 +31,23 @@ func Benchmark_New_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.New("connection failed", "key1", "value1", "key2", 123, "key3", 1.23)
+		_ = erro.New("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
-func Benchmark_Newf_WithFields(b *testing.B) {
+func Benchmark_NewWithStack(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.Newf("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
+		_ = erro.NewWithStack("connection failed")
+	}
+}
+
+func Benchmark_NewWithStack_WithFields(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.NewWithStack("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
@@ -62,25 +62,16 @@ func Benchmark_Errorf_STD(b *testing.B) {
 	}
 }
 
-func Benchmark_Wrap_Light_Empty(b *testing.B) {
-	baseErr := erro.NewLight("connection refused")
+func Benchmark_Wrap(b *testing.B) {
+	baseErr := erro.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.WrapLight(baseErr, "connection failed")
+		_ = erro.Wrap(baseErr, "connection failed")
 	}
 }
 
-func Benchmark_Wrap_Light_WithFields(b *testing.B) {
-	baseErr := erro.NewLight("connection refused")
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = erro.WrapLight(baseErr, "connection failed", "host", "localhost", "port", 5432)
-	}
-}
-
-func Benchmark_Wrap_WithFields_NoStack(b *testing.B) {
+func Benchmark_Wrap_WithFields(b *testing.B) {
 	baseErr := erro.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -89,27 +80,27 @@ func Benchmark_Wrap_WithFields_NoStack(b *testing.B) {
 	}
 }
 
-func Benchmark_Wrap_WithFields(b *testing.B) {
-	baseErr := errors.New("connection refused")
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = erro.Wrap(baseErr, "connection failed", "host", "localhost", "port", 5432)
-	}
-}
-
-func Benchmark_Wrapf_WithFields(b *testing.B) {
+func Benchmark_WrapWithStack(b *testing.B) {
 	baseErr := erro.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.Wrapf(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
+		_ = erro.WrapWithStack(baseErr, "connection failed")
+	}
+}
+
+func Benchmark_WrapWithStack_WithFields(b *testing.B) {
+	baseErr := errors.New("connection refused")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.WrapWithStack(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
 // Error
 
-func Benchmark_New_ErrorString_Empty(b *testing.B) {
+func Benchmark_New_ErrorString(b *testing.B) {
 	baseErr := erro.New("base error message")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -119,7 +110,7 @@ func Benchmark_New_ErrorString_Empty(b *testing.B) {
 }
 
 func Benchmark_New_ErrorString_WithFields(b *testing.B) {
-	baseErr := erro.New("base error message", "foo", 123, "bar", true)
+	baseErr := erro.New("base error message address=%s:%d", "localhost", 5432, "foo", 123, "bar", true)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

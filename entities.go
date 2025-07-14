@@ -44,6 +44,7 @@ type Error interface {
 	json.Marshaler
 	json.Unmarshaler
 	Is(target error) bool
+	As(target any) bool
 	Unwrap() error
 
 	// Metadata
