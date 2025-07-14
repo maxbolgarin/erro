@@ -18,8 +18,7 @@ type lightError struct {
 	severity  Severity
 	retryable bool
 	fields    []any
-
-	span Span
+	span      Span
 }
 
 func NewLight(message string, fields ...any) Error {
@@ -41,28 +40,20 @@ func (e *lightError) Error() (res string) {
 		}
 		e.fullMessage = res
 	}()
-	if e.cause == nil && e.severity == "" && len(e.fields) == 0 {
+	if e.cause == nil && len(e.fields) == 0 {
 		return e.message
 	}
 
 	capacity := len(e.message)
 
-	var errMsg, label string
+	var errMsg string
 	if e.cause != nil {
 		errMsg = safeErrorString(e.cause)
 		capacity += len(errMsg) + 2
 	}
-	if e.severity != "" {
-		label = e.severity.Label()
-		capacity += len(label) + 2
-	}
 	capacity += len(e.fields) * 20
 
 	out := make([]byte, 0, capacity)
-	if label != "" {
-		out = append(out, label...)
-		out = append(out, ' ')
-	}
 	out = append(out, e.message...)
 	for i := 0; i < len(e.fields); i += 2 {
 		if i+1 >= len(e.fields) {
@@ -98,52 +89,69 @@ func (e *lightError) Unwrap() error {
 
 // Implement Error interface methods (lightweight versions)
 func (e *lightError) WithID(idRaw ...string) Error {
+	newE := *e // Create a copy
 	if len(idRaw) > 0 {
-		e.id = truncateString(idRaw[0], maxCodeLength)
-	} else if e.id == "" {
-		e.id = newID(e.class, e.category)
+		newE.id = truncateString(idRaw[0], maxCodeLength)
+	} else if newE.id == "" {
+		newE.id = newID(newE.class, newE.category)
 	}
-	return e
+	return &newE
 }
 
 func (e *lightError) WithClass(class Class) Error {
-	e.class = class
-	return e
+	newE := *e // Create a copy
+	newE.class = class
+	return &newE
 }
 
 func (e *lightError) WithCategory(category Category) Error {
-	e.category = category
-	return e
+	newE := *e // Create a copy
+	newE.category = category
+	return &newE
 }
 
 func (e *lightError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
-	e.severity = severity
-	e.fullMessage = ""
-	return e
+	newE := *e // Create a copy
+	newE.severity = severity
+	newE.fullMessage = ""
+	return &newE
 }
 
 func (e *lightError) WithRetryable(retryable bool) Error {
-	e.retryable = retryable
-	return e
+	newE := *e // Create a copy
+	newE.retryable = retryable
+	return &newE
 }
 
 func (e *lightError) WithFields(fields ...any) Error {
-	e.fields = fields
-	e.fullMessage = ""
-	return e
+	newE := *e // Create a copy
+
+	// Correctly combine fields instead of replacing them
+	preparedFields := prepareFields(fields)
+	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
+	newE.fields = append(newE.fields, e.fields...)
+	newE.fields = append(newE.fields, preparedFields...)
+
+	newE.fullMessage = "" // Invalidate cache on the copy
+
+	if newE.span != nil {
+		newE.span.SetAttributes(preparedFields...)
+	}
+	return &newE
 }
 
 func (e *lightError) WithSpan(span Span) Error {
+	newE := *e // Create a copy
 	if span == nil {
 		return e
 	}
-	span.SetAttributes(e.fields...)
-	span.RecordError(e)
-	e.span = span
-	return e
+	span.SetAttributes(newE.fields...)
+	span.RecordError(&newE)
+	newE.span = span
+	return &newE
 }
 
 // Lightweight implementations - these don't do expensive operations
@@ -175,7 +183,11 @@ func (e *lightError) Class() Class       { return e.class }
 func (e *lightError) Category() Category { return e.category }
 func (e *lightError) IsRetryable() bool  { return e.retryable }
 func (e *lightError) Span() Span         { return e.span }
-func (e *lightError) Fields() []any      { return e.fields }
+func (e *lightError) Fields() []any {
+	fields := make([]any, len(e.fields))
+	copy(fields, e.fields)
+	return fields
+}
 func (e *lightError) Created() time.Time { return time.Time{} }
 func (e *lightError) Message() string    { return e.message }
 
@@ -272,6 +284,10 @@ func (e *lightError) toFullError() ErrorContext {
 	fullErr.fields = e.fields
 	fullErr.span = e.span
 	return fullErr
+}
+
+func (e *lightError) MarshalJSON() ([]byte, error) {
+	return []byte(e.Error()), nil
 }
 
 // newLightError creates a new lightweight error

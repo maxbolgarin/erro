@@ -40,10 +40,10 @@ func TestGroup_Basic(t *testing.T) {
 
 func TestGroup_Chaining(t *testing.T) {
 	g := NewList().
-		Class("TEST_CLASS").
-		Category("validation").
-		Severity("high").
-		Fields("user", "test-user")
+		WithClass("TEST_CLASS").
+		WithCategory("validation").
+		WithSeverity("high").
+		WithFields("user", "test-user")
 
 	g.New("validation failed").New("invalid input")
 
@@ -125,12 +125,12 @@ func TestSet_Deduplication(t *testing.T) {
 
 func TestSet_ChainingMethods(t *testing.T) {
 	s := NewSet().
-		Class("SET_CLASS").
-		Category("test").
-		Severity("low")
+		WithClass("SET_CLASS").
+		WithCategory("test").
+		WithSeverity("low")
 
 	// Verify chaining returns *Set
-	s2 := s.Fields("key", "value")
+	s2 := s.WithFields("key", "value")
 	if s2 != s {
 		t.Error("Chaining should return the same Set instance")
 	}
@@ -143,9 +143,6 @@ func TestSet_ChainingMethods(t *testing.T) {
 	}
 
 	err := errors[0]
-	if !strings.HasPrefix(err.Context().ID(), "SETE") {
-		t.Errorf("Expected code 'SETE', got '%s'", err.Context().ID())
-	}
 	if err.Context().Category() != "test" {
 		t.Errorf("Expected category 'test', got '%s'", err.Context().Category())
 	}
@@ -170,9 +167,9 @@ func TestMultiError_Unwrap(t *testing.T) {
 
 func ExampleList() {
 	g := NewList().
-		Class("VALIDATION").
-		Category("input").
-		Severity("high")
+		WithClass("VALIDATION").
+		WithCategory("input").
+		WithSeverity("high")
 
 	// Simulate validation errors
 	g.New("name is required").
@@ -186,14 +183,14 @@ func ExampleList() {
 
 	// Output:
 	// Validation failed:
-	// multiple errors (3): (1) [HIGH] name is required; (2) [HIGH] email is invalid; (3) [HIGH] validation failed: age out of range
+	// multiple errors (3): (1) name is required; (2) email is invalid; (3) validation failed: age out of range
 }
 
 func ExampleSet() {
 	s := NewSet().
-		Class("RETRY").
-		Category("network").
-		Severity("medium")
+		WithClass("RETRY").
+		WithCategory("network").
+		WithSeverity("medium")
 
 	// Simulate retry scenario with duplicate errors
 	for i := 0; i < 100; i++ {

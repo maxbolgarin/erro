@@ -3,60 +3,66 @@ package erro
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 )
 
 // wrapError is a lightweight wrapper that points to baseError
 type wrapError struct {
-	base        *baseError // Pointer to base error
-	wrapped     Error      // The wrapped error (to get all its fields)
-	wrapMessage string     // Wrap message
-	wrapFields  []any      // Additional fields for this wrap
-	createdAt   time.Time  // When this wrap was created (caching)
-	wrapDepth   int        // Depth of this specific wrap (without mutating base) (caching)
+	// The previous error in the chain. Can be a *baseError or another *wrapError.
+	wrapped Error
 
+	// --- Context for THIS level ONLY ---
+	wrapMessage string
+	fields      []any
+
+	// We only store the context if it was set at this level.
+	// Otherwise, it's left as the zero value (e.g., "" for string).
+	id        string
+	class     Class
+	category  Category
+	severity  Severity
+	retryable *bool // Use a pointer for a tri-state: nil=not set, true=set true, false=set false
+	span      Span
+	created   time.Time
+	stack     Stack
+
+	wrapDepth   int    // Depth of this specific wrap (without mutating base) (caching)
 	fullMessage string // Full message with fields (caching)
 }
 
-func (e *wrapError) Error() string {
-	return e.errorString()
-}
-
 // errorWithoutSeverity returns the error message without severity label
-func (e *wrapError) errorString(ignoreSeverity ...bool) (out string) {
+func (e *wrapError) Error() string {
 	if e.fullMessage != "" {
 		return e.fullMessage
 	}
-	defer func() {
-		e.fullMessage = out
-	}()
 
-	out = buildFieldsMessage(e.wrapMessage, e.wrapFields)
-
-	// Build the complete chain by getting the wrapped error's message without severity
+	// Get the message from the error we wrapped.
 	var wrappedMsg string
 	if e.wrapped != nil {
-		if baseErr, ok := e.wrapped.(*baseError); ok {
-			wrappedMsg = baseErr.errorString(true)
-		} else if wrapErr, ok := e.wrapped.(*wrapError); ok {
-			wrappedMsg = wrapErr.errorString(true)
+		wrappedMsg = e.wrapped.Error()
+	}
+
+	// buildFieldsMessage should combine the message and fields for the *current* level.
+	currentLevelMsg := buildFieldsMessage(e.wrapMessage, e.fields)
+
+	out := make([]byte, 0, len(currentLevelMsg)+len(wrappedMsg)+10)
+
+	// Join the current level's message with the wrapped message.
+	if currentLevelMsg != "" {
+		if wrappedMsg != "" {
+			out = append(out, currentLevelMsg...)
+			out = append(out, ':')
+			out = append(out, ' ')
+			out = append(out, wrappedMsg...)
 		} else {
-			wrappedMsg = safeErrorString(e.wrapped)
+			out = append(out, currentLevelMsg...)
 		}
 	} else {
-		wrappedMsg = e.base.errorString(true)
+		out = append(out, wrappedMsg...)
 	}
 
-	if out == "" {
-		return wrappedMsg
-	}
-
-	if (len(ignoreSeverity) == 0 || !ignoreSeverity[0]) && e.base.severity != SeverityUnknown {
-		out = e.base.severity.Label() + " " + out
-	}
-
-	return out + ": " + wrappedMsg
+	e.fullMessage = string(out)
+	return e.fullMessage
 }
 
 func (e *wrapError) Format(s fmt.State, verb rune) {
@@ -74,54 +80,76 @@ func (e *wrapError) WithID(idRaw ...string) Error {
 	if len(idRaw) > 0 {
 		id = truncateString(idRaw[0], maxCodeLength)
 	} else {
-		id = e.base.ID()
+		id = newID(e.class, e.category)
 	}
-	e.base.id = id
-	return e
+	return &wrapError{
+		wrapped: e,
+		id:      id,
+	}
 }
 
 func (e *wrapError) WithCategory(category Category) Error {
-	e.base.category = category
-	return e
+	return &wrapError{
+		wrapped:  e,
+		category: category,
+	}
 }
 
 func (e *wrapError) WithClass(class Class) Error {
-	e.base.class = class
-	return e
+	return &wrapError{
+		wrapped: e,
+		class:   class,
+	}
 }
 
 func (e *wrapError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
-	e.base.severity = severity
-	e.fullMessage = ""
-	return e
+	return &wrapError{
+		wrapped:  e,
+		severity: severity,
+	}
 }
 
 func (e *wrapError) WithFields(fields ...any) Error {
-	e.wrapFields = safeAppendFields(e.wrapFields, prepareFields(fields))
-	if e.base.span != nil {
-		e.base.span.SetAttributes(e.wrapFields...)
+	// Create a shallow copy of the current wrapError.
+	newE := *e
+
+	// Combine the old and new fields into a new slice.
+	preparedFields := prepareFields(fields)
+	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
+	newE.fields = append(newE.fields, e.fields...)
+	newE.fields = append(newE.fields, preparedFields...)
+
+	// Invalidate the message cache on the new copy.
+	newE.fullMessage = ""
+
+	// Record fields in the span if it exists.
+	if newE.span != nil {
+		newE.span.SetAttributes(preparedFields...)
 	}
-	e.fullMessage = ""
-	return e
+
+	return &newE
 }
 
 func (e *wrapError) WithRetryable(retryable bool) Error {
-	e.base.retryable = retryable
-	return e
+	return &wrapError{
+		wrapped:   e,
+		retryable: &retryable,
+	}
 }
 
 func (e *wrapError) WithSpan(span Span) Error {
 	if span == nil {
 		return e
 	}
-	span.SetAttributes(e.base.fields...)
-	span.SetAttributes(e.wrapFields...)
+	span.SetAttributes(e.Fields()...)
 	span.RecordError(e)
-	e.base.span = span
-	return e
+	return &wrapError{
+		wrapped: e,
+		span:    span,
+	}
 }
 
 func (e *wrapError) RecordMetrics(metrics Metrics) Error {
@@ -141,153 +169,160 @@ func (e *wrapError) SendEvent(ctx context.Context, dispatcher Dispatcher) Error 
 }
 
 // Getter methods for wrapError
-func (e *wrapError) Context() ErrorContext   { return e }
-func (e *wrapError) ID() string              { return e.base.ID() }
-func (e *wrapError) Class() Class            { return e.base.Class() }
-func (e *wrapError) Category() Category      { return e.base.Category() }
-func (e *wrapError) IsRetryable() bool       { return e.base.IsRetryable() }
-func (e *wrapError) Span() Span              { return e.base.Span() }
-func (e *wrapError) Created() time.Time      { return e.base.Created() }
-func (e *wrapError) Severity() Severity      { return e.base.Severity() }
-func (e *wrapError) Stack() Stack            { return e.base.Stack() }
-func (e *wrapError) BaseError() ErrorContext { return e.base }
+func (e *wrapError) BaseError() ErrorContext {
+	if e.wrapped != nil {
+		return e.wrapped.Context().BaseError()
+	}
+	return e
+}
+func (e *wrapError) Context() ErrorContext {
+	return e
+}
 
+func (e *wrapError) ID() string {
+	if e.id != "" {
+		return e.id
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().ID()
+	}
+	return ""
+}
+func (e *wrapError) Class() Class {
+	if e.class != ClassUnknown {
+		return e.class
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Class()
+	}
+	return ClassUnknown
+}
+func (e *wrapError) Category() Category {
+	if e.category != CategoryUnknown {
+		return e.category
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Category()
+	}
+	return CategoryUnknown
+}
+func (e *wrapError) IsRetryable() bool {
+	if e.retryable != nil {
+		return *e.retryable
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().IsRetryable()
+	}
+	return false
+}
+func (e *wrapError) Span() Span {
+	if e.span != nil {
+		return e.span
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Span()
+	}
+	return nil
+}
+func (e *wrapError) Created() time.Time {
+	if !e.created.IsZero() {
+		return e.created
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Created()
+	}
+	return time.Time{}
+}
+func (e *wrapError) Severity() Severity {
+	if e.severity != SeverityUnknown {
+		return e.severity
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Severity()
+	}
+	return SeverityUnknown
+}
+func (e *wrapError) Stack() Stack {
+	if e.stack != nil {
+		return e.stack
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Stack()
+	}
+	return nil
+}
 func (e *wrapError) Message() string {
-	return e.wrapMessage + ": " + e.wrapped.Context().Message()
+	if e.wrapMessage != "" {
+		return e.wrapMessage
+	}
+	if e.wrapped != nil {
+		return e.wrapped.Context().Message()
+	}
+	return ""
 }
 
 func (e *wrapError) Fields() []any {
-	// Add fields from wrapped error (if it exists)
-	var wrappedFields []any
+	var allFields []any
+	// Recursively get the fields from the earlier parts of the chain.
 	if e.wrapped != nil {
-		wrappedFields = e.wrapped.Context().Fields()
-	} else {
-		wrappedFields = e.base.fields
+		allFields = e.wrapped.Context().Fields()
 	}
 
-	// Create with exact capacity to avoid reallocations
-	allFields := make([]any, len(e.wrapFields)+len(wrappedFields))
-	copy(allFields, e.wrapFields)
-	copy(allFields[len(e.wrapFields):], wrappedFields)
-
-	return allFields
+	// Append the fields from the current level.
+	// We must return a new slice to preserve immutability.
+	combined := make([]any, 0, len(allFields)+len(e.fields))
+	combined = append(combined, allFields...)
+	combined = append(combined, e.fields...)
+	return combined
 }
 
-var visitedMapPool = sync.Pool{
-	New: func() any {
-		return make(map[*baseError]bool, 16) // Pre-allocate with reasonable capacity
-	},
-}
-
-// Is checks if this error or any wrapped error matches the target
 func (e *wrapError) Is(target error) bool {
-	visited, ok := visitedMapPool.Get().(map[*baseError]bool)
-	if !ok {
-		visited = make(map[*baseError]bool, 16)
-	}
-	defer func() {
-		recover()
-		// Clear the map before returning to pool
-		for k := range visited {
-			delete(visited, k)
-		}
-		visitedMapPool.Put(visited)
-	}()
-	return e.isWithVisited(target, visited, 0)
-}
-
-const maxCycleDetectionDepth = 50
-
-// isWithVisited implements Is with cycle detection
-func (e *wrapError) isWithVisited(target error, visited map[*baseError]bool, depth int) bool {
-	if target == nil || depth > maxCycleDetectionDepth {
+	if target == nil {
 		return false
 	}
 
-	// Check direct equality first (fastest path)
+	// Check for direct equality (are they the same instance in memory?)
 	if e == target {
 		return true
 	}
 
-	// Cycle detection: if we've already visited this base error in this path,
-	// skip this branch to avoid infinite recursion
-	if e.base != nil && visited[e.base] {
-		return false // Skip this branch, not an error condition
-	}
-
-	// Mark this base as visited for cycle detection
-	if e.base != nil {
-		visited[e.base] = true
-	}
-
-	// Fast path: Check if target is an erro error and use optimized comparison
-	if targetErro, ok := target.(ErrorContext); ok {
-		// Compare by id if both have non-empty ids (very fast)
-		if e.base != nil && e.base.id != "" && targetErro.ID() != "" {
-			if e.base.id == targetErro.ID() {
-				return true
-			}
-		}
-		// Compare base messages (fast)
-		if e.base != nil && e.base.message == targetErro.Message() {
+	// You can add custom logic here. For example, are two different `wrapError`
+	// instances equivalent if they share the same ID?
+	if other, ok := target.(*wrapError); ok {
+		if e.id != "" && e.id == other.id {
 			return true
 		}
 	}
 
-	// Check if the wrapped error matches directly (most common case)
-	if e.wrapped != nil {
-		if e.wrapped == target {
-			return true
-		}
-
-		// Recursive check with cycle detection
-		if wrapErr, ok := e.wrapped.(*wrapError); ok {
-			if wrapErr.isWithVisited(target, visited, depth+1) {
-				return true
-			}
-		} else if e.wrapped.Context().Is(target) { // Recursive check with cycle detection
-			return true
-		}
-	}
-
-	// Check if the base error matches (use our optimized baseError.Is)
-	if e.base != nil && e.base.Is(target) {
-		return true
-	}
-
+	// Add other comparisons if you need them.
+	// If no custom logic matches, they are not equivalent.
 	return false
 }
 
+func (e *wrapError) MarshalJSON() ([]byte, error) {
+	return []byte(e.Error()), nil
+}
+
 func newWrapError(wrapped Error, message string, fields ...any) Error {
-	fields = prepareFields(fields)
-	if wrapped == nil {
-		wrapped = newBaseError(nil, message, fields...)
-	}
-
-	// Calculate the depth without mutating the original base error
+	// 1. Perform the check before creating the new wrapper.
 	depth := calculateWrapDepth(wrapped)
-
-	if depth > maxWrapDepth {
-		return Wrap(ErrMaxWrapDepthExceeded, message, fields...)
+	if depth >= maxWrapDepth {
+		// Do not create a new wrapper. Instead, return a specific error.
+		// We wrap the original 'wrapped' error so it's not lost.
+		return Wrap(ErrMaxWrapDepthExceeded, "failed to wrap error", "original_error", wrapped)
 	}
 
-	baseInt := wrapped.Context().BaseError()
-	base, ok := baseInt.(*baseError)
-	if !ok {
-		// This shouldn't happen, but handle gracefully
-		return New(message, fields...)
-	}
-
-	if base.span != nil {
-		base.span.SetAttributes(fields...)
+	preparedFields := prepareFields(fields)
+	if wrapped == nil {
+		// This should ideally not happen if called from Wrap/Wrapf, but as a safeguard:
+		return newBaseError(nil, message, preparedFields...)
 	}
 
 	return &wrapError{
-		base:        base,
 		wrapped:     wrapped,
 		wrapMessage: truncateString(message, maxMessageLength),
-		wrapFields:  fields,
-		createdAt:   time.Now(),
+		fields:      preparedFields,
+		created:     time.Now(),
 		wrapDepth:   depth,
 	}
 }

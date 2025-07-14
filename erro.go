@@ -1,8 +1,8 @@
 package erro
 
 import (
+	"errors"
 	"fmt"
-	"reflect"
 )
 
 // New creates a new error with optional fields
@@ -90,109 +90,17 @@ func WrapEmpty(err error) Error {
 
 // Is reports whether any error in err's chain matches target
 func Is(err error, target error) (ok bool) {
-	if target == nil {
-		return err == target
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			ok = false
-		}
-	}()
-
-	// Check current error
-	if isComparable(err, target) {
-		return true
-	}
-
-	// If error has Is method, use it
-	if x, ok := err.(interface{ Is(error) bool }); ok && x.Is(target) {
-		return true
-	}
-
-	// Check wrapped errors
-	if x, ok := err.(interface{ Unwrap() error }); ok {
-		return Is(x.Unwrap(), target)
-	}
-
-	return false
-}
-
-// isComparable checks if two errors are directly comparable
-func isComparable(err, target error) bool {
-	if err == nil || target == nil {
-		return err == target
-	}
-
-	// Check direct equality
-	if err == target {
-		return true
-	}
-
-	// For erro errors, delegate to their Is method
-	if erroErr, ok := err.(Error); ok {
-		return erroErr.Context().Is(target)
-	}
-
-	return false
+	return errors.Is(err, target)
 }
 
 // As finds the first error in err's chain that matches target
 func As(err error, target any) (ok bool) {
-	if target == nil {
-		return false
-	}
-
-	if err == nil {
-		return false
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			// Return false instead of panicking
-			ok = false
-		}
-	}()
-
-	// Check if target is a pointer
-	val := reflect.ValueOf(target)
-	typ := val.Type()
-	if typ.Kind() != reflect.Ptr {
-		return false
-	}
-
-	targetType := typ.Elem()
-
-	// Check current error
-	if reflect.TypeOf(err).AssignableTo(targetType) {
-		val.Elem().Set(reflect.ValueOf(err))
-		return true
-	}
-
-	// If error has As method, use it
-	if x, ok := err.(interface{ As(any) bool }); ok && x.As(target) {
-		return true
-	}
-
-	// Check wrapped errors
-	if x, ok := err.(interface{ Unwrap() error }); ok {
-		return As(x.Unwrap(), target)
-	}
-
-	return false
+	return errors.As(err, target)
 }
 
 // Unwrap returns the underlying error if this wraps an external error
 func Unwrap(err error) error {
-	if erroErr, ok := err.(Error); ok {
-		base := erroErr.Context().BaseError()
-		baseInt, ok := base.(*baseError)
-		if ok {
-			return baseInt.originalErr
-		}
-		return erroErr.Unwrap()
-	}
-	return nil
+	return errors.Unwrap(err)
 }
 
 func Join(errs ...error) error {

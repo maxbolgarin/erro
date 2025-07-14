@@ -3,7 +3,6 @@ package erro
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -24,18 +23,12 @@ type baseError struct {
 	span      Span      // Span
 	created   time.Time // Creation timestamp
 
-	stackOnce sync.Once
-	stack     rawStack // Stack trace (program counters only - resolved on demand)
-	frames    Stack    // Stack trace frames (for caching)
+	stack  rawStack // Stack trace (program counters only - resolved on demand)
+	frames Stack    // Stack trace frames (for caching)
 }
 
 // Error implements the error interface
-func (e *baseError) Error() string {
-	return e.errorString()
-}
-
-// errorWithoutSeverity returns the error message without severity label
-func (e *baseError) errorString(ignoreSeverity ...bool) (out string) {
+func (e *baseError) Error() (out string) {
 	if e.fullMessage != "" {
 		return e.fullMessage
 	}
@@ -45,9 +38,6 @@ func (e *baseError) errorString(ignoreSeverity ...bool) (out string) {
 	}()
 
 	out = buildFieldsMessage(e.message, e.fields)
-	if (len(ignoreSeverity) == 0 || !ignoreSeverity[0]) && e.severity != SeverityUnknown {
-		out = e.severity.Label() + " " + out
-	}
 
 	if e.originalErr != nil {
 		if out == "" {
@@ -76,48 +66,74 @@ func (e *baseError) WithID(idRaw ...string) Error {
 	} else {
 		id = newID(e.class, e.category, e.created)
 	}
-	e.id = id
-	return e
+	return &wrapError{
+		wrapped: e,
+		id:      id,
+	}
 }
 
 func (e *baseError) WithCategory(category Category) Error {
-	e.category = category
-	return e
+	return &wrapError{
+		wrapped:  e,
+		category: category,
+	}
 }
 
 func (e *baseError) WithClass(class Class) Error {
-	e.class = class
-	return e
+	return &wrapError{
+		wrapped: e,
+		class:   class,
+	}
 }
 
 func (e *baseError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
-	e.severity = severity
-	e.fullMessage = ""
-	return e
+	return &wrapError{
+		wrapped:  e,
+		severity: severity,
+	}
 }
 
 func (e *baseError) WithFields(fields ...any) Error {
-	e.fields = safeAppendFields(e.fields, prepareFields(fields))
-	e.fullMessage = ""
-	return e
+	// Create a shallow copy of the current baseError.
+	newE := *e
+
+	// Combine the old and new fields into a new slice.
+	preparedFields := prepareFields(fields)
+	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
+	newE.fields = append(newE.fields, e.fields...)
+	newE.fields = append(newE.fields, preparedFields...)
+
+	// Invalidate the message cache on the new copy.
+	newE.fullMessage = ""
+
+	// Record fields in the span if it exists.
+	if newE.span != nil {
+		newE.span.SetAttributes(preparedFields...)
+	}
+
+	return &newE
 }
 
 func (e *baseError) WithRetryable(retryable bool) Error {
-	e.retryable = retryable
-	return e
+	return &wrapError{
+		wrapped:   e,
+		retryable: &retryable,
+	}
 }
 
 func (e *baseError) WithSpan(span Span) Error {
 	if span == nil {
 		return e
 	}
-	span.SetAttributes(e.fields...)
+	span.SetAttributes(e.Fields()...)
 	span.RecordError(e)
-	e.span = span
-	return e
+	return &wrapError{
+		wrapped: e,
+		span:    span,
+	}
 }
 
 func (e *baseError) RecordMetrics(metrics Metrics) Error {
@@ -148,15 +164,19 @@ func (e *baseError) Class() Class       { return e.class }
 func (e *baseError) Category() Category { return e.category }
 func (e *baseError) IsRetryable() bool  { return e.retryable }
 func (e *baseError) Span() Span         { return e.span }
-func (e *baseError) Fields() []any      { return e.fields }
+func (e *baseError) Fields() []any {
+	fields := make([]any, len(e.fields))
+	copy(fields, e.fields)
+	return fields
+}
 func (e *baseError) Created() time.Time { return e.created }
 func (e *baseError) Message() string    { return e.message }
 func (e *baseError) Severity() Severity { return e.severity }
 
 func (e *baseError) Stack() Stack {
-	e.stackOnce.Do(func() {
+	if e.frames == nil {
 		e.frames = e.stack.toFrames()
-	})
+	}
 	return e.frames
 }
 func (e *baseError) BaseError() ErrorContext { return e }
@@ -224,6 +244,10 @@ func (e *baseError) Is(target error) (ok bool) {
 	// Both are erro errors but didn't match on any fast path
 	// This should be rare with good error design
 	return false
+}
+
+func (e *baseError) MarshalJSON() ([]byte, error) {
+	return []byte(e.Error()), nil
 }
 
 // newBaseError creates a new base error with security validation

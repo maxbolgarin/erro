@@ -21,27 +21,27 @@ func ExtractContext(err error) ErrorContext {
 }
 
 // LogFields returns a slice of alternating key-value pairs for structured loggers
-func LogFields(err error, optFuncs ...func(*LogOptions)) []any {
+func LogFields(err error, optFuncs ...LogOption) []any {
 	ctx := ExtractContext(err)
 	if ctx == nil {
 		return nil
 	}
-	opts := DefaultLogOptions().ApplyOptions(optFuncs...)
+	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
 	return getLogFields(ctx, opts)
 }
 
 // LogFieldsMap returns a map of field key-value pairs for map-based loggers
-func LogFieldsMap(err error, optFuncs ...func(*LogOptions)) map[string]any {
+func LogFieldsMap(err error, optFuncs ...LogOption) map[string]any {
 	ctx := ExtractContext(err)
 	if ctx == nil {
 		return nil
 	}
-	opts := DefaultLogOptions().ApplyOptions(optFuncs...)
+	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
 	return getLogFieldsMap(ctx, opts)
 }
 
 // WithLogger executes a callback with extracted error context for any logging library
-func LogError(err error, logFunc func(message string, fields ...any), optFuncs ...func(*LogOptions)) {
+func LogError(err error, logFunc func(message string, fields ...any), optFuncs ...LogOption) {
 	if err == nil || logFunc == nil {
 		return
 	}
@@ -52,9 +52,11 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 		return
 	}
 
-	opts := DefaultLogOptions().ApplyOptions(optFuncs...)
+	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
 	logFunc(ctx.Message(), getLogFields(ctx, opts)...)
 }
+
+type LogOption func(*LogOptions)
 
 // LogOptions controls which fields are included in logging output
 type LogOptions struct {
@@ -95,9 +97,8 @@ const (
 	StackFormatJSON                      // JSON format for structured logging
 )
 
-// Default options that include commonly needed fields
-func DefaultLogOptions() *LogOptions {
-	return &LogOptions{
+var (
+	DefaultLogOptions = LogOptions{
 		IncludeUserFields:  true,
 		IncludeID:          true,
 		IncludeCategory:    true,
@@ -113,39 +114,14 @@ func DefaultLogOptions() *LogOptions {
 		StackFormat:        StackFormatJSON,
 		FieldNamePrefix:    "error_",
 	}
-}
-
-// Minimal options that include only essential fields
-func MinimalLogOptions() *LogOptions {
-	return &LogOptions{
+	MinimalLogOptions = LogOptions{
 		IncludeUserFields: true,
 		IncludeID:         true,
 		IncludeSeverity:   true,
 		StackFormat:       StackFormatJSON,
 		FieldNamePrefix:   "error_",
 	}
-}
-
-func MinimalLogOpts() []func(*LogOptions) {
-	return []func(*LogOptions){
-		WithUserFields(true),
-		WithID(true),
-		WithSeverity(true),
-		WithCategory(false),
-		WithTracing(false),
-		WithRetryable(false),
-		WithCreatedTime(false),
-		WithFunction(false),
-		WithPackage(false),
-		WithFile(false),
-		WithLine(false),
-		WithStack(false),
-	}
-}
-
-// Verbose options that include all available fields
-func VerboseLogOptions() *LogOptions {
-	return &LogOptions{
+	VerboseLogOptions = LogOptions{
 		IncludeUserFields:  true,
 		IncludeID:          true,
 		IncludeCategory:    true,
@@ -161,10 +137,8 @@ func VerboseLogOptions() *LogOptions {
 		StackFormat:        StackFormatJSON,
 		FieldNamePrefix:    "error_",
 	}
-}
 
-func VerboseLogOpts() []func(*LogOptions) {
-	return []func(*LogOptions){
+	VerboseLogOpts = []func(*LogOptions){
 		WithUserFields(true),
 		WithID(true),
 		WithSeverity(true),
@@ -178,14 +152,22 @@ func VerboseLogOpts() []func(*LogOptions) {
 		WithLine(true),
 		WithStack(true),
 	}
-}
 
-func EmptyLogOptions() *LogOptions {
-	return &LogOptions{}
-}
-
-func EmptyLogOpts() []func(*LogOptions) {
-	return []func(*LogOptions){
+	MinimalLogOpts = []func(*LogOptions){
+		WithUserFields(true),
+		WithID(true),
+		WithSeverity(true),
+		WithCategory(false),
+		WithTracing(false),
+		WithRetryable(false),
+		WithCreatedTime(false),
+		WithFunction(false),
+		WithPackage(false),
+		WithFile(false),
+		WithLine(false),
+		WithStack(false),
+	}
+	EmptyLogOpts = []func(*LogOptions){
 		WithUserFields(false),
 		WithID(false),
 		WithSeverity(false),
@@ -200,14 +182,14 @@ func EmptyLogOpts() []func(*LogOptions) {
 		WithStack(false),
 		WithFieldNamePrefix(""),
 	}
-}
+)
 
-func MergeLogOpts(opts []func(*LogOptions), addsOpts ...func(*LogOptions)) []func(*LogOptions) {
+func MergeLogOpts(opts []LogOption, addsOpts ...LogOption) []LogOption {
 	return append(opts, addsOpts...)
 }
 
 // WithUserFields enables/disables user-defined fields
-func WithUserFields(include ...bool) func(*LogOptions) {
+func WithUserFields(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeUserFields = true
 		if len(include) > 0 {
@@ -217,7 +199,7 @@ func WithUserFields(include ...bool) func(*LogOptions) {
 }
 
 // WithID enables/disables error id field
-func WithID(include ...bool) func(*LogOptions) {
+func WithID(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeID = true
 		if len(include) > 0 {
@@ -227,7 +209,7 @@ func WithID(include ...bool) func(*LogOptions) {
 }
 
 // WithCategory enables/disables error category field
-func WithCategory(include ...bool) func(*LogOptions) {
+func WithCategory(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeCategory = true
 		if len(include) > 0 {
@@ -237,7 +219,7 @@ func WithCategory(include ...bool) func(*LogOptions) {
 }
 
 // WithSeverity enables/disables error severity field
-func WithSeverity(include ...bool) func(*LogOptions) {
+func WithSeverity(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeSeverity = true
 		if len(include) > 0 {
@@ -247,7 +229,7 @@ func WithSeverity(include ...bool) func(*LogOptions) {
 }
 
 // WithTracing enables/disables tracing field
-func WithTracing(include ...bool) func(*LogOptions) {
+func WithTracing(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeTracing = true
 		if len(include) > 0 {
@@ -257,7 +239,7 @@ func WithTracing(include ...bool) func(*LogOptions) {
 }
 
 // WithRetryable enables/disables retryable flag field
-func WithRetryable(include ...bool) func(*LogOptions) {
+func WithRetryable(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeRetryable = true
 		if len(include) > 0 {
@@ -267,7 +249,7 @@ func WithRetryable(include ...bool) func(*LogOptions) {
 }
 
 // WithCreatedTime enables/disables creation timestamp field
-func WithCreatedTime(include ...bool) func(*LogOptions) {
+func WithCreatedTime(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeCreatedTime = true
 		if len(include) > 0 {
@@ -277,7 +259,7 @@ func WithCreatedTime(include ...bool) func(*LogOptions) {
 }
 
 // WithFunction enables/disables function name field
-func WithFunction(include ...bool) func(*LogOptions) {
+func WithFunction(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeFunction = true
 		if len(include) > 0 {
@@ -287,7 +269,7 @@ func WithFunction(include ...bool) func(*LogOptions) {
 }
 
 // WithPackage enables/disables package name field
-func WithPackage(include ...bool) func(*LogOptions) {
+func WithPackage(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludePackage = true
 		if len(include) > 0 {
@@ -297,7 +279,7 @@ func WithPackage(include ...bool) func(*LogOptions) {
 }
 
 // WithFile enables/disables file name field
-func WithFile(include ...bool) func(*LogOptions) {
+func WithFile(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeFile = true
 		if len(include) > 0 {
@@ -307,7 +289,7 @@ func WithFile(include ...bool) func(*LogOptions) {
 }
 
 // WithLine enables/disables line number field
-func WithLine(include ...bool) func(*LogOptions) {
+func WithLine(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeLine = true
 		if len(include) > 0 {
@@ -317,7 +299,7 @@ func WithLine(include ...bool) func(*LogOptions) {
 }
 
 // WithStack enables/disables full stack trace field
-func WithStack(include ...bool) func(*LogOptions) {
+func WithStack(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeStack = true
 		if len(include) > 0 {
@@ -327,7 +309,7 @@ func WithStack(include ...bool) func(*LogOptions) {
 }
 
 // WithStackFormat sets the stack trace format
-func WithStackFormat(format StackFormat) func(*LogOptions) {
+func WithStackFormat(format StackFormat) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeStack = true
 		opts.StackFormat = format
@@ -335,38 +317,45 @@ func WithStackFormat(format StackFormat) func(*LogOptions) {
 }
 
 // WithFieldNamePrefix sets the field name prefix
-func WithFieldNamePrefix(prefix string) func(*LogOptions) {
+func WithFieldNamePrefix(prefix string) LogOption {
 	return func(opts *LogOptions) {
 		opts.FieldNamePrefix = prefix
 	}
 }
 
 // ApplyOptions applies a set of option functions to LogOptions
-func (opts *LogOptions) ApplyOptions(optFuncs ...func(*LogOptions)) *LogOptions {
+func (opts *LogOptions) ApplyOptions(optFuncs ...LogOption) LogOptions {
 	for _, optFunc := range optFuncs {
 		optFunc(opts)
 	}
-	return opts
+	return *opts
 }
 
 // logFields converts ErrorContext to slog-compatible fields with options
-func getLogFields(ec ErrorContext, optsRaw ...*LogOptions) []any {
-	fieldsMap := getLogFieldsMap(ec, optsRaw...)
+func getLogFieldsMap(ec ErrorContext, optsRaw ...LogOptions) map[string]any {
+	fields := getLogFields(ec, optsRaw...)
 
-	fields := make([]any, 0, len(fieldsMap)*2)
-	for key, value := range fieldsMap {
-		fields = append(fields, key, value)
+	fieldsMap := make(map[string]any, len(fields))
+	for i := 0; i < len(fields); i += 2 {
+		if i+1 >= len(fields) {
+			break
+		}
+		key, ok := fields[i].(string)
+		if !ok {
+			key = valueToString(fields[i])
+		}
+		fieldsMap[truncateString(key, maxFieldKeyLength)] = fields[i+1]
 	}
-	return fields
+	return fieldsMap
 }
 
 // logFieldsMap converts ErrorContext to logrus-compatible fields with options
-func getLogFieldsMap(ec ErrorContext, optsRaw ...*LogOptions) map[string]any {
+func getLogFields(ec ErrorContext, optsRaw ...LogOptions) []any {
 	if ec == nil {
 		return nil
 	}
 
-	opts := DefaultLogOptions()
+	opts := DefaultLogOptions
 	if len(optsRaw) > 0 {
 		opts = optsRaw[0]
 	}
@@ -391,80 +380,67 @@ func getLogFieldsMap(ec ErrorContext, optsRaw ...*LogOptions) map[string]any {
 		errorParentSpanID = span.ParentSpanID()
 	}
 
-	fields := make(map[string]any, len(errorFields)+14)
+	fields := make([]any, 0, len(errorFields)+30)
 
 	// Add user fields
 	if opts.IncludeUserFields {
-		for i := 0; i < len(errorFields); i += 2 {
-			if i+1 >= len(errorFields) {
-				break
-			}
-			key, ok := errorFields[i].(string)
-			if !ok {
-				key = valueToString(errorFields[i])
-			}
-			value, ok := errorFields[i+1].(string)
-			if !ok {
-				value = valueToString(errorFields[i+1])
-			}
-			fields[truncateString(key, maxFieldKeyLength)] = truncateString(value, maxFieldValueLength)
-		}
+		fields = append(fields, errorFields...)
 	}
 
 	// Add error metadata
 	if opts.IncludeID && errorID != "" {
-		fields[opts.FieldNamePrefix+"id"] = errorID
+		fields = append(fields, opts.FieldNamePrefix+"id", errorID)
 	}
 	if opts.IncludeCategory && errorCategory != "" {
-		fields[opts.FieldNamePrefix+"category"] = errorCategory
+		fields = append(fields, opts.FieldNamePrefix+"category", errorCategory)
 	}
 	if opts.IncludeSeverity && errorSeverity != "" {
-		fields[opts.FieldNamePrefix+"severity"] = errorSeverity
+		fields = append(fields, opts.FieldNamePrefix+"severity", errorSeverity)
 	}
 	if opts.IncludeTracing {
 		if errorTraceID != "" {
-			fields["trace_id"] = errorTraceID
+			fields = append(fields, "trace_id", errorTraceID)
 		}
 		if errorSpanID != "" {
-			fields["span_id"] = errorSpanID
+			fields = append(fields, "span_id", errorSpanID)
 		}
 		if errorParentSpanID != "" {
-			fields["parent_span_id"] = errorParentSpanID
+			fields = append(fields, "parent_span_id", errorParentSpanID)
 		}
 	}
 	if opts.IncludeRetryable && errorRetryable {
-		fields[opts.FieldNamePrefix+"retryable"] = errorRetryable
+		fields = append(fields, opts.FieldNamePrefix+"retryable", errorRetryable)
 	}
 
 	// Add timing information
 	if opts.IncludeCreatedTime && !errorCreated.IsZero() {
-		fields[opts.FieldNamePrefix+"created"] = errorCreated
+		fields = append(fields, opts.FieldNamePrefix+"created", errorCreated)
 	}
 
 	topFrame := errorStack.TopUserFrame()
-	if topFrame == nil {
+	if topFrame == nil && len(errorStack) > 0 {
 		topFrame = &errorStack[0]
 	}
 
 	// Add function context
 	if opts.IncludeFunction && topFrame.Name != "" {
-		fields[opts.FieldNamePrefix+"function"] = topFrame.Name
+		fields = append(fields, opts.FieldNamePrefix+"function", topFrame.Name)
 	}
 	if opts.IncludePackage && topFrame.Package != "" {
-		fields[opts.FieldNamePrefix+"package"] = topFrame.Package
+		fields = append(fields, opts.FieldNamePrefix+"package", topFrame.Package)
 	}
 	if opts.IncludeFile && topFrame.File != "" {
-		fields[opts.FieldNamePrefix+"file"] = topFrame.File
+		fields = append(fields, opts.FieldNamePrefix+"file", topFrame.File)
 	}
 	if opts.IncludeLine && topFrame.Line > 0 {
-		fields[opts.FieldNamePrefix+"line"] = topFrame.Line
+		fields = append(fields, opts.FieldNamePrefix+"line", topFrame.Line)
 	}
 
 	// Add stack trace if requested
 	if opts.IncludeStack {
 		stack := getStackTrace(errorStack, opts)
 		if stack != nil {
-			fields[opts.FieldNamePrefix+"stack"] = stack
+			fields = append(fields, opts.FieldNamePrefix+"stack", stack)
 		}
 	}
 
@@ -472,7 +448,7 @@ func getLogFieldsMap(ec ErrorContext, optsRaw ...*LogOptions) map[string]any {
 }
 
 // getStackTrace returns the stack trace in the requested format
-func getStackTrace(stack Stack, opts *LogOptions) any {
+func getStackTrace(stack Stack, opts LogOptions) any {
 	if len(stack) == 0 {
 		return nil
 	}

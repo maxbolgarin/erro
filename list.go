@@ -1,7 +1,6 @@
 package erro
 
 import (
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,7 +15,6 @@ type List struct {
 	category  Category
 	severity  Severity
 	fields    []any
-	ctx       context.Context
 	retryable bool
 }
 
@@ -114,7 +112,7 @@ func (g *List) Remove(i int) bool {
 // RemoveError removes the first error that matches the given error.
 func (g *List) RemoveError(err Error) bool {
 	for i, e := range g.errors {
-		if e.Error() == err.Error() {
+		if e.Context().ID() == err.Context().ID() {
 			g.Remove(i)
 			return true
 		}
@@ -136,7 +134,6 @@ func (g *List) Copy() *List {
 	clone.category = g.category
 	clone.severity = g.severity
 	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
-	clone.ctx = g.ctx
 	clone.retryable = g.retryable
 	return clone
 }
@@ -188,17 +185,17 @@ func (g *List) Last() Error {
 	return g.errors[len(g.errors)-1]
 }
 
-func (g *List) Class(class Class) *List {
+func (g *List) WithClass(class Class) *List {
 	g.class = class
 	return g
 }
 
-func (g *List) Category(category Category) *List {
+func (g *List) WithCategory(category Category) *List {
 	g.category = category
 	return g
 }
 
-func (g *List) Severity(severity Severity) *List {
+func (g *List) WithSeverity(severity Severity) *List {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
@@ -206,67 +203,45 @@ func (g *List) Severity(severity Severity) *List {
 	return g
 }
 
-func (g *List) GetClass() Class       { return g.class }
-func (g *List) GetCategory() Category { return g.category }
-func (g *List) GetFields() []any      { return g.fields }
-func (g *List) GetContext() context.Context {
-	return g.ctx
-}
-func (g *List) IsRetryable() bool { return g.retryable }
-
-// Severity checking methods for List
-func (g *List) IsCritical() bool { return g.severity == SeverityCritical }
-func (g *List) IsHigh() bool     { return g.severity == SeverityHigh }
-func (g *List) IsMedium() bool   { return g.severity == SeverityMedium }
-func (g *List) IsLow() bool      { return g.severity == SeverityLow }
-func (g *List) IsWarning() bool  { return g.severity == SeverityInfo }
-func (g *List) IsUnknown() bool  { return g.severity == "" || g.severity == SeverityUnknown }
-func (g *List) GetSeverity() Severity {
-	if g.severity == "" {
-		return SeverityUnknown
-	}
-	return g.severity
-}
-
-func (g *List) Fields(fields ...any) *List {
-	g.fields = append(g.fields, prepareFields(fields)...)
+func (g *List) WithFields(fields ...any) *List {
+	g.fields = safeAppendFields(g.fields, prepareFields(fields))
 	return g
 }
 
-func (g *List) Context(ctx context.Context) *List {
-	g.ctx = ctx
-	return g
-}
-
-func (g *List) Retryable(retryable bool) *List {
+func (g *List) WithRetryable(retryable bool) *List {
 	g.retryable = retryable
 	return g
 }
 
+func (g *List) Class() Class       { return g.class }
+func (g *List) Category() Category { return g.category }
+func (g *List) Fields() []any      { return g.fields }
+func (g *List) IsRetryable() bool  { return g.retryable }
+func (g *List) Severity() Severity { return g.severity }
+
 func (g *List) add(err Error) *List {
-	g.applyMetadata(err)
-	g.errors = append(g.errors, err)
+	g.errors = append(g.errors, g.withMetadata(err))
 	return g
 }
 
 // applyMetadata applies accumulated metadata to an error
-func (g *List) applyMetadata(err Error) {
+func (g *List) withMetadata(err Error) Error {
 	if g.class != ClassUnknown && err.Context().Class() == ClassUnknown {
-		err.WithClass(g.class)
+		err = err.WithClass(g.class)
 	}
 	if g.category != CategoryUnknown && err.Context().Category() == CategoryUnknown {
-		err.WithCategory(g.category)
+		err = err.WithCategory(g.category)
 	}
 	if g.severity != SeverityUnknown && err.Context().Severity() == SeverityUnknown {
-		err.WithSeverity(g.severity)
+		err = err.WithSeverity(g.severity)
 	}
 	if g.retryable {
-		err.WithRetryable(g.retryable)
+		err = err.WithRetryable(g.retryable)
 	}
 	if len(g.fields) > 0 {
-		err.WithFields(g.fields...)
+		err = err.WithFields(g.fields...)
 	}
-
+	return err
 }
 
 // Set collects unique errors and provides the same chaining API as Error.
@@ -384,55 +359,109 @@ func (s *Set) Copy() *Set {
 	}
 }
 
-func (s *Set) Class(class Class) *Set {
-	s.List.Class(class)
+// Remove removes error at index i from the list.
+func (g *Set) Remove(i int) bool {
+	if i < 0 || i >= len(g.errors) {
+		return false
+	}
+	err := g.errors[i]
+	delete(g.seen, g.keyGetter(err))
+	g.errors = append(g.errors[:i], g.errors[i+1:]...)
+
+	return true
+}
+
+// RemoveError removes the first error that matches the given error.
+func (g *Set) RemoveError(err Error) bool {
+	for i, e := range g.errors {
+		if e.Context().ID() == err.Context().ID() {
+			g.Remove(i)
+			return true
+		}
+	}
+	return false
+}
+
+// Errors returns a copy of the errors slice
+func (g *Set) Errors() []error {
+	result := make([]error, len(g.errors))
+	for i, err := range g.errors {
+		result[i] = err
+	}
+	return result
+}
+
+// Errs returns a copy of the errors slice
+func (g *Set) Errs() []Error {
+	result := make([]Error, len(g.errors))
+	copy(result, g.errors)
+	return result
+}
+
+// Len returns the number of errors in the list
+func (g *Set) Len() int {
+	return len(g.errors)
+}
+
+// Empty returns true if the list is empty
+func (g *Set) Empty() bool {
+	return len(g.errors) == 0
+}
+
+// NotEmpty returns true if the list is not empty
+func (g *Set) NotEmpty() bool {
+	return len(g.errors) > 0
+}
+
+// First returns the first error in the list, or nil if empty.
+func (g *Set) First() Error {
+	if len(g.errors) == 0 {
+		return nil
+	}
+	return g.errors[0]
+}
+
+// Last returns the last error in the list, or nil if empty.
+func (g *Set) Last() Error {
+	if len(g.errors) == 0 {
+		return nil
+	}
+	return g.errors[len(g.errors)-1]
+}
+
+func (s *Set) WithClass(class Class) *Set {
+	s.List.WithClass(class)
 	return s
 }
 
-func (s *Set) Category(category Category) *Set {
-	s.List.Category(category)
+func (s *Set) WithCategory(category Category) *Set {
+	s.List.WithCategory(category)
 	return s
 }
 
-func (s *Set) Severity(severity Severity) *Set {
-	s.List.Severity(severity)
+func (s *Set) WithSeverity(severity Severity) *Set {
+	s.List.WithSeverity(severity)
 	return s
 }
 
-func (s *Set) GetClass() Class       { return s.List.GetClass() }
-func (s *Set) GetCategory() Category { return s.List.GetCategory() }
-func (s *Set) GetFields() []any      { return s.List.GetFields() }
-func (s *Set) GetContext() context.Context {
-	return s.List.GetContext()
-}
-func (s *Set) IsRetryable() bool { return s.List.IsRetryable() }
-
-// Severity checking methods for Set
-func (s *Set) IsCritical() bool      { return s.List.IsCritical() }
-func (s *Set) IsHigh() bool          { return s.List.IsHigh() }
-func (s *Set) IsMedium() bool        { return s.List.IsMedium() }
-func (s *Set) IsLow() bool           { return s.List.IsLow() }
-func (s *Set) IsWarning() bool       { return s.List.IsWarning() }
-func (s *Set) IsUnknown() bool       { return s.List.IsUnknown() }
-func (s *Set) GetSeverity() Severity { return s.List.GetSeverity() }
-
-func (s *Set) Fields(fields ...any) *Set {
-	s.List.Fields(fields...)
+func (s *Set) WithFields(fields ...any) *Set {
+	s.List.WithFields(fields...)
 	return s
 }
 
-func (s *Set) Context(ctx context.Context) *Set {
-	s.List.Context(ctx)
+func (s *Set) WithRetryable(retryable bool) *Set {
+	s.List.WithRetryable(retryable)
 	return s
 }
 
-func (s *Set) Retryable(retryable bool) *Set {
-	s.List.Retryable(retryable)
-	return s
-}
+func (s *Set) Class() Class       { return s.List.Class() }
+func (s *Set) Category() Category { return s.List.Category() }
+func (s *Set) Fields() []any      { return s.List.Fields() }
+func (s *Set) IsRetryable() bool  { return s.List.IsRetryable() }
+func (s *Set) Severity() Severity { return s.List.Severity() }
 
 func (s *Set) add(err Error) *Set {
-	s.applyMetadata(err)
+	err = s.withMetadata(err)
 	key := s.keyGetter(err)
 	if _, ok := s.seen[key]; !ok {
 		s.seen[key] = 1
@@ -465,7 +494,6 @@ type SafeList struct {
 	category  Category
 	severity  Severity
 	fields    []any
-	ctx       context.Context
 	retryable bool
 
 	// Thread safety
@@ -577,7 +605,7 @@ func (g *SafeList) RemoveError(err Error) bool {
 	defer g.mu.Unlock()
 
 	for i, e := range g.errors {
-		if e.Error() == err.Error() {
+		if e.Context().ID() == err.Context().ID() {
 			g.errors = append(g.errors[:i], g.errors[i+1:]...)
 			return true
 		}
@@ -604,7 +632,6 @@ func (g *SafeList) Copy() *SafeList {
 	clone.category = g.category
 	clone.severity = g.severity
 	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
-	clone.ctx = g.ctx
 	clone.retryable = g.retryable
 	return clone
 }
@@ -674,21 +701,21 @@ func (g *SafeList) Last() Error {
 	return g.errors[len(g.errors)-1]
 }
 
-func (g *SafeList) Class(class Class) *SafeList {
+func (g *SafeList) WithClass(class Class) *SafeList {
 	g.mu.Lock()
 	g.class = class
 	g.mu.Unlock()
 	return g
 }
 
-func (g *SafeList) Category(category Category) *SafeList {
+func (g *SafeList) WithCategory(category Category) *SafeList {
 	g.mu.Lock()
 	g.category = category
 	g.mu.Unlock()
 	return g
 }
 
-func (g *SafeList) Severity(severity Severity) *SafeList {
+func (g *SafeList) WithSeverity(severity Severity) *SafeList {
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
@@ -698,127 +725,80 @@ func (g *SafeList) Severity(severity Severity) *SafeList {
 	return g
 }
 
-func (g *SafeList) GetClass() Class {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.class
-}
-func (g *SafeList) GetCategory() Category {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.category
-}
-
-func (g *SafeList) GetFields() []any {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.fields
-}
-func (g *SafeList) GetContext() context.Context {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.ctx
-}
-func (g *SafeList) IsRetryable() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.retryable
-}
-
-// Severity checking methods for List
-func (g *SafeList) IsCritical() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity == SeverityCritical
-}
-func (g *SafeList) IsHigh() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity == SeverityHigh
-}
-func (g *SafeList) IsMedium() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity == SeverityMedium
-}
-func (g *SafeList) IsLow() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity == SeverityLow
-}
-func (g *SafeList) IsWarning() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity == SeverityInfo
-}
-func (g *SafeList) IsUnknown() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity == "" || g.severity == SeverityUnknown
-}
-func (g *SafeList) GetSeverity() Severity {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	if g.severity == "" {
-		return SeverityUnknown
-	}
-	return g.severity
-}
-
-func (g *SafeList) Fields(fields ...any) *SafeList {
+func (g *SafeList) WithFields(fields ...any) *SafeList {
 	g.mu.Lock()
-	g.fields = append(g.fields, prepareFields(fields)...)
+	g.fields = safeAppendFields(g.fields, prepareFields(fields))
 	g.mu.Unlock()
 	return g
 }
 
-func (g *SafeList) Context(ctx context.Context) *SafeList {
-	g.mu.Lock()
-	g.ctx = ctx
-	g.mu.Unlock()
-	return g
-}
-
-func (g *SafeList) Retryable(retryable bool) *SafeList {
+func (g *SafeList) WithRetryable(retryable bool) *SafeList {
 	g.mu.Lock()
 	g.retryable = retryable
 	g.mu.Unlock()
 	return g
 }
 
+func (g *SafeList) Class() Class {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.class
+}
+func (g *SafeList) Category() Category {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.category
+}
+func (g *SafeList) Fields() []any {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.fields
+}
+func (g *SafeList) IsRetryable() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.retryable
+}
+func (g *SafeList) Severity() Severity {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.severity
+}
+
 func (g *SafeList) add(err Error) *SafeList {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.applyMetadata(err)
-	g.errors = append(g.errors, err)
+	g.errors = append(g.errors, g.withMetadata(err))
 	return g
 }
 
 // applyMetadata applies accumulated metadata to an error
-func (g *SafeList) applyMetadata(err Error) {
+func (g *SafeList) withMetadata(err Error) Error {
 	if g.class != ClassUnknown && err.Context().Class() == ClassUnknown {
-		err.WithClass(g.class)
+		err = err.WithClass(g.class)
 	}
 	if g.category != CategoryUnknown && err.Context().Category() == CategoryUnknown {
-		err.WithCategory(g.category)
+		err = err.WithCategory(g.category)
 	}
 	if g.severity != SeverityUnknown && err.Context().Severity() == SeverityUnknown {
-		err.WithSeverity(g.severity)
+		err = err.WithSeverity(g.severity)
 	}
 	if len(g.fields) > 0 {
-		err.WithFields(g.fields...)
+		err = err.WithFields(g.fields...)
 	}
 	if g.retryable {
-		err.WithRetryable(g.retryable)
+		err = err.WithRetryable(g.retryable)
 	}
+	return err
 }
 
 // SafeSet is a thread-safe version of Set that collects unique errors
 type SafeSet struct {
-	*SafeList
+	*List
 	seen      map[string]int
 	keyGetter func(error) string
+	mu        sync.RWMutex
 }
 
 // NewSafeSet creates a new thread-safe error set that stores only unique errors
@@ -828,13 +808,16 @@ func NewSafeSet(capacityRaw ...int) *SafeSet {
 		capacity = capacityRaw[0]
 	}
 	return &SafeSet{
-		SafeList:  NewSafeList(capacity),
+		List:      NewList(capacity),
 		seen:      make(map[string]int, capacity),
 		keyGetter: MessageKeyGetter,
 	}
 }
 
 func (s *SafeSet) WithKeyGetter(keyGetter func(error) string) *SafeSet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.keyGetter = keyGetter
 	return s
 }
@@ -931,62 +914,180 @@ func (s *SafeSet) Copy() *SafeSet {
 		newSeen[k] = s.seen[k]
 	}
 	return &SafeSet{
-		SafeList:  s.SafeList.Copy(),
+		List:      s.List.Copy(),
 		seen:      newSeen,
 		keyGetter: s.keyGetter,
 	}
 }
 
-func (s *SafeSet) Class(class Class) *SafeSet {
-	s.SafeList.Class(class)
+// Remove removes error at index i from the list.
+func (g *SafeSet) Remove(i int) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if i < 0 || i >= len(g.errors) {
+		return false
+	}
+	err := g.errors[i]
+	delete(g.seen, g.keyGetter(err))
+	g.errors = append(g.errors[:i], g.errors[i+1:]...)
+
+	return true
+}
+
+// RemoveError removes the first error that matches the given error.
+func (g *SafeSet) RemoveError(err Error) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for i, e := range g.errors {
+		if e.Context().ID() == err.Context().ID() {
+			g.Remove(i)
+			return true
+		}
+	}
+	return false
+}
+
+// Errors returns a copy of the errors slice
+func (g *SafeSet) Errors() []error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	result := make([]error, len(g.errors))
+	for i, err := range g.errors {
+		result[i] = err
+	}
+	return result
+}
+
+// Errs returns a copy of the errors slice
+func (g *SafeSet) Errs() []Error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	result := make([]Error, len(g.errors))
+	copy(result, g.errors)
+	return result
+}
+
+// Len returns the number of errors in the list
+func (g *SafeSet) Len() int {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return len(g.errors)
+}
+
+// Empty returns true if the list is empty
+func (g *SafeSet) Empty() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return len(g.errors) == 0
+}
+
+// NotEmpty returns true if the list is not empty
+func (g *SafeSet) NotEmpty() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return len(g.errors) > 0
+}
+
+// First returns the first error in the list, or nil if empty.
+func (g *SafeSet) First() Error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if len(g.errors) == 0 {
+		return nil
+	}
+	return g.errors[0]
+}
+
+// Last returns the last error in the list, or nil if empty.
+func (g *SafeSet) Last() Error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if len(g.errors) == 0 {
+		return nil
+	}
+	return g.errors[len(g.errors)-1]
+}
+
+func (s *SafeSet) WithClass(class Class) *SafeSet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.class = class
 	return s
 }
 
-func (s *SafeSet) Category(category Category) *SafeSet {
-	s.SafeList.Category(category)
+func (s *SafeSet) WithCategory(category Category) *SafeSet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.category = category
 	return s
 }
 
-func (s *SafeSet) Severity(severity Severity) *SafeSet {
-	s.SafeList.Severity(severity)
+func (s *SafeSet) WithSeverity(severity Severity) *SafeSet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.severity = severity
 	return s
 }
 
-func (s *SafeSet) GetClass() Class             { return s.SafeList.GetClass() }
-func (s *SafeSet) GetCategory() Category       { return s.SafeList.GetCategory() }
-func (s *SafeSet) GetFields() []any            { return s.SafeList.GetFields() }
-func (s *SafeSet) GetContext() context.Context { return s.SafeList.GetContext() }
-func (s *SafeSet) IsRetryable() bool           { return s.SafeList.IsRetryable() }
+func (s *SafeSet) WithFields(fields ...any) *SafeSet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-// Severity checking methods for SafeSet
-func (s *SafeSet) IsCritical() bool      { return s.SafeList.IsCritical() }
-func (s *SafeSet) IsHigh() bool          { return s.SafeList.IsHigh() }
-func (s *SafeSet) IsMedium() bool        { return s.SafeList.IsMedium() }
-func (s *SafeSet) IsLow() bool           { return s.SafeList.IsLow() }
-func (s *SafeSet) IsWarning() bool       { return s.SafeList.IsWarning() }
-func (s *SafeSet) IsUnknown() bool       { return s.SafeList.IsUnknown() }
-func (s *SafeSet) GetSeverity() Severity { return s.SafeList.GetSeverity() }
-
-func (s *SafeSet) Fields(fields ...any) *SafeSet {
-	s.SafeList.Fields(fields...)
+	s.fields = safeAppendFields(s.fields, prepareFields(fields))
 	return s
 }
 
-func (s *SafeSet) Context(ctx context.Context) *SafeSet {
-	s.SafeList.Context(ctx)
+func (s *SafeSet) WithRetryable(retryable bool) *SafeSet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.retryable = retryable
 	return s
 }
 
-func (s *SafeSet) Retryable(retryable bool) *SafeSet {
-	s.SafeList.Retryable(retryable)
-	return s
+func (s *SafeSet) Class() Class {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.class
+}
+func (s *SafeSet) Category() Category {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.category
+}
+func (s *SafeSet) Fields() []any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.fields
+}
+func (s *SafeSet) IsRetryable() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.retryable
+}
+func (s *SafeSet) Severity() Severity {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.severity
 }
 
 func (s *SafeSet) add(err Error) *SafeSet {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.applyMetadata(err)
+	s.withMetadata(err)
 	key := s.keyGetter(err)
 	if _, ok := s.seen[key]; !ok {
 		s.seen[key] = 1

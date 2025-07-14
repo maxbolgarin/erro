@@ -174,10 +174,16 @@ func SetStackSamplingRate(rate float64) {
 	if rate > 1 {
 		rate = 1
 	}
-	current := GetStackTraceConfig()
-	newConfig := *current // Copy the current config
-	newConfig.SamplingRate = rate
-	SetStackTraceConfig(&newConfig)
+	for {
+		oldCfgPtr := GetStackTraceConfig()
+		newCfg := *oldCfgPtr
+		newCfg.SamplingRate = rate
+
+		// Atomically swap if the config hasn't changed
+		if globalStackTraceConfig.config.CompareAndSwap(oldCfgPtr, &newCfg) {
+			return
+		}
+	}
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -299,7 +305,6 @@ func (f StackFrame) IsErroInternal() bool {
 			return true
 		}
 	}
-
 	// Also filter by package - if it's in github.com/maxbolgarin/erro and not test code
 	return strings.Contains(f.FullName, "github.com/maxbolgarin/erro") && !f.IsTest()
 }
@@ -789,11 +794,6 @@ func isUselessRuntimeFrame(function, file string) bool {
 	}
 
 	return false
-}
-
-// isEmpty returns true if the stack is empty
-func (rs rawStack) isEmpty() bool {
-	return len(rs) == 0
 }
 
 // extractPathElements extracts the desired number of path elements from a file path

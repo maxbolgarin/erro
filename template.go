@@ -21,6 +21,7 @@ type ErrorTemplate struct {
 	dispatcher Dispatcher
 
 	messageTemplate string
+	includeStack    bool
 }
 
 // NewTemplate creates a new error template
@@ -31,71 +32,91 @@ func NewTemplate(fields ...any) *ErrorTemplate {
 }
 
 func (t *ErrorTemplate) WithID(id string) *ErrorTemplate {
-	t.id = id
-	return t
+	newT := *t
+	newT.id = id
+	return &newT
+}
+
+func (t *ErrorTemplate) WithStack() *ErrorTemplate {
+	newT := *t
+	newT.includeStack = true
+	return &newT
 }
 
 // WithClass sets the error class for the template
 func (t *ErrorTemplate) WithClass(class Class) *ErrorTemplate {
-	t.class = class
-	return t
+	newT := *t
+	newT.class = class
+	return &newT
 }
 
 // WithCategory sets the error category for the template
 func (t *ErrorTemplate) WithCategory(category Category) *ErrorTemplate {
-	t.category = category
-	return t
+	newT := *t
+	newT.category = category
+	return &newT
 }
 
 // WithSeverity sets the error severity for the template
 func (t *ErrorTemplate) WithSeverity(severity Severity) *ErrorTemplate {
+	newT := *t
 	if !severity.IsValid() {
 		severity = SeverityUnknown
 	}
-	t.severity = severity
-	return t
+	newT.severity = severity
+	return &newT
 }
 
 // WithRetryable sets the retryable flag for the template
 func (t *ErrorTemplate) WithRetryable(retryable bool) *ErrorTemplate {
-	t.retryable = retryable
-	return t
+	newT := *t
+	newT.retryable = retryable
+	return &newT
 }
 
 // WithFields adds fields to the template
 func (t *ErrorTemplate) WithFields(fields ...any) *ErrorTemplate {
-	t.fields = safeAppendFields(t.fields, prepareFields(fields))
-	return t
+	newT := *t
+	preparedFields := prepareFields(fields)
+	newT.fields = make([]any, 0, len(t.fields)+len(preparedFields))
+	newT.fields = append(newT.fields, t.fields...)
+	newT.fields = append(newT.fields, preparedFields...)
+	return &newT
 }
 
 // WithMessageTemplate sets a message template with placeholders
 func (t *ErrorTemplate) WithMessageTemplate(template string) *ErrorTemplate {
-	t.messageTemplate = template
-	return t
+	newT := *t
+	newT.messageTemplate = template
+	return &newT
 }
 
 // WithMetrics sets the metrics for the template
 func (t *ErrorTemplate) WithMetrics(metrics Metrics) *ErrorTemplate {
-	t.metrics = metrics
-	return t
+	newT := *t
+	newT.metrics = metrics
+	return &newT
 }
 
 // WithDispatcher sets the dispatcher for the template
 func (t *ErrorTemplate) WithDispatcher(dispatcher Dispatcher) *ErrorTemplate {
-	t.dispatcher = dispatcher
-	return t
+	newT := *t
+	newT.dispatcher = dispatcher
+	return &newT
 }
 
 // WithGoContext sets the context for the template
 func (t *ErrorTemplate) WithGoContext(ctx context.Context) *ErrorTemplate {
-	t.ctx = ctx
-	return t
+	newT := *t
+	newT.ctx = ctx
+	return &newT
 }
 
 // WithSpan sets the span for the template
 func (t *ErrorTemplate) WithSpan(span Span) *ErrorTemplate {
-	t.span = span
-	return t
+	newT := *t
+	newT.span = span
+	return &newT
 }
 
 // Create creates an error using the template
@@ -105,7 +126,7 @@ func (t *ErrorTemplate) New(fields ...any) Error {
 	// Use message template if provided
 	if t.messageTemplate != "" {
 		if len(fields) > 0 {
-			message = t.formatTemplate(t.messageTemplate, fields...)
+			message = t.formatTemplate(fields...)
 		} else {
 			message = strings.TrimSuffix(t.messageTemplate, ": %s")
 		}
@@ -129,15 +150,13 @@ func (t *ErrorTemplate) New(fields ...any) Error {
 func (t *ErrorTemplate) Newf(message string, fields ...any) Error {
 	if message == "" && t.messageTemplate != "" {
 		if len(fields) > 0 {
-			message = t.formatTemplate(t.messageTemplate, fields...)
+			message = t.formatTemplate(fields...)
 		} else {
 			message = strings.TrimSuffix(t.messageTemplate, ": %s")
 		}
 	}
 
-	// It behaves like New if there is no format verbs in the message
-	err := Newf(message, fields...)
-	err = t.applyMetadata(err)
+	err := t.buildError(nil, message, fields...)
 
 	if t.metrics != nil {
 		t.metrics.RecordError(err.Context())
@@ -155,7 +174,7 @@ func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
 	// Use message template if provided
 	if t.messageTemplate != "" {
 		if len(fields) > 0 {
-			message = t.formatTemplate(t.messageTemplate, fields...)
+			message = t.formatTemplate(fields...)
 		} else {
 			message = strings.TrimSuffix(t.messageTemplate, ": %s")
 		}
@@ -179,15 +198,14 @@ func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
 func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) Error {
 	if message == "" && t.messageTemplate != "" {
 		if len(fields) > 0 {
-			message = t.formatTemplate(t.messageTemplate, fields...)
+			message = t.formatTemplate(fields...)
 		} else {
 			message = strings.TrimSuffix(t.messageTemplate, ": %s")
 		}
 	}
 
-	// It behaves like Wrap if there is no format verbs in the message
-	err := Wrapf(originalErr, message, fields...)
-	err = t.applyMetadata(err)
+	err := t.buildError(originalErr, message, fields...)
+
 	if t.metrics != nil {
 		t.metrics.RecordError(err.Context())
 	}
@@ -198,24 +216,51 @@ func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) 
 	return err
 }
 
-func (t *ErrorTemplate) applyMetadata(err Error) Error {
-	err.WithClass(t.class)
-	err.WithCategory(t.category)
-	err.WithSeverity(t.severity)
-	err.WithFields(t.fields...)
-	err.WithRetryable(t.retryable)
-	err.WithSpan(t.span)
-	err.WithID(t.id)
-
-	return err
+// formatTemplate formats a template string using fields
+func (t *ErrorTemplate) formatTemplate(fields ...any) string {
+	if len(fields) == 0 {
+		return t.messageTemplate
+	}
+	formats := countFormatVerbs(t.messageTemplate)
+	if formats > len(fields) {
+		formats = len(fields)
+	}
+	msg := fmt.Sprintf(t.messageTemplate, fields[:formats]...)
+	return buildFieldsMessage(msg, fields[formats:])
 }
 
-// formatTemplate formats a template string using fields
-func (t *ErrorTemplate) formatTemplate(template string, fields ...any) string {
-	if len(fields) == 0 {
-		return template
+func (t *ErrorTemplate) buildError(originalErr error, message string, fields ...any) Error {
+
+	b := NewBuilderWithError(originalErr, message, fields...)
+
+	if len(t.fields) > 0 {
+		b.WithFields(t.fields...)
 	}
-	return fmt.Sprintf(template, fields...)
+
+	// Apply template metadata
+	if t.class != "" {
+		b.WithClass(t.class)
+	}
+	if t.category != "" {
+		b.WithCategory(t.category)
+	}
+	if t.severity != "" {
+		b.WithSeverity(t.severity)
+	}
+	if t.retryable {
+		b.WithRetryable(t.retryable)
+	}
+	if t.span != nil {
+		b.WithSpan(t.span)
+	}
+	if t.id != "" {
+		b.WithID(t.id)
+	}
+	if t.includeStack {
+		b.WithStack()
+	}
+
+	return b.Build()
 }
 
 // Predefined templates with message templates

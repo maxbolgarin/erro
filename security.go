@@ -43,13 +43,6 @@ func safeAppendFields[T any](existing []T, newFields []T) []T {
 		}
 	}
 
-	if len(existing)+len(newFields) > cap(existing) {
-		existing = append(
-			make([]T, 0, cap(existing)+len(newFields)),
-			existing...,
-		)
-	}
-
 	return append(existing, newFields...)
 }
 
