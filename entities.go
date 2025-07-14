@@ -25,6 +25,9 @@ const (
 
 	// Stack trace limits
 	MaxStackDepth = 50 // Maximum stack depth
+
+	// Redacted placeholder
+	RedactedPlaceholder = "[REDACTED]"
 )
 
 type (
@@ -106,6 +109,17 @@ type ErrorSchema struct {
 	TraceID      string         `json:"trace_id,omitempty" bson:"trace_id,omitempty" db:"trace_id,omitempty"`
 	SpanID       string         `json:"span_id,omitempty" bson:"span_id,omitempty" db:"span_id,omitempty"`
 	ParentSpanID string         `json:"parent_span_id,omitempty" bson:"parent_span_id,omitempty" db:"parent_span_id,omitempty"`
+}
+
+// RedactedValue is a wrapper for a value that should be redacted in logs.
+type RedactedValue struct {
+	Value any
+}
+
+// Redact wraps a value to mark it as sensitive. Its content will be replaced
+// with RedactedPlaceholder when the error is formatted as a string or JSON.
+func Redact(value any) RedactedValue {
+	return RedactedValue{Value: value}
 }
 
 // Key getter functions for deduplication

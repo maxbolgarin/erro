@@ -107,6 +107,8 @@ func valueToString(value any) string {
 	switch v := value.(type) {
 	case string:
 		str = v
+	case RedactedValue:
+		return RedactedPlaceholder
 	case []byte:
 		str = string(v)
 	case time.Time:

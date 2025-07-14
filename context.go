@@ -64,8 +64,20 @@ func ErrorToJSON(err ErrorContext) ErrorSchema {
 		Severity:  err.Severity(),
 		Created:   err.Created(),
 		Message:   err.Message(),
-		Fields:    err.AllFields(),
 		Retryable: err.IsRetryable(),
+	}
+
+	// Redact sensitive fields before serialization.
+	allFields := err.AllFields()
+	if len(allFields) > 0 {
+		redactedFields := make([]any, len(allFields))
+		copy(redactedFields, allFields)
+		for i := 1; i < len(redactedFields); i += 2 {
+			if _, ok := redactedFields[i].(RedactedValue); ok {
+				redactedFields[i] = RedactedPlaceholder
+			}
+		}
+		schema.Fields = redactedFields
 	}
 
 	span := err.Span()
