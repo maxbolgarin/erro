@@ -370,7 +370,7 @@ func getLogFields(ec ErrorContext, optsRaw ...LogOptions) []any {
 		errorSpanID       = ""
 		errorParentSpanID = ""
 		errorStack        = ec.Stack()
-		errorFields       = ec.Fields()
+		errorFields       = ec.AllFields()
 	)
 
 	span := ec.Span()

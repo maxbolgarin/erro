@@ -23,6 +23,8 @@ func putBuilder(b *Builder) {
 	b.category = ""
 	b.severity = ""
 	b.retryable = false
+	b.formatter = nil
+	b.stackTraceConfig = nil
 	builderPool.Put(b)
 }
 
@@ -37,12 +39,14 @@ type Builder struct {
 	fields  []any
 
 	// Contextual metadata
-	id        string
-	class     Class
-	category  Category
-	severity  Severity
-	retryable bool
-	span      Span
+	id               string
+	class            Class
+	category         Category
+	severity         Severity
+	retryable        bool
+	span             Span
+	formatter        FormatErrorFunc
+	stackTraceConfig *StackTraceConfig
 
 	// Tracks if retryable was explicitly set.
 	isRetryableSet bool
@@ -55,6 +59,7 @@ func NewBuilder(message string, fields ...any) *Builder {
 	b := getBuilder()
 	b.message = message
 	b.fields = fields
+	b.formatter = GetGlobalFormatter()
 	return b
 }
 
@@ -65,6 +70,7 @@ func NewBuilderWithError(err error, message string, fields ...any) *Builder {
 	b.cause = err
 	b.message = message
 	b.fields = fields
+	b.formatter = GetGlobalFormatter()
 	return b
 }
 
@@ -123,6 +129,17 @@ func (b *Builder) WithSpan(s Span) *Builder {
 	return b
 }
 
+func (b *Builder) WithFormatter(f FormatErrorFunc) *Builder {
+	b.formatter = f
+	return b
+}
+
+func (b *Builder) WithStackTraceConfig(c *StackTraceConfig) *Builder {
+	b.stackTraceConfig = c
+	b.isEncludeStack = true
+	return b
+}
+
 // Stack configures the builder to create a lightweight error with a stack trace.
 func (b *Builder) WithStack() *Builder {
 	b.isEncludeStack = true
@@ -146,6 +163,7 @@ func (b *Builder) Build() Error {
 			retryable: b.retryable,
 			fields:    b.fields,
 			span:      b.span,
+			formatter: b.formatter,
 		}
 	}
 
@@ -161,6 +179,8 @@ func (b *Builder) Build() Error {
 		err.severity = b.severity
 		err.retryable = b.retryable
 		err.span = b.span
+		err.formatter = b.formatter
+		err.stackTraceConfig = b.stackTraceConfig
 		return err
 	}
 
@@ -172,15 +192,17 @@ func (b *Builder) Build() Error {
 	}
 
 	return &wrapError{
-		wrapped:     b.cause.(Error), // We know `cause` is an `erro.Error` here.
-		wrapMessage: b.message,
-		fields:      b.fields,
-		id:          b.id,
-		class:       b.class,
-		category:    b.category,
-		severity:    b.severity,
-		retryable:   retryablePtr,
-		span:        b.span,
+		wrapped:          b.cause.(Error), // We know `cause` is an `erro.Error` here.
+		wrapMessage:      b.message,
+		fields:           b.fields,
+		id:               b.id,
+		class:            b.class,
+		category:         b.category,
+		severity:         b.severity,
+		retryable:        retryablePtr,
+		span:             b.span,
+		formatter:        b.formatter,
+		stackTraceConfig: b.stackTraceConfig,
 	}
 }
 

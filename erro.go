@@ -123,3 +123,9 @@ func Join(errs ...error) error {
 	}
 	return e
 }
+
+// IsLight checks if any error is a lightweight error
+func IsLight(err error) bool {
+	_, ok := err.(*lightError)
+	return ok
+}

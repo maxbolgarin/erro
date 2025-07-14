@@ -23,45 +23,31 @@ type wrapError struct {
 	severity  Severity
 	retryable *bool // Use a pointer for a tri-state: nil=not set, true=set true, false=set false
 	span      Span
-	created   time.Time
-	stack     Stack
 
-	wrapDepth   int    // Depth of this specific wrap (without mutating base) (caching)
 	fullMessage string // Full message with fields (caching)
+
+	formatter        FormatErrorFunc
+	stackTraceConfig *StackTraceConfig
 }
 
 // errorWithoutSeverity returns the error message without severity label
-func (e *wrapError) Error() string {
+func (e *wrapError) Error() (out string) {
+	if e.wrapMessage == "" {
+		return e.Unwrap().Error()
+	}
 	if e.fullMessage != "" {
 		return e.fullMessage
 	}
-
-	// Get the message from the error we wrapped.
-	var wrappedMsg string
-	if e.wrapped != nil {
-		wrappedMsg = e.wrapped.Error()
-	}
-
-	// buildFieldsMessage should combine the message and fields for the *current* level.
-	currentLevelMsg := buildFieldsMessage(e.wrapMessage, e.fields)
-
-	out := make([]byte, 0, len(currentLevelMsg)+len(wrappedMsg)+10)
-
-	// Join the current level's message with the wrapped message.
-	if currentLevelMsg != "" {
-		if wrappedMsg != "" {
-			out = append(out, currentLevelMsg...)
-			out = append(out, ':')
-			out = append(out, ' ')
-			out = append(out, wrappedMsg...)
-		} else {
-			out = append(out, currentLevelMsg...)
+	defer func() {
+		if r := recover(); r != nil {
+			// Fallback to safe error message
+			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
-	} else {
-		out = append(out, wrappedMsg...)
+	}()
+	e.fullMessage = e.wrapMessage
+	if formatter := e.Formatter(); formatter != nil {
+		e.fullMessage = unwrapErrorMessage(e, formatter(e))
 	}
-
-	e.fullMessage = string(out)
 	return e.fullMessage
 }
 
@@ -113,11 +99,17 @@ func (e *wrapError) WithSeverity(severity Severity) Error {
 }
 
 func (e *wrapError) WithFields(fields ...any) Error {
+	if len(fields) == 0 {
+		return e
+	}
+
+	preparedFields := prepareFields(fields)
+	if len(preparedFields) == 0 {
+		return e
+	}
+
 	// Create a shallow copy of the current wrapError.
 	newE := *e
-
-	// Combine the old and new fields into a new slice.
-	preparedFields := prepareFields(fields)
 	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
 	newE.fields = append(newE.fields, e.fields...)
 	newE.fields = append(newE.fields, preparedFields...)
@@ -131,6 +123,43 @@ func (e *wrapError) WithFields(fields ...any) Error {
 	}
 
 	return &newE
+}
+
+func (e *wrapError) WithStackTraceConfig(config *StackTraceConfig) Error {
+	newE := *e
+	newE.stackTraceConfig = config
+	return &newE
+}
+
+func (e *wrapError) WithFormatter(formatter FormatErrorFunc) Error {
+	newE := *e
+	newE.formatter = formatter
+	newE.fullMessage = ""
+	return &newE
+}
+
+func (e *wrapError) Formatter() FormatErrorFunc {
+	if e.formatter != nil {
+		return e.formatter
+	}
+	if e.wrapped != nil {
+		if f, ok := e.wrapped.(interface{ Formatter() FormatErrorFunc }); ok {
+			return f.Formatter()
+		}
+	}
+	return nil
+}
+
+func (e *wrapError) StackTraceConfig() *StackTraceConfig {
+	if e.stackTraceConfig != nil {
+		return e.stackTraceConfig
+	}
+	if e.wrapped != nil {
+		if f, ok := e.wrapped.(interface{ StackTraceConfig() *StackTraceConfig }); ok {
+			return f.StackTraceConfig()
+		}
+	}
+	return nil
 }
 
 func (e *wrapError) WithRetryable(retryable bool) Error {
@@ -225,9 +254,6 @@ func (e *wrapError) Span() Span {
 	return nil
 }
 func (e *wrapError) Created() time.Time {
-	if !e.created.IsZero() {
-		return e.created
-	}
 	if e.wrapped != nil {
 		return e.wrapped.Context().Created()
 	}
@@ -243,9 +269,6 @@ func (e *wrapError) Severity() Severity {
 	return SeverityUnknown
 }
 func (e *wrapError) Stack() Stack {
-	if e.stack != nil {
-		return e.stack
-	}
 	if e.wrapped != nil {
 		return e.wrapped.Context().Stack()
 	}
@@ -262,6 +285,12 @@ func (e *wrapError) Message() string {
 }
 
 func (e *wrapError) Fields() []any {
+	out := make([]any, len(e.fields))
+	copy(out, e.fields)
+	return out
+}
+
+func (e *wrapError) AllFields() []any {
 	var allFields []any
 	// Recursively get the fields from the earlier parts of the chain.
 	if e.wrapped != nil {
@@ -322,8 +351,7 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		wrapped:     wrapped,
 		wrapMessage: truncateString(message, maxMessageLength),
 		fields:      preparedFields,
-		created:     time.Now(),
-		wrapDepth:   depth,
+		formatter:   GetGlobalFormatter(),
 	}
 }
 

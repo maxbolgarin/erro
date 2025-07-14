@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+type FormatErrorFunc func(err ErrorContext) string
+
 type Error interface {
 	error
 	fmt.Formatter
@@ -18,6 +20,8 @@ type Error interface {
 	WithRetryable(retryable bool) Error
 	WithFields(fields ...any) Error
 	WithSpan(span Span) Error
+	WithFormatter(formatter FormatErrorFunc) Error
+	WithStackTraceConfig(config *StackTraceConfig) Error
 
 	RecordMetrics(metrics Metrics) Error
 	SendEvent(ctx context.Context, dispatcher Dispatcher) Error
@@ -35,15 +39,18 @@ type ErrorContext interface {
 	Created() time.Time
 	Message() string
 	Fields() []any
+	AllFields() []any
 	Span() Span
 	IsRetryable() bool
 
 	// Stack and base error
 	Stack() Stack
 	BaseError() ErrorContext
+	StackTraceConfig() *StackTraceConfig
 
 	// Error comparison
 	Is(target error) bool
+	Unwrap() error
 }
 
 type Metrics interface {

@@ -112,78 +112,24 @@ func NoStackTraceConfig() *StackTraceConfig {
 	return &StackTraceConfig{}
 }
 
-type atomicConfig struct {
-	config atomic.Value // Stores *StackTraceConfig
-}
-
-// Global stack trace configuration
-var (
-	globalStackTraceConfig atomicConfig
-)
-
-func init() {
-	globalStackTraceConfig.config.Store(DevelopmentStackTraceConfig())
-}
-
-// SetStackTraceConfig sets the global stack trace configuration
-func SetStackTraceConfig(config *StackTraceConfig) {
-	if config == nil {
-		config = NoStackTraceConfig()
-	}
-	globalStackTraceConfig.config.Store(config)
-}
-
-// GetStackTraceConfig returns the current global stack trace configuration
-func GetStackTraceConfig() *StackTraceConfig {
-	cfgRaw := globalStackTraceConfig.config.Load()
-	if cfgRaw == nil {
-		return DevelopmentStackTraceConfig()
-	}
-	cfg, ok := cfgRaw.(*StackTraceConfig)
-	if !ok {
-		return DevelopmentStackTraceConfig()
-	}
-	return cfg
-}
-
 // SetDevelopmentStackTrace enables development-safe stack trace configuration
 func SetDevelopmentStackTrace() {
-	SetStackTraceConfig(DevelopmentStackTraceConfig())
+	SetGlobalStackTraceConfig(DevelopmentStackTraceConfig())
 }
 
 // SetProductionStackTrace enables production-safe stack trace configuration
 func SetProductionStackTrace() {
-	SetStackTraceConfig(ProductionStackTraceConfig())
+	SetGlobalStackTraceConfig(ProductionStackTraceConfig())
 }
 
 // SetStrictStackTrace enables strict privacy stack trace configuration
 func SetStrictStackTrace() {
-	SetStackTraceConfig(StrictStackTraceConfig())
+	SetGlobalStackTraceConfig(StrictStackTraceConfig())
 }
 
 // DisableStackTrace completely disables stack traces
 func DisableStackTrace() {
-	SetStackTraceConfig(NoStackTraceConfig())
-}
-
-// SetStackSamplingRate sets the rate at which stack traces are captured (0.0 - 1.0)
-func SetStackSamplingRate(rate float64) {
-	if rate < 0 {
-		rate = 0
-	}
-	if rate > 1 {
-		rate = 1
-	}
-	for {
-		oldCfgPtr := GetStackTraceConfig()
-		newCfg := *oldCfgPtr
-		newCfg.SamplingRate = rate
-
-		// Atomically swap if the config hasn't changed
-		if globalStackTraceConfig.config.CompareAndSwap(oldCfgPtr, &newCfg) {
-			return
-		}
-	}
+	SetGlobalStackTraceConfig(NoStackTraceConfig())
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -692,7 +638,7 @@ type rawStack []uintptr
 
 // captureStack captures just the program counters for maximum performance
 func captureStack(skip int) rawStack {
-	cfg := GetStackTraceConfig()
+	cfg := GetGlobalStackTraceConfig()
 	rate := cfg.SamplingRate
 
 	if rate <= 0.0 {
@@ -724,14 +670,17 @@ func captureStack(skip int) rawStack {
 }
 
 // toFrames converts the raw stack to resolved stack frames on demand
-func (rs rawStack) toFrames() Stack {
+func (rs rawStack) toFrames(config *StackTraceConfig) Stack {
 	if len(rs) == 0 {
 		return nil
 	}
 
 	frames := make(Stack, 0, len(rs))
 	runtimeFrames := runtime.CallersFrames(rs)
-	cfg := GetStackTraceConfig()
+	cfg := config
+	if cfg == nil {
+		cfg = GetGlobalStackTraceConfig()
+	}
 
 	for {
 		runtimeFrame, more := runtimeFrames.Next()

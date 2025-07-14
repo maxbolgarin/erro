@@ -10,6 +10,56 @@ import (
 	"unsafe"
 )
 
+func GetFormatErrorWithFullContext(optFuncs ...LogOption) FormatErrorFunc {
+	return func(err ErrorContext) string {
+		fields := getLogFields(err, DefaultLogOptions.ApplyOptions(optFuncs...))
+		return buildFieldsMessage(err.Message(), fields)
+	}
+}
+
+func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
+	return func(err ErrorContext) string {
+		if _, ok := err.(*baseError); ok {
+			return GetFormatErrorWithFullContext(optFuncs...)(err)
+		}
+		return FormatErrorWithFields(err)
+	}
+}
+
+func FormatErrorWithFieldsAndSeverity(err ErrorContext) string {
+	severity := err.Severity()
+	if severity.IsUnknown() {
+		return buildFieldsMessage(err.Message(), err.Fields())
+	}
+	return severity.Label() + " " + buildFieldsMessage(err.Message(), err.Fields())
+}
+
+func FormatErrorWithFields(err ErrorContext) string {
+	return buildFieldsMessage(err.Message(), err.Fields())
+}
+
+func FormatErrorWithSeverity(err ErrorContext) string {
+	severity := err.Severity()
+	if severity.IsUnknown() {
+		return err.Message()
+	}
+	return severity.Label() + " " + err.Message()
+}
+
+func FormatErrorSimple(err ErrorContext) string {
+	return err.Message()
+}
+
+func unwrapErrorMessage(err ErrorContext, out string) string {
+	if unwrapped := err.Unwrap(); unwrapped != nil {
+		if out == "" {
+			return safeErrorString(unwrapped)
+		}
+		return out + ": " + safeErrorString(unwrapped)
+	}
+	return out
+}
+
 // buildFieldsMessage creates message with fields appended
 func buildFieldsMessage(message string, fields []any) (out string) {
 	if len(fields) == 0 {
@@ -174,7 +224,7 @@ func formatError(err Error, s fmt.State, verb rune) {
 			// Print with stack trace
 			fmt.Fprint(s, err.Error())
 
-			config := GetStackTraceConfig()
+			config := GetGlobalStackTraceConfig()
 			if !config.Enabled {
 				return // No stack trace in disabled mode
 			}

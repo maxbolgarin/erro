@@ -45,7 +45,7 @@ func main() {
 
 	// Custom configuration
 	fmt.Println("\n=== CUSTOM CONFIGURATION ===")
-	erro.SetStackTraceConfig(&erro.StackTraceConfig{
+	erro.SetGlobalStackTraceConfig(&erro.StackTraceConfig{
 		Enabled:           true,
 		ShowFullPaths:     false,
 		ShowFunctionNames: true, // Show function names but not paths

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-	"unsafe"
 )
 
 type lightError struct {
@@ -19,6 +18,8 @@ type lightError struct {
 	retryable bool
 	fields    []any
 	span      Span
+
+	formatter FormatErrorFunc
 }
 
 func NewLight(message string, fields ...any) Error {
@@ -29,57 +30,21 @@ func WrapLight(err error, message string, fields ...any) Error {
 	return newLightError(err, message, fields...)
 }
 
-func (e *lightError) Error() (res string) {
+func (e *lightError) Error() (out string) {
 	if e.fullMessage != "" {
 		return e.fullMessage
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			// Fallback to safe error message
-			res = fmt.Sprintf("error formatting failed: %v", r)
+			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
-		e.fullMessage = res
 	}()
-	if e.cause == nil && len(e.fields) == 0 {
-		return e.message
+	e.fullMessage = e.message
+	if formatter := e.Formatter(); formatter != nil {
+		e.fullMessage = unwrapErrorMessage(e, formatter(e))
 	}
-
-	capacity := len(e.message)
-
-	var errMsg string
-	if e.cause != nil {
-		errMsg = safeErrorString(e.cause)
-		capacity += len(errMsg) + 2
-	}
-	capacity += len(e.fields) * 20
-
-	out := make([]byte, 0, capacity)
-	out = append(out, e.message...)
-	for i := 0; i < len(e.fields); i += 2 {
-		if i+1 >= len(e.fields) {
-			break
-		}
-
-		out = append(out, ' ')
-		key, ok := e.fields[i].(string)
-		if !ok {
-			key = valueToString(e.fields[i])
-		}
-		out = append(out, truncateString(key, maxFieldKeyLength)...)
-		out = append(out, '=')
-		value, ok := e.fields[i+1].(string)
-		if !ok {
-			value = valueToString(e.fields[i+1])
-		}
-		out = append(out, truncateString(value, maxFieldValueLength)...)
-	}
-
-	if errMsg != "" {
-		out = append(out, ':')
-		out = append(out, ' ')
-		out = append(out, errMsg...)
-	}
-	return unsafe.String(unsafe.SliceData(out), len(out))
+	return e.fullMessage
 }
 
 // Unwrap implements the Unwrap interface
@@ -127,10 +92,15 @@ func (e *lightError) WithRetryable(retryable bool) Error {
 }
 
 func (e *lightError) WithFields(fields ...any) Error {
-	newE := *e // Create a copy
-
-	// Correctly combine fields instead of replacing them
+	if len(fields) == 0 {
+		return e
+	}
 	preparedFields := prepareFields(fields)
+	if len(preparedFields) == 0 {
+		return e
+	}
+
+	newE := *e // Create a copy
 	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
 	newE.fields = append(newE.fields, e.fields...)
 	newE.fields = append(newE.fields, preparedFields...)
@@ -144,14 +114,25 @@ func (e *lightError) WithFields(fields ...any) Error {
 }
 
 func (e *lightError) WithSpan(span Span) Error {
-	newE := *e // Create a copy
 	if span == nil {
 		return e
 	}
+	newE := *e // Create a copy
 	span.SetAttributes(newE.fields...)
 	span.RecordError(&newE)
 	newE.span = span
 	return &newE
+}
+
+func (e *lightError) WithFormatter(formatter FormatErrorFunc) Error {
+	newE := *e
+	newE.formatter = formatter
+	newE.fullMessage = ""
+	return &newE
+}
+
+func (e *lightError) WithStackTraceConfig(config *StackTraceConfig) Error {
+	return e
 }
 
 // Lightweight implementations - these don't do expensive operations
@@ -183,11 +164,6 @@ func (e *lightError) Class() Class       { return e.class }
 func (e *lightError) Category() Category { return e.category }
 func (e *lightError) IsRetryable() bool  { return e.retryable }
 func (e *lightError) Span() Span         { return e.span }
-func (e *lightError) Fields() []any {
-	fields := make([]any, len(e.fields))
-	copy(fields, e.fields)
-	return fields
-}
 func (e *lightError) Created() time.Time { return time.Time{} }
 func (e *lightError) Message() string    { return e.message }
 
@@ -197,6 +173,45 @@ func (e *lightError) Severity() Severity {
 		return SeverityUnknown
 	}
 	return e.severity
+}
+
+func (e *lightError) Fields() []any {
+	out := make([]any, len(e.fields))
+	copy(out, e.fields)
+	return out
+}
+
+func (e *lightError) AllFields() []any {
+	var allFields []any
+	// Recursively get the fields from the earlier parts of the chain.
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			allFields = causeErro.Fields()
+		}
+	}
+
+	// Append the fields from the current level.
+	// We must return a new slice to preserve immutability.
+	combined := make([]any, 0, len(allFields)+len(e.fields))
+	combined = append(combined, allFields...)
+	combined = append(combined, e.fields...)
+	return combined
+}
+
+func (e *lightError) Formatter() FormatErrorFunc {
+	if e.formatter != nil {
+		return e.formatter
+	}
+	if e.cause != nil {
+		if f, ok := e.cause.(interface{ Formatter() FormatErrorFunc }); ok {
+			return f.Formatter()
+		}
+	}
+	return nil
+}
+
+func (e *lightError) StackTraceConfig() *StackTraceConfig {
+	return nil
 }
 
 func (e *lightError) BaseError() ErrorContext {
@@ -210,7 +225,7 @@ func (e *lightError) BaseError() ErrorContext {
 
 // Stack methods - lightweight errors have no stack traces
 func (e *lightError) Stack() Stack {
-	return e.toFullError().Stack()
+	return Stack{}
 }
 
 func (e *lightError) Format(s fmt.State, verb rune) {
@@ -223,38 +238,33 @@ func (e *lightError) Is(target error) (ok bool) {
 		return false
 	}
 
-	// Direct equality check
+	// Direct equality check (fastest)
 	if e == target {
 		return true
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			ok = false
-		}
-	}()
+	// Early exit for different types
+	if _, isErro := target.(Error); !isErro {
+		// For external errors, compare messages directly
+		return e.message == target.Error()
+	}
 
-	// Fast comparison with other erro errors
+	// For erro errors, use optimized comparison
 	if targetErro, ok := target.(ErrorContext); ok {
 		// Compare by ID first (fastest)
-		if e.id != "" && targetErro.ID() != "" {
-			return e.id == targetErro.ID()
+		if e.id != "" {
+			if targetID := targetErro.ID(); targetID != "" {
+				return e.id == targetID
+			}
 		}
 
-		// Compare messages
+		// Compare messages (second fastest)
 		if e.message == targetErro.Message() {
 			return true
 		}
-
-		// Compare class/category
-		if e.class != "" && targetErro.Class() != "" && e.class == targetErro.Class() {
-			if e.category != "" && targetErro.Category() != "" && e.category == targetErro.Category() {
-				return true
-			}
-		}
 	}
 
-	// For external errors
+	// Handle wrapped errors
 	if e.cause != nil {
 		if e.cause == target {
 			return true
@@ -262,28 +272,9 @@ func (e *lightError) Is(target error) (ok bool) {
 		if x, ok := e.cause.(interface{ Is(error) bool }); ok {
 			return x.Is(target)
 		}
-		return e.cause.Error() == target.Error()
-	}
-
-	// Final comparison
-	if _, isErro := target.(Error); !isErro {
-		return e.message == target.Error()
 	}
 
 	return false
-}
-
-// toFullError converts a lightError to a full baseError when needed
-func (e *lightError) toFullError() ErrorContext {
-	fullErr := newBaseErrorWithStackSkip(4, e.cause, e.message)
-	fullErr.id = e.id
-	fullErr.class = e.class
-	fullErr.category = e.category
-	fullErr.severity = e.severity
-	fullErr.retryable = e.retryable
-	fullErr.fields = e.fields
-	fullErr.span = e.span
-	return fullErr
 }
 
 func (e *lightError) MarshalJSON() ([]byte, error) {
@@ -292,15 +283,12 @@ func (e *lightError) MarshalJSON() ([]byte, error) {
 
 // newLightError creates a new lightweight error
 func newLightError(cause error, message string, fields ...any) *lightError {
-	return &lightError{
-		message: truncateString(message, maxMessageLength),
-		cause:   cause,
-		fields:  fields,
+	e := &lightError{
+		message:   truncateString(message, maxMessageLength),
+		cause:     cause,
+		fields:    prepareFields(fields),
+		formatter: GetGlobalFormatter(),
 	}
-}
-
-// IsLight checks if any error is a lightweight error
-func IsLight(err error) bool {
-	_, ok := err.(*lightError)
-	return ok
+	AddToGatherer(e)
+	return e
 }

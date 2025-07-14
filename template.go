@@ -20,6 +20,9 @@ type ErrorTemplate struct {
 	metrics    Metrics
 	dispatcher Dispatcher
 
+	formatter        FormatErrorFunc
+	stackTraceConfig *StackTraceConfig
+
 	messageTemplate string
 	includeStack    bool
 }
@@ -27,7 +30,8 @@ type ErrorTemplate struct {
 // NewTemplate creates a new error template
 func NewTemplate(fields ...any) *ErrorTemplate {
 	return &ErrorTemplate{
-		fields: fields,
+		fields:    fields,
+		formatter: GetGlobalFormatter(),
 	}
 }
 
@@ -116,6 +120,19 @@ func (t *ErrorTemplate) WithGoContext(ctx context.Context) *ErrorTemplate {
 func (t *ErrorTemplate) WithSpan(span Span) *ErrorTemplate {
 	newT := *t
 	newT.span = span
+	return &newT
+}
+
+func (t *ErrorTemplate) WithFormatter(formatter FormatErrorFunc) *ErrorTemplate {
+	newT := *t
+	newT.formatter = formatter
+	return &newT
+}
+
+func (t *ErrorTemplate) WithStackTraceConfig(config *StackTraceConfig) *ErrorTemplate {
+	newT := *t
+	newT.stackTraceConfig = config
+	newT.includeStack = true
 	return &newT
 }
 
@@ -252,6 +269,12 @@ func (t *ErrorTemplate) buildError(originalErr error, message string, fields ...
 	}
 	if t.span != nil {
 		b.WithSpan(t.span)
+	}
+	if t.formatter != nil {
+		b.WithFormatter(t.formatter)
+	}
+	if t.stackTraceConfig != nil {
+		b.WithStackTraceConfig(t.stackTraceConfig)
 	}
 	if t.id != "" {
 		b.WithID(t.id)

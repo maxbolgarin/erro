@@ -25,6 +25,9 @@ type baseError struct {
 
 	stack  rawStack // Stack trace (program counters only - resolved on demand)
 	frames Stack    // Stack trace frames (for caching)
+
+	formatter        FormatErrorFunc
+	stackTraceConfig *StackTraceConfig
 }
 
 // Error implements the error interface
@@ -33,19 +36,16 @@ func (e *baseError) Error() (out string) {
 		return e.fullMessage
 	}
 	defer func() {
-		// Cache the full message
-		e.fullMessage = out
-	}()
-
-	out = buildFieldsMessage(e.message, e.fields)
-
-	if e.originalErr != nil {
-		if out == "" {
-			return safeErrorString(e.originalErr)
+		if r := recover(); r != nil {
+			// Fallback to safe error message
+			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
-		return out + ": " + safeErrorString(e.originalErr)
+	}()
+	e.fullMessage = e.message
+	if formatter := e.Formatter(); formatter != nil {
+		e.fullMessage = unwrapErrorMessage(e, formatter(e))
 	}
-	return out
+	return e.fullMessage
 }
 
 // Format implements fmt.Formatter for stack trace printing
@@ -75,6 +75,7 @@ func (e *baseError) WithID(idRaw ...string) Error {
 func (e *baseError) WithCategory(category Category) Error {
 	return &wrapError{
 		wrapped:  e,
+		id:       e.id,
 		category: category,
 	}
 }
@@ -82,6 +83,7 @@ func (e *baseError) WithCategory(category Category) Error {
 func (e *baseError) WithClass(class Class) Error {
 	return &wrapError{
 		wrapped: e,
+		id:      e.id,
 		class:   class,
 	}
 }
@@ -92,16 +94,23 @@ func (e *baseError) WithSeverity(severity Severity) Error {
 	}
 	return &wrapError{
 		wrapped:  e,
+		id:       e.id,
 		severity: severity,
 	}
 }
 
 func (e *baseError) WithFields(fields ...any) Error {
+	if len(fields) == 0 {
+		return e
+	}
+
+	preparedFields := prepareFields(fields)
+	if len(preparedFields) == 0 {
+		return e
+	}
+
 	// Create a shallow copy of the current baseError.
 	newE := *e
-
-	// Combine the old and new fields into a new slice.
-	preparedFields := prepareFields(fields)
 	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
 	newE.fields = append(newE.fields, e.fields...)
 	newE.fields = append(newE.fields, preparedFields...)
@@ -120,6 +129,7 @@ func (e *baseError) WithFields(fields ...any) Error {
 func (e *baseError) WithRetryable(retryable bool) Error {
 	return &wrapError{
 		wrapped:   e,
+		id:        e.id,
 		retryable: &retryable,
 	}
 }
@@ -132,8 +142,27 @@ func (e *baseError) WithSpan(span Span) Error {
 	span.RecordError(e)
 	return &wrapError{
 		wrapped: e,
+		id:      e.id,
 		span:    span,
 	}
+}
+
+func (e *baseError) WithFormatter(formatter FormatErrorFunc) Error {
+	newE := *e
+	newE.formatter = formatter
+	newE.fullMessage = ""
+	return &newE
+}
+
+func (e *baseError) WithStackTraceConfig(config *StackTraceConfig) Error {
+	newE := *e
+	newE.stackTraceConfig = config
+	newE.frames = nil // Invalidate cached frames
+	return &newE
+}
+
+func (e *baseError) StackTraceConfig() *StackTraceConfig {
+	return e.stackTraceConfig
 }
 
 func (e *baseError) RecordMetrics(metrics Metrics) Error {
@@ -150,6 +179,10 @@ func (e *baseError) SendEvent(ctx context.Context, dispatcher Dispatcher) Error 
 	}
 	dispatcher.SendEvent(ctx, e)
 	return e
+}
+
+func (e *baseError) Formatter() FormatErrorFunc {
+	return e.formatter
 }
 
 // Getter methods for baseError
@@ -169,13 +202,17 @@ func (e *baseError) Fields() []any {
 	copy(fields, e.fields)
 	return fields
 }
+func (e *baseError) AllFields() []any {
+	return e.Fields()
+}
+
 func (e *baseError) Created() time.Time { return e.created }
 func (e *baseError) Message() string    { return e.message }
 func (e *baseError) Severity() Severity { return e.severity }
 
 func (e *baseError) Stack() Stack {
 	if e.frames == nil {
-		e.frames = e.stack.toFrames()
+		e.frames = e.stack.toFrames(e.StackTraceConfig())
 	}
 	return e.frames
 }
@@ -262,6 +299,8 @@ func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fiel
 		created:     time.Now(),
 		fields:      prepareFields(fields),
 		stack:       captureStack(skip),
+		formatter:   GetGlobalFormatter(),
 	}
+	AddToGatherer(e)
 	return e
 }
