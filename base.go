@@ -1,7 +1,6 @@
 package erro
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -11,6 +10,7 @@ import (
 type baseError struct {
 	// Core error info
 	originalErr error               // Original error if wrapping external error
+	wrappedErr  *baseError          // Wrapped error if wrapping erro error
 	message     string              // Base message
 	fullMessage atomicValue[string] // Full message with fields (caching)
 
@@ -37,6 +37,8 @@ func (e *baseError) Error() (out string) {
 		return fullMessage
 	}
 	defer func() {
+		e.fullMessage.Store(out)
+
 		if r := recover(); r != nil {
 			// Fallback to safe error message
 			out = fmt.Sprintf("error formatting failed: %v", r)
@@ -44,9 +46,14 @@ func (e *baseError) Error() (out string) {
 	}()
 	out = e.message
 	if formatter := e.Formatter(); formatter != nil {
-		out = unwrapErrorMessage(e, formatter(e))
+		out = formatter(e)
+		if unwrapped := e.Unwrap(); unwrapped != nil {
+			if out == "" {
+				return unwrapped.Error()
+			}
+			return out + ": " + unwrapped.Error()
+		}
 	}
-	e.fullMessage.Store(out)
 	return out
 }
 
@@ -57,266 +64,10 @@ func (e *baseError) Format(s fmt.State, verb rune) {
 
 // Unwrap implements the Unwrap interface
 func (e *baseError) Unwrap() error {
+	if e.wrappedErr != nil {
+		return e.wrappedErr
+	}
 	return e.originalErr
-}
-
-// Chaining methods for baseError
-func (e *baseError) WithID(id string) Error {
-	if id == "" {
-		return e
-	}
-	return &wrapError{
-		wrapped: e,
-		id:      truncateString(id, MaxKeyLength),
-	}
-}
-
-func (e *baseError) WithCategory(category Category) Error {
-	if category == CategoryUnknown {
-		return e
-	}
-	return &wrapError{
-		wrapped:  e,
-		category: truncateString(category, MaxValueLength),
-	}
-}
-
-func (e *baseError) WithClass(class Class) Error {
-	if class == ClassUnknown {
-		return e
-	}
-	return &wrapError{
-		wrapped: e,
-		class:   truncateString(class, MaxValueLength),
-	}
-}
-
-func (e *baseError) WithSeverity(severity Severity) Error {
-	if !severity.IsValid() {
-		return e
-	}
-	return &wrapError{
-		wrapped:  e,
-		severity: severity,
-	}
-}
-
-func (e *baseError) WithFields(fields ...any) Error {
-	if len(fields) == 0 {
-		return e
-	}
-
-	preparedFields := prepareFields(fields)
-	if len(preparedFields) == 0 {
-		return e
-	}
-
-	// Create a shallow copy of the current baseError.
-	newE := *e
-	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
-	newE.fields = append(newE.fields, e.fields...)
-	newE.fields = append(newE.fields, preparedFields...)
-
-	// Invalidate the message cache on the new copy.
-	newE.fullMessage.Store("")
-
-	// Record fields in the span if it exists.
-	if newE.span != nil {
-		newE.span.SetAttributes(preparedFields...)
-	}
-
-	return &newE
-}
-
-func (e *baseError) WithRetryable(retryable bool) Error {
-	return &wrapError{
-		wrapped:   e,
-		retryable: &retryable,
-	}
-}
-
-func (e *baseError) WithSpan(span Span) Error {
-	if span == nil {
-		return e
-	}
-	span.SetAttributes(e.Fields()...)
-	span.RecordError(e)
-	return &wrapError{
-		wrapped: e,
-		span:    span,
-	}
-}
-
-func (e *baseError) WithFormatter(formatter FormatErrorFunc) Error {
-	if formatter == nil {
-		return e
-	}
-	newE := *e
-	newE.formatter = formatter
-	newE.fullMessage.Store("")
-	return &newE
-}
-
-func (e *baseError) WithStackTraceConfig(config *StackTraceConfig) Error {
-	if config == nil {
-		return e
-	}
-	newE := *e
-	newE.stackTraceConfig = config
-	newE.frames.Store(nil) // Invalidate cached frames
-	newE.fullMessage.Store("")
-	return &newE
-}
-
-func (e *baseError) StackTraceConfig() *StackTraceConfig {
-	return e.stackTraceConfig
-}
-
-func (e *baseError) RecordMetrics(metrics Metrics) Error {
-	if metrics == nil {
-		return e
-	}
-	metrics.RecordError(e)
-	return e
-}
-
-func (e *baseError) SendEvent(ctx context.Context, dispatcher Dispatcher) Error {
-	if dispatcher == nil {
-		return e
-	}
-	dispatcher.SendEvent(ctx, e)
-	return e
-}
-
-func (e *baseError) Formatter() FormatErrorFunc {
-	return e.formatter
-}
-
-// Getter methods for baseError
-func (e *baseError) Context() ErrorContext { return e }
-func (e *baseError) ID() string {
-	if e.id != "" {
-		return e.id
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.ID()
-		}
-	}
-	return ""
-}
-func (e *baseError) Class() Class {
-	if e.class != ClassUnknown {
-		return e.class
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.Class()
-		}
-	}
-	return ClassUnknown
-}
-func (e *baseError) Category() Category {
-	if e.category != CategoryUnknown {
-		return e.category
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.Category()
-		}
-	}
-	return CategoryUnknown
-}
-func (e *baseError) IsRetryable() bool {
-	if e.retryable {
-		return e.retryable
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.IsRetryable()
-		}
-	}
-	return false
-}
-func (e *baseError) Span() Span {
-	if e.span != nil {
-		return e.span
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.Span()
-		}
-	}
-	return nil
-}
-func (e *baseError) Message() string {
-	if e.message != "" {
-		return e.message
-	}
-	if e.originalErr != nil {
-		return e.originalErr.Error()
-	}
-	return ""
-}
-func (e *baseError) Severity() Severity {
-	if e.severity != SeverityUnknown {
-		return e.severity
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.Severity()
-		}
-	}
-	return SeverityUnknown
-}
-
-func (e *baseError) Fields() []any {
-	if len(e.fields) == 0 {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.Fields()
-		}
-	}
-	fields := make([]any, len(e.fields))
-	copy(fields, e.fields)
-	return fields
-}
-func (e *baseError) AllFields() []any {
-	if len(e.fields) == 0 {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.AllFields()
-		}
-	}
-	fields := make([]any, len(e.fields))
-	copy(fields, e.fields)
-	return fields
-}
-
-func (e *baseError) Created() time.Time {
-	if !e.created.IsZero() {
-		return e.created
-	}
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.Created()
-		}
-	}
-	return time.Time{}
-}
-
-func (e *baseError) Stack() Stack {
-	if e.frames.Load() == nil {
-		e.frames.Store(e.stack.toFrames(e.StackTraceConfig()))
-		e.fullMessage.Store("")
-	}
-	return e.frames.Load()
-}
-func (e *baseError) BaseError() ErrorContext {
-	if e.originalErr != nil {
-		if causeErro, ok := e.originalErr.(ErrorContext); ok {
-			return causeErro.BaseError()
-		}
-	}
-	return e
 }
 
 // Is reports whether this error can be considered a match for the target.
@@ -331,7 +82,7 @@ func (e *baseError) BaseError() ErrorContext {
 // `errors.Is` function, which will then check the wrapped standard error
 // by calling `Unwrap`.
 func (e *baseError) Is(target error) bool {
-	targetCtx := ExtractContext(target)
+	targetCtx := ExtractError(target)
 	if targetCtx == nil {
 		// Target is not an `erro` type. We cannot compare by ID.
 		// Delegate to `errors.Is` to check the wrapped `originalErr`.
@@ -347,6 +98,16 @@ func (e *baseError) Is(target error) bool {
 		return eID == targetID
 	}
 
+	if e.wrappedErr != nil {
+		return e.wrappedErr.Is(target)
+	}
+
+	if e.originalErr != nil {
+		if isErr, ok := e.originalErr.(interface{ Is(error) bool }); ok {
+			return isErr.Is(target)
+		}
+	}
+
 	return false
 }
 
@@ -354,9 +115,144 @@ func (e *baseError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ErrorToJSON(e))
 }
 
+func (e *baseError) UnmarshalJSON(data []byte) error {
+	var schema ErrorSchema
+	if err := json.Unmarshal(data, &schema); err != nil {
+		return err
+	}
+	e.originalErr = nil
+	e.message = schema.Message
+	e.created = schema.Created
+	e.span = nil
+	e.stack = nil
+	e.frames = atomicValue[Stack]{}
+	e.formatter = FormatErrorWithFields
+	e.id = schema.ID
+	e.class = schema.Class
+	e.category = schema.Category
+	e.severity = schema.Severity
+	e.retryable = schema.Retryable
+	e.fields = schema.Fields
+	return nil
+}
+
+// Getter methods for baseError
+func (e *baseError) ID() string {
+	if e.id == "" && e.wrappedErr != nil {
+		return e.wrappedErr.ID()
+	}
+	return e.id
+}
+
+func (e *baseError) Class() Class {
+	if e.class == "" && e.wrappedErr != nil {
+		return e.wrappedErr.Class()
+	}
+	return e.class
+}
+
+func (e *baseError) Category() Category {
+	if e.category == "" && e.wrappedErr != nil {
+		return e.wrappedErr.Category()
+	}
+	return e.category
+}
+
+func (e *baseError) Severity() Severity {
+	if e.severity == "" && e.wrappedErr != nil {
+		return e.wrappedErr.Severity()
+	}
+	return e.severity
+}
+
+func (e *baseError) IsRetryable() bool {
+	if !e.retryable && e.wrappedErr != nil {
+		return e.wrappedErr.IsRetryable()
+	}
+	return e.retryable
+}
+
+func (e *baseError) Message() string {
+	if e.message == "" && e.wrappedErr != nil {
+		return e.wrappedErr.Message()
+	}
+	return e.message
+}
+
+func (e *baseError) Fields() []any {
+	if len(e.fields) == 0 && e.wrappedErr != nil {
+		return e.wrappedErr.Fields()
+	}
+	fields := make([]any, len(e.fields))
+	copy(fields, e.fields)
+	return fields
+}
+
+func (e *baseError) Created() time.Time {
+	if e.created.IsZero() && e.wrappedErr != nil {
+		return e.wrappedErr.Created()
+	}
+	return e.created
+}
+
+func (e *baseError) Span() Span {
+	if e.span == nil && e.wrappedErr != nil {
+		return e.wrappedErr.Span()
+	}
+	return e.span
+}
+
+func (e *baseError) AllFields() []any {
+	if len(e.fields) == 0 && e.wrappedErr != nil {
+		return e.wrappedErr.AllFields()
+	}
+	return e.Fields()
+}
+
+func (e *baseError) BaseError() Error {
+	if e.wrappedErr != nil {
+		return e.wrappedErr.BaseError()
+	}
+	return e
+}
+
+func (e *baseError) Stack() Stack {
+	return e.getStack(e.StackTraceConfig())
+}
+
+func (e *baseError) getStack(cfg *StackTraceConfig) Stack {
+	if e.stack == nil && e.wrappedErr != nil {
+		return e.wrappedErr.getStack(cfg)
+	}
+	frames := e.frames.Load()
+	if frames == nil && e.stack != nil {
+		frames = e.stack.toFrames(cfg)
+		e.frames.Store(frames)
+	}
+	return frames
+}
+
+func (e *baseError) StackTraceConfig() *StackTraceConfig {
+	if e.stackTraceConfig == nil && e.wrappedErr != nil {
+		return e.wrappedErr.StackTraceConfig()
+	}
+	return e.stackTraceConfig
+}
+
+func (e *baseError) Formatter() FormatErrorFunc {
+	if e.formatter == nil && e.wrappedErr != nil {
+		return e.wrappedErr.Formatter()
+	}
+	return e.formatter
+}
+
 // newBaseError creates a new base error with security validation
 func newBaseError(originalErr error, message string, fields ...any) *baseError {
 	return newBaseErrorWithStackSkip(3, originalErr, message, fields...)
+}
+
+func newBaseErrorLight(originalErr error, message string, fields ...any) *baseError {
+	return newBaseErrorWithStackSkip(0, originalErr, message, fields...)
 }
 
 func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fields ...any) *baseError {
@@ -368,6 +264,18 @@ func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fiel
 		fields:      prepareFields(fields),
 		stack:       captureStack(skip),
 		formatter:   FormatErrorWithFields,
+	}
+	return e
+}
+
+func newWrapError(errorToWrap *baseError, message string, fields ...any) *baseError {
+	e := &baseError{
+		id:         newID(),
+		wrappedErr: errorToWrap,
+		message:    truncateString(message, MaxMessageLength),
+		created:    time.Now(),
+		fields:     prepareFields(fields),
+		formatter:  FormatErrorWithFields,
 	}
 	return e
 }

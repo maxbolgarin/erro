@@ -13,6 +13,10 @@ func New(message string, fields ...any) Error {
 	return newBaseError(nil, message, fields...)
 }
 
+func NewLight(message string, fields ...any) Error {
+	return newBaseErrorLight(nil, message, fields...)
+}
+
 // Newf creates a new error with formatted message and optional fields
 func Newf(message string, args ...any) Error {
 	// Count format verbs in the message
@@ -36,20 +40,25 @@ func Newf(message string, args ...any) Error {
 // Wrap wraps an existing error with additional context
 func Wrap(err error, message string, fields ...any) Error {
 	if err == nil {
-		return New(message, fields...)
+		return newBaseError(nil, message, fields...)
 	}
-
 	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(Error); ok && erroErr != nil {
-		if IsLight(erroErr) {
-			// If user calls Wrap on a light error, we need to convert it to a base error
-			return newBaseError(erroErr, message, fields...)
-		}
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
 		return newWrapError(erroErr, message, fields...)
 	}
-
 	// For external errors, create a new base error that wraps it
 	return newBaseError(err, message, fields...)
+}
+
+func WrapLight(err error, message string, fields ...any) Error {
+	if err == nil {
+		return newBaseErrorLight(nil, message, fields...)
+	}
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
+		return newWrapError(erroErr, message, fields...)
+	}
+	return newBaseErrorLight(err, message, fields...)
 }
 
 // Wrapf wraps an existing error with formatted message and optional fields
@@ -71,11 +80,7 @@ func Wrapf(err error, message string, args ...any) Error {
 	}
 
 	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(Error); ok && erroErr != nil {
-		if IsLight(erroErr) {
-			// If user calls Wrapf on a light error, we need to convert it to a base error
-			return newBaseError(erroErr, message, args...)
-		}
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
 		return newWrapError(erroErr, message, args...)
 	}
 
@@ -90,11 +95,7 @@ func WrapEmpty(err error) Error {
 	}
 
 	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(Error); ok && erroErr != nil {
-		if IsLight(erroErr) {
-			// If user calls WrapEmpty on a light error, we need to convert it to a base error
-			return newBaseError(erroErr, "")
-		}
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
 		return newWrapError(erroErr, "")
 	}
 
@@ -166,8 +167,8 @@ func Join(errs ...error) error {
 
 // IsLight checks if any error is a lightweight error
 func IsLight(err error) bool {
-	_, ok := err.(*lightError)
-	return ok
+	errBase, ok := err.(*baseError)
+	return ok && errBase.stack == nil
 }
 
 func HTTPCode(err error) int {
@@ -185,8 +186,8 @@ func HTTPCode(err error) int {
 		return status
 	}
 
-	class := erroErr.Context().Class()
-	category := erroErr.Context().Category()
+	class := erroErr.Class()
+	category := erroErr.Category()
 	switch class {
 	case ClassValidation:
 		status = http.StatusBadRequest

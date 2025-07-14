@@ -16,7 +16,7 @@ func processPayment() erro.Error {
 }
 
 func handleRequest(cfg *erro.StackTraceConfig) erro.Error {
-	return erro.Wrap(processPayment(), "request handling failed", "request_id", "req_789").WithStackTraceConfig(cfg)
+	return erro.NewWrapper(processPayment(), "request handling failed", "request_id", "req_789").WithStackTraceConfig(cfg).Build()
 }
 
 func main() {
@@ -59,8 +59,8 @@ func main() {
 	// Demonstrate secure formatting methods
 	fmt.Println("\n=== SECURE FORMATTING METHODS ===")
 	err = handleRequest(erro.ProductionStackTraceConfig())
-	fmt.Printf("SecureString: %s\n", err.Context().Stack().String())
-	fmt.Printf("SecureFormatFull:\n%s\n", err.Context().Stack().FormatFull())
+	fmt.Printf("SecureString: %s\n", err.Stack().String())
+	fmt.Printf("SecureFormatFull:\n%s\n", err.Stack().FormatFull())
 
 	erro.LogError(err, func(message string, fields ...any) {
 		slog.Error(message, fields...)

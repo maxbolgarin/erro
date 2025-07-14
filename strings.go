@@ -11,14 +11,14 @@ import (
 )
 
 func GetFormatErrorWithFullContext(optFuncs ...LogOption) FormatErrorFunc {
-	return func(err ErrorContext) string {
+	return func(err Error) string {
 		fields := getLogFields(err, DefaultLogOptions.ApplyOptions(optFuncs...))
 		return buildFieldsMessage(err.Message(), fields)
 	}
 }
 
 func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
-	return func(err ErrorContext) string {
+	return func(err Error) string {
 		if _, ok := err.(*baseError); ok {
 			return GetFormatErrorWithFullContext(optFuncs...)(err)
 		}
@@ -26,7 +26,7 @@ func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
 	}
 }
 
-func FormatErrorWithFieldsAndSeverity(err ErrorContext) string {
+func FormatErrorWithFieldsAndSeverity(err Error) string {
 	severity := err.Severity()
 	if severity.IsUnknown() {
 		return buildFieldsMessage(err.Message(), err.Fields())
@@ -34,11 +34,11 @@ func FormatErrorWithFieldsAndSeverity(err ErrorContext) string {
 	return severity.Label() + " " + buildFieldsMessage(err.Message(), err.Fields())
 }
 
-func FormatErrorWithFields(err ErrorContext) string {
+func FormatErrorWithFields(err Error) string {
 	return buildFieldsMessage(err.Message(), err.Fields())
 }
 
-func FormatErrorWithSeverity(err ErrorContext) string {
+func FormatErrorWithSeverity(err Error) string {
 	severity := err.Severity()
 	if severity.IsUnknown() {
 		return err.Message()
@@ -46,18 +46,8 @@ func FormatErrorWithSeverity(err ErrorContext) string {
 	return severity.Label() + " " + err.Message()
 }
 
-func FormatErrorMessage(err ErrorContext) string {
+func FormatErrorMessage(err Error) string {
 	return err.Message()
-}
-
-func unwrapErrorMessage(err ErrorContext, out string) string {
-	if unwrapped := err.Unwrap(); unwrapped != nil {
-		if out == "" {
-			return safeErrorString(unwrapped)
-		}
-		return out + ": " + safeErrorString(unwrapped)
-	}
-	return out
 }
 
 // buildFieldsMessage creates message with fields appended
@@ -226,7 +216,7 @@ func formatError(err Error, s fmt.State, verb rune) {
 			// Print with stack trace
 			fmt.Fprint(s, err.Error())
 
-			stack := err.Context().Stack()
+			stack := err.Stack()
 			if len(stack) > 0 {
 				fmt.Fprint(s, "\nStack trace:\n")
 				fmt.Fprint(s, stack.FormatFull())
@@ -254,18 +244,6 @@ func newID() string {
 		}
 	}
 	return string(buf[:])
-}
-
-func safeErrorString(err error) (res string) {
-	if err == nil {
-		return ""
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			res = "external error (formatting failed)"
-		}
-	}()
-	return err.Error()
 }
 
 type atomicValue[T any] struct {

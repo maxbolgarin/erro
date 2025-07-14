@@ -226,9 +226,8 @@ func (f StackFrame) IsErroInternal() bool {
 			return true
 		}
 	}
-
 	// Also filter by package and not test code
-	return strings.Contains(f.FullName, buildInfo.Main.Path) && !f.IsTest()
+	return strings.Contains(f.FullName, buildInfo.Path) && !f.IsTest()
 }
 
 // getFrameType returns the type of this stack frame
@@ -614,9 +613,12 @@ type rawStack []uintptr
 
 // captureStack captures just the program counters for maximum performance
 func captureStack(skip int) rawStack {
+	if skip == 0 {
+		return nil
+	}
+
 	defer func() {
-		if r := recover(); r != nil {
-		}
+		recover()
 	}()
 
 	pcs := make([]uintptr, MaxStackDepth)

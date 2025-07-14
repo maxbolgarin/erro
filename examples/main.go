@@ -10,7 +10,7 @@ import (
 )
 
 func test3() erro.Error {
-	return erro.New("test3", "f", "v").WithFields("f3", "v3").WithSeverity(erro.SeverityCritical)
+	return erro.NewError("test3", "f", "v").WithFields("f3", "v3").WithSeverity(erro.SeverityCritical).Build()
 }
 
 func test2() erro.Error {
@@ -18,7 +18,7 @@ func test2() erro.Error {
 }
 
 func test() erro.Error {
-	return erro.Wrap(test2(), "wrapped", "wrapped_field").WithFields("f3", "v3").WithSeverity(erro.SeverityInfo)
+	return erro.NewWrapper(test2(), "wrapped", "wrapped_field").WithFields("f3", "v3").WithSeverity(erro.SeverityInfo).Build()
 }
 
 func main() {
@@ -42,10 +42,10 @@ func main() {
 	// fmt.Println(errLight)
 
 	errBase := errors.New("test")
-	err1 := erro.Wrap(errBase, "wrapped", "wrapped_field").WithCategory(erro.CategoryDatabase).WithClass(erro.ClassValidation).WithRetryable(true)
-	fmt.Println(erro.Wrap(err1, "wrapped2", "wrapped_field2").WithCategory(erro.CategoryAPI).WithClass(erro.ClassValidation).WithRetryable(true))
+	err1 := erro.NewWrapper(errBase, "wrapped", "wrapped_field").WithCategory(erro.CategoryDatabase).WithClass(erro.ClassValidation).WithRetryable(true).Build()
+	fmt.Println(erro.NewWrapper(err1, "wrapped2", "wrapped_field2").WithCategory(erro.CategoryAPI).WithClass(erro.ClassValidation).WithRetryable(true).Build())
 
-	fmt.Println(err1.Context().ID())
+	fmt.Println(err1.ID())
 
 	// fmt.Printf("%+v\n", erro.NewBuilderWithError(err, "test", "f", "v").
 	// 	WithCategory(erro.CategoryDatabase).

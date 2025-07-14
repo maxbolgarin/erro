@@ -7,22 +7,12 @@ func ExtractError(err error) Error {
 	if erroErr, ok := err.(Error); ok {
 		return erroErr
 	}
-	return newLightError(err, "")
-}
-
-func ExtractContext(err error) ErrorContext {
-	if err == nil {
-		return nil
-	}
-	if erroErr, ok := err.(ErrorContext); ok {
-		return erroErr
-	}
-	return newLightError(err, "")
+	return newBaseErrorLight(err, "")
 }
 
 // LogFields returns a slice of alternating key-value pairs for structured loggers
 func LogFields(err error, optFuncs ...LogOption) []any {
-	ctx := ExtractContext(err)
+	ctx := ExtractError(err)
 	if ctx == nil {
 		return nil
 	}
@@ -32,7 +22,7 @@ func LogFields(err error, optFuncs ...LogOption) []any {
 
 // LogFieldsMap returns a map of field key-value pairs for map-based loggers
 func LogFieldsMap(err error, optFuncs ...LogOption) map[string]any {
-	ctx := ExtractContext(err)
+	ctx := ExtractError(err)
 	if ctx == nil {
 		return nil
 	}
@@ -46,7 +36,7 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 		return
 	}
 
-	ctx := ExtractContext(err)
+	ctx := ExtractError(err)
 	if ctx == nil {
 		logFunc(err.Error(), nil)
 		return
@@ -56,7 +46,7 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 	logFunc(ctx.Message(), getLogFields(ctx, opts)...)
 }
 
-func ErrorToJSON(err ErrorContext) ErrorSchema {
+func ErrorToJSON(err Error) ErrorSchema {
 	schema := ErrorSchema{
 		ID:        err.ID(),
 		Class:     err.Class(),
@@ -374,7 +364,7 @@ func (opts *LogOptions) ApplyOptions(optFuncs ...LogOption) LogOptions {
 }
 
 // logFields converts ErrorContext to slog-compatible fields with options
-func getLogFieldsMap(ec ErrorContext, optsRaw ...LogOptions) map[string]any {
+func getLogFieldsMap(ec Error, optsRaw ...LogOptions) map[string]any {
 	fields := getLogFields(ec, optsRaw...)
 
 	fieldsMap := make(map[string]any, len(fields))
@@ -392,7 +382,7 @@ func getLogFieldsMap(ec ErrorContext, optsRaw ...LogOptions) map[string]any {
 }
 
 // logFieldsMap converts ErrorContext to logrus-compatible fields with options
-func getLogFields(ec ErrorContext, optsRaw ...LogOptions) []any {
+func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 	if ec == nil {
 		return nil
 	}
@@ -425,8 +415,15 @@ func getLogFields(ec ErrorContext, optsRaw ...LogOptions) []any {
 	fields := make([]any, 0, len(errorFields)+30)
 
 	// Add user fields
-	if opts.IncludeUserFields {
-		fields = append(fields, errorFields...)
+	if opts.IncludeUserFields && len(errorFields) > 0 {
+		redactedFields := make([]any, len(errorFields))
+		copy(redactedFields, errorFields)
+		for i := 1; i < len(redactedFields); i += 2 {
+			if _, ok := redactedFields[i].(RedactedValue); ok {
+				redactedFields[i] = RedactedPlaceholder
+			}
+		}
+		fields = append(fields, redactedFields...)
 	}
 
 	// Add error metadata
@@ -465,16 +462,16 @@ func getLogFields(ec ErrorContext, optsRaw ...LogOptions) []any {
 	}
 
 	// Add function context
-	if opts.IncludeFunction && topFrame.Name != "" {
+	if opts.IncludeFunction && topFrame != nil && topFrame.Name != "" {
 		fields = append(fields, opts.FieldNamePrefix+"function", topFrame.Name)
 	}
-	if opts.IncludePackage && topFrame.Package != "" {
+	if opts.IncludePackage && topFrame != nil && topFrame.Package != "" {
 		fields = append(fields, opts.FieldNamePrefix+"package", topFrame.Package)
 	}
-	if opts.IncludeFile && topFrame.File != "" {
+	if opts.IncludeFile && topFrame != nil && topFrame.File != "" {
 		fields = append(fields, opts.FieldNamePrefix+"file", topFrame.File)
 	}
-	if opts.IncludeLine && topFrame.Line > 0 {
+	if opts.IncludeLine && topFrame != nil && topFrame.Line > 0 {
 		fields = append(fields, opts.FieldNamePrefix+"line", topFrame.Line)
 	}
 

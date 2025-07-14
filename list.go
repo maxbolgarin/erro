@@ -1,91 +1,79 @@
 package erro
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 )
 
-// List collects multiple errors and provides the same chaining API as Error.
-// It doesn't implement the error interface itself, but provides Err() to get a combined error.
+// --- Base Implementation: List ---
+
+// List collects multiple errors and provides a fluent API for adding and configuring them.
+// It is not thread-safe.
 type List struct {
 	errors []Error
-	// Metadata that will be applied to errors added to this list
-	class     Class
-	category  Category
-	severity  Severity
-	fields    []any
-	retryable bool
 }
 
-// Newlist creates a new error list
-func NewList(capacityRaw ...int) *List {
-	var capacity int
-	if len(capacityRaw) > 0 {
-		capacity = capacityRaw[0]
+// NewList creates a new error list.
+func NewList(capacity ...int) *List {
+	var c int
+	if len(capacity) > 0 {
+		c = capacity[0]
 	}
 	return &List{
-		errors: make([]Error, 0, capacity),
+		errors: make([]Error, 0, c),
 	}
 }
 
-// Add adds an error to the list, applying accumulated metadata
+// add is the internal method for appending an error.
+func (g *List) add(err Error) {
+	g.errors = append(g.errors, err)
+}
+
+// Add adds an error to the list, converting it to an erro.Error if necessary.
 func (g *List) Add(err error) *List {
 	if err == nil {
 		return g
 	}
-
-	var erroErr Error
-	if e, ok := err.(Error); ok {
-		erroErr = e
-	} else {
-		erroErr = WrapEmpty(err)
-	}
-
-	return g.add(erroErr)
+	g.add(ExtractError(err))
+	return g
 }
 
-// New creates a new error with message and fields and adds it to the list
+// New creates a new error and adds it to the list.
 func (g *List) New(message string, fields ...any) *List {
-	erroErr := New(message, fields...)
-	return g.add(erroErr)
+	return addNew(g, message, fields...)
 }
 
-// Errorf creates a new error with formatted message and adds it to the list
+func (g *List) NewLight(message string, fields ...any) *List {
+	return addNewLight(g, message, fields...)
+}
+
+// Errorf creates a new formatted error and adds it to the list.
 func (g *List) Errorf(message string, args ...any) *List {
-	erroErr := Newf(message, args...)
-	return g.add(erroErr)
+	return addErrorf(g, message, args...)
 }
 
-// Wrap wraps an error with additional context and adds it to the list
+// Wrap wraps an existing error and adds it to the list.
 func (g *List) Wrap(err error, message string, fields ...any) *List {
-	if err == nil {
-		return g.New(message, fields...)
-	}
-	erroErr := Wrap(err, message, fields...)
-	return g.add(erroErr)
+	return addWrap(g, err, message, fields...)
 }
 
-// WrapEmpty wraps an error without a message to create an erro.Error from it.
+func (g *List) WrapLight(err error, message string, fields ...any) *List {
+	return addWrapLight(g, err, message, fields...)
+}
+
+// WrapEmpty wraps an error without a message and adds it to the list.
 func (g *List) WrapEmpty(err error) *List {
-	if err == nil {
-		return g
-	}
-	erroErr := WrapEmpty(err)
-	return g.add(erroErr)
+	return addWrapEmpty(g, err)
 }
 
-// Wrapf wraps an error with formatted message and adds it to the list
+// Wrapf wraps an existing error with a formatted message and adds it to the list.
 func (g *List) Wrapf(err error, message string, args ...any) *List {
-	if err == nil {
-		return g.Errorf(message, args...)
-	}
-	erroErr := Wrapf(err, message, args...)
-	return g.add(erroErr)
+	return addWrapf(g, err, message, args...)
 }
 
 // Err returns a combined error from all errors in the list, or nil if empty.
-// This prevents returning a non-nil error that represents an empty list.
 func (g *List) Err() error {
 	if len(g.errors) == 0 {
 		return nil
@@ -100,7 +88,7 @@ func (g *List) Err() error {
 	return &multiError{errors: errorsCopy}
 }
 
-// Remove removes error at index i from the list.
+// Remove removes an error at index i from the list.
 func (g *List) Remove(i int) bool {
 	if i < 0 || i >= len(g.errors) {
 		return false
@@ -109,36 +97,37 @@ func (g *List) Remove(i int) bool {
 	return true
 }
 
-// RemoveError removes the first error that matches the given error.
+// RemoveError removes the first error that matches the given error by ID.
 func (g *List) RemoveError(err Error) bool {
+	if err == nil {
+		return false
+	}
+	id := err.ID()
+	if id == "" {
+		return false
+	}
 	for i, e := range g.errors {
-		if e.Context().ID() == err.Context().ID() {
-			g.Remove(i)
-			return true
+		if e.ID() == id {
+			return g.Remove(i)
 		}
 	}
 	return false
 }
 
-// RemoveAll removes all errors from the list.
+// Clear removes all errors from the list.
 func (g *List) Clear() *List {
 	g.errors = make([]Error, 0, cap(g.errors))
 	return g
 }
 
-// Copy returns a copy of the list.
+// Copy returns a shallow copy of the list.
 func (g *List) Copy() *List {
 	clone := NewList(cap(g.errors))
 	clone.errors = append(make([]Error, 0, len(g.errors)), g.errors...)
-	clone.class = g.class
-	clone.category = g.category
-	clone.severity = g.severity
-	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
-	clone.retryable = g.retryable
 	return clone
 }
 
-// Errors returns a copy of the errors slice
+// --- List Accessors ---
 func (g *List) Errors() []error {
 	result := make([]error, len(g.errors))
 	for i, err := range g.errors {
@@ -146,38 +135,16 @@ func (g *List) Errors() []error {
 	}
 	return result
 }
-
-// Errs returns a copy of the errors slice
-func (g *List) Errs() []Error {
-	result := make([]Error, len(g.errors))
-	copy(result, g.errors)
-	return result
-}
-
-// Len returns the number of errors in the list
-func (g *List) Len() int {
-	return len(g.errors)
-}
-
-// Empty returns true if the list is empty
-func (g *List) Empty() bool {
-	return len(g.errors) == 0
-}
-
-// NotEmpty returns true if the list is not empty
-func (g *List) NotEmpty() bool {
-	return len(g.errors) > 0
-}
-
-// First returns the first error in the list, or nil if empty.
+func (g *List) Errs() []Error  { return g.errors }
+func (g *List) Len() int       { return len(g.errors) }
+func (g *List) Empty() bool    { return len(g.errors) == 0 }
+func (g *List) NotEmpty() bool { return len(g.errors) > 0 }
 func (g *List) First() Error {
 	if len(g.errors) == 0 {
 		return nil
 	}
 	return g.errors[0]
 }
-
-// Last returns the last error in the list, or nil if empty.
 func (g *List) Last() Error {
 	if len(g.errors) == 0 {
 		return nil
@@ -185,926 +152,402 @@ func (g *List) Last() Error {
 	return g.errors[len(g.errors)-1]
 }
 
-func (g *List) WithClass(class Class) *List {
-	g.class = class
-	return g
-}
+// --- Deduplicating Implementation: Set ---
 
-func (g *List) WithCategory(category Category) *List {
-	g.category = category
-	return g
-}
-
-func (g *List) WithSeverity(severity Severity) *List {
-	if !severity.IsValid() {
-		severity = SeverityUnknown
-	}
-	g.severity = severity
-	return g
-}
-
-func (g *List) WithFields(fields ...any) *List {
-	g.fields = append(g.fields, prepareFields(fields)...)
-	return g
-}
-
-func (g *List) WithRetryable(retryable bool) *List {
-	g.retryable = retryable
-	return g
-}
-
-func (g *List) Class() Class       { return g.class }
-func (g *List) Category() Category { return g.category }
-func (g *List) Fields() []any      { return g.fields }
-func (g *List) IsRetryable() bool  { return g.retryable }
-func (g *List) Severity() Severity { return g.severity }
-
-func (g *List) add(err Error) *List {
-	g.errors = append(g.errors, g.withMetadata(err))
-	return g
-}
-
-// applyMetadata applies accumulated metadata to an error
-func (g *List) withMetadata(err Error) Error {
-	if g.class != ClassUnknown && err.Context().Class() == ClassUnknown {
-		err = err.WithClass(g.class)
-	}
-	if g.category != CategoryUnknown && err.Context().Category() == CategoryUnknown {
-		err = err.WithCategory(g.category)
-	}
-	if g.severity != SeverityUnknown && err.Context().Severity() == SeverityUnknown {
-		err = err.WithSeverity(g.severity)
-	}
-	if g.retryable {
-		err = err.WithRetryable(g.retryable)
-	}
-	if len(g.fields) > 0 {
-		err = err.WithFields(g.fields...)
-	}
-	return err
-}
-
-// Set collects unique errors and provides the same chaining API as Error.
-// It deduplicates errors based on their message and code.
+// Set collects unique errors, deduplicating them based on a configurable key.
+// It is not thread-safe.
 type Set struct {
 	*List
-	seen map[string]int
-	// It won't add the error if the keyGetter returns an empty string
+	seen      map[string]int
 	keyGetter KeyGetterFunc
 }
 
-// NewSet creates a new error set that stores only unique errors
-func NewSet(capacityRaw ...int) *Set {
-	var capacity int
-	if len(capacityRaw) > 0 {
-		capacity = capacityRaw[0]
-	}
+// NewSet creates a new error set that stores only unique errors.
+func NewSet(capacity ...int) *Set {
 	return &Set{
-		List:      NewList(capacity),
-		seen:      make(map[string]int, capacity),
+		List:      NewList(capacity...),
+		seen:      make(map[string]int),
 		keyGetter: MessageKeyGetter,
 	}
 }
-func (s *Set) WithKeyGetter(keyGetter func(error) string) *Set {
-	s.keyGetter = keyGetter
-	return s
+
+// add overrides the embedded List's add method to provide deduplication.
+func (s *Set) add(err Error) {
+	key := s.keyGetter(err)
+	if key == "" {
+		// Do not add errors that produce an empty key.
+		return
+	}
+	if count, ok := s.seen[key]; ok {
+		s.seen[key] = count + 1
+	} else {
+		s.seen[key] = 1
+		s.List.errors = append(s.List.errors, err)
+	}
 }
 
-// Add adds an error to the set only if it's unique
+// --- Set Creator Methods (for fluent API) ---
 func (s *Set) Add(err error) *Set {
 	if err == nil {
 		return s
 	}
-
-	var erroErr Error
-	if e, ok := err.(Error); ok {
-		erroErr = e
-	} else {
-		erroErr = WrapEmpty(err)
-	}
-
-	return s.add(erroErr)
+	s.add(ExtractError(err))
+	return s
 }
-
-// New creates a new error with message and fields and adds it to the set if unique
 func (s *Set) New(message string, fields ...any) *Set {
-	erroErr := New(message, fields...)
-	return s.add(erroErr)
+	return addNew(s, message, fields...)
 }
-
-// Errorf creates a new error with formatted message and adds it to the set if unique
+func (s *Set) NewLight(message string, fields ...any) *Set {
+	return addNewLight(s, message, fields...)
+}
 func (s *Set) Errorf(message string, args ...any) *Set {
-	erroErr := Newf(message, args...)
-	return s.add(erroErr)
+	return addErrorf(s, message, args...)
 }
-
-// Wrap wraps an error with additional context and adds it to the set if unique
 func (s *Set) Wrap(err error, message string, fields ...any) *Set {
-	if err == nil {
-		return s.New(message, fields...)
-	}
-	erroErr := Wrap(err, message, fields...)
-	return s.add(erroErr)
+	return addWrap(s, err, message, fields...)
 }
-
-// WrapEmpty wraps an error without a message to create an erro.Error from it.
+func (s *Set) WrapLight(err error, message string, fields ...any) *Set {
+	return addWrapLight(s, err, message, fields...)
+}
 func (s *Set) WrapEmpty(err error) *Set {
-	if err == nil {
-		return s
-	}
-	erroErr := WrapEmpty(err)
-	return s.add(erroErr)
+	return addWrapEmpty(s, err)
 }
-
-// Wrapf wraps an error with formatted message and adds it to the set if unique
 func (s *Set) Wrapf(err error, message string, args ...any) *Set {
-	if err == nil {
-		return s.Errorf(message, args...)
-	}
-	erroErr := Wrapf(err, message, args...)
-	return s.add(erroErr)
+	return addWrapf(s, err, message, args...)
 }
 
-// Err returns a combined error from all errors in the list, or nil if empty.
-// This prevents returning a non-nil error that represents an empty list.
+// --- Set Overridden Methods ---
+func (s *Set) WithKeyGetter(keyGetter KeyGetterFunc) *Set {
+	if keyGetter != nil {
+		s.keyGetter = keyGetter
+	}
+	return s
+}
+
+// Err returns a combined error that includes deduplication counts.
 func (s *Set) Err() error {
-	if len(s.errors) == 0 {
+	if s.Len() == 0 {
 		return nil
 	}
-
-	// Create a copy of the errors for the multiError
-	errorsCopy := make([]error, len(s.errors))
-	for i, err := range s.errors {
-		errorsCopy[i] = err
+	if s.Len() == 1 {
+		return s.First()
 	}
+	errorsCopy := make([]error, s.Len())
+	copy(errorsCopy, s.Errors())
 	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
 }
 
-// Clear removes all errors from the set.
+// Clear removes all errors and resets the deduplication map.
 func (s *Set) Clear() *Set {
-	s.errors = make([]Error, 0, cap(s.errors))
-	s.seen = make(map[string]int, cap(s.errors))
+	s.List.Clear()
+	s.seen = make(map[string]int, cap(s.List.errors))
 	return s
 }
 
-// Copy returns a copy of the set.
+// Copy returns a shallow copy of the set.
 func (s *Set) Copy() *Set {
-	newSeen := make(map[string]int, len(s.seen))
-	for k := range s.seen {
-		newSeen[k] = s.seen[k]
+	clone := NewSet(cap(s.List.errors))
+	clone.List = s.List.Copy()
+	clone.keyGetter = s.keyGetter
+	for k, v := range s.seen {
+		clone.seen[k] = v
 	}
-	return &Set{
-		List:      s.List.Copy(),
-		seen:      newSeen,
-		keyGetter: s.keyGetter,
-	}
-}
-
-// Remove removes error at index i from the list.
-func (g *Set) Remove(i int) bool {
-	if i < 0 || i >= len(g.errors) {
-		return false
-	}
-	key := g.keyGetter(g.errors[i])
-	if key == "" {
-		return false
-	}
-	delete(g.seen, key)
-	g.errors = append(g.errors[:i], g.errors[i+1:]...)
-
-	return true
-}
-
-// RemoveError removes the first error that matches the given error.
-func (g *Set) RemoveError(err Error) bool {
-	for i, e := range g.errors {
-		if e.Context().ID() == err.Context().ID() {
-			g.Remove(i)
-			return true
-		}
-	}
-	return false
-}
-
-// Errors returns a copy of the errors slice
-func (g *Set) Errors() []error {
-	result := make([]error, len(g.errors))
-	for i, err := range g.errors {
-		result[i] = err
-	}
-	return result
-}
-
-// Errs returns a copy of the errors slice
-func (g *Set) Errs() []Error {
-	result := make([]Error, len(g.errors))
-	copy(result, g.errors)
-	return result
-}
-
-// Len returns the number of errors in the list
-func (g *Set) Len() int {
-	return len(g.errors)
-}
-
-// Empty returns true if the list is empty
-func (g *Set) Empty() bool {
-	return len(g.errors) == 0
-}
-
-// NotEmpty returns true if the list is not empty
-func (g *Set) NotEmpty() bool {
-	return len(g.errors) > 0
-}
-
-// First returns the first error in the list, or nil if empty.
-func (g *Set) First() Error {
-	if len(g.errors) == 0 {
-		return nil
-	}
-	return g.errors[0]
-}
-
-// Last returns the last error in the list, or nil if empty.
-func (g *Set) Last() Error {
-	if len(g.errors) == 0 {
-		return nil
-	}
-	return g.errors[len(g.errors)-1]
-}
-
-func (s *Set) WithClass(class Class) *Set {
-	s.List.WithClass(class)
-	return s
-}
-
-func (s *Set) WithCategory(category Category) *Set {
-	s.List.WithCategory(category)
-	return s
-}
-
-func (s *Set) WithSeverity(severity Severity) *Set {
-	s.List.WithSeverity(severity)
-	return s
-}
-
-func (s *Set) WithFields(fields ...any) *Set {
-	s.List.WithFields(fields...)
-	return s
-}
-
-func (s *Set) WithRetryable(retryable bool) *Set {
-	s.List.WithRetryable(retryable)
-	return s
-}
-
-func (s *Set) Class() Class       { return s.List.Class() }
-func (s *Set) Category() Category { return s.List.Category() }
-func (s *Set) Fields() []any      { return s.List.Fields() }
-func (s *Set) IsRetryable() bool  { return s.List.IsRetryable() }
-func (s *Set) Severity() Severity { return s.List.Severity() }
-
-func (s *Set) add(err Error) *Set {
-	err = s.withMetadata(err)
-	key := s.keyGetter(err)
-	if key == "" {
-		return s
-	}
-	if _, ok := s.seen[key]; !ok {
-		s.seen[key] = 1
-		s.errors = append(s.errors, err)
-	} else {
-		s.seen[key]++
-	}
-	return s
-}
-
-// SafeList is a thread-safe version of List that can be used safely across multiple goroutines
-type SafeList struct {
-	errors []Error
-	// Metadata that will be applied to errors added to this list
-	class     Class
-	category  Category
-	severity  Severity
-	fields    []any
-	retryable bool
-
-	// Thread safety
-	mu sync.RWMutex // Protects all fields
-}
-
-// NewSafeList creates a new thread-safe error list
-func NewSafeList(capacityRaw ...int) *SafeList {
-	var capacity int
-	if len(capacityRaw) > 0 {
-		capacity = capacityRaw[0]
-	}
-	return &SafeList{
-		errors: make([]Error, 0, capacity),
-	}
-}
-
-// Add adds an error to the list, applying accumulated metadata
-func (g *SafeList) Add(err error) *SafeList {
-	if err == nil {
-		return g
-	}
-
-	var erroErr Error
-	if e, ok := err.(Error); ok {
-		erroErr = e
-	} else {
-		erroErr = WrapEmpty(err)
-	}
-
-	return g.add(erroErr)
-}
-
-// New creates a new error with message and fields and adds it to the list
-func (g *SafeList) New(message string, fields ...any) *SafeList {
-	erroErr := New(message, fields...)
-	return g.add(erroErr)
-}
-
-// Errorf creates a new error with formatted message and adds it to the list
-func (g *SafeList) Errorf(message string, args ...any) *SafeList {
-	erroErr := Newf(message, args...)
-	return g.add(erroErr)
-}
-
-// Wrap wraps an error with additional context and adds it to the list
-func (g *SafeList) Wrap(err error, message string, fields ...any) *SafeList {
-	if err == nil {
-		return g.New(message, fields...)
-	}
-	erroErr := Wrap(err, message, fields...)
-	return g.add(erroErr)
-}
-
-// WrapEmpty wraps an error without a message to create an erro.Error from it.
-func (g *SafeList) WrapEmpty(err error) *SafeList {
-	if err == nil {
-		return g
-	}
-	erroErr := WrapEmpty(err)
-	return g.add(erroErr)
-}
-
-// Wrapf wraps an error with formatted message and adds it to the list
-func (g *SafeList) Wrapf(err error, message string, args ...any) *SafeList {
-	if err == nil {
-		return g.Errorf(message, args...)
-	}
-	erroErr := Wrapf(err, message, args...)
-	return g.add(erroErr)
-}
-
-// Err returns a combined error from all errors in the list, or nil if empty.
-// This prevents returning a non-nil error that represents an empty list.
-func (g *SafeList) Err() error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if len(g.errors) == 0 {
-		return nil
-	}
-	if len(g.errors) == 1 {
-		return g.errors[0]
-	}
-
-	// Create a copy of the errors for the multiError
-	errorsCopy := make([]error, len(g.errors))
-	for i, err := range g.errors {
-		errorsCopy[i] = err
-	}
-	return &multiError{errors: errorsCopy}
-}
-
-// Remove removes error at index i from the list.
-func (g *SafeList) Remove(i int) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if i < 0 || i >= len(g.errors) {
-		return false
-	}
-	g.errors = append(g.errors[:i], g.errors[i+1:]...)
-	return true
-}
-
-// RemoveError removes the first error that matches the given error.
-func (g *SafeList) RemoveError(err Error) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	for i, e := range g.errors {
-		if e.Context().ID() == err.Context().ID() {
-			g.errors = append(g.errors[:i], g.errors[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
-// Clear removes all errors from the list.
-func (g *SafeList) Clear() *SafeList {
-	g.mu.Lock()
-	g.errors = make([]Error, 0, cap(g.errors))
-	g.mu.Unlock()
-	return g
-}
-
-// Copy returns a copy of the list.
-func (g *SafeList) Copy() *SafeList {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	clone := NewSafeList(cap(g.errors))
-	clone.errors = append(make([]Error, 0, len(g.errors)), g.errors...)
-	clone.class = g.class
-	clone.category = g.category
-	clone.severity = g.severity
-	clone.fields = append(make([]any, 0, len(g.fields)), g.fields...)
-	clone.retryable = g.retryable
 	return clone
 }
 
-// Errors returns a copy of the errors slice
-func (g *SafeList) Errors() []error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	result := make([]error, len(g.errors))
-	for i, err := range g.errors {
-		result[i] = err
-	}
-	return result
-}
-
-// Errs returns a copy of the errors slice
-func (g *SafeList) Errs() []Error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	result := make([]Error, len(g.errors))
-	copy(result, g.errors)
-	return result
-}
-
-// Len returns the number of errors in the list
-func (g *SafeList) Len() int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return len(g.errors)
-}
-
-// Empty returns true if the list is empty
-func (g *SafeList) Empty() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return len(g.errors) == 0
-}
-
-// NotEmpty returns true if the list is not empty
-func (g *SafeList) NotEmpty() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return len(g.errors) > 0
-}
-
-// First returns the first error in the list, or nil if empty.
-func (g *SafeList) First() Error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if len(g.errors) == 0 {
-		return nil
-	}
-	return g.errors[0]
-}
-
-// Last returns the last error in the list, or nil if empty.
-func (g *SafeList) Last() Error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if len(g.errors) == 0 {
-		return nil
-	}
-	return g.errors[len(g.errors)-1]
-}
-
-func (g *SafeList) WithClass(class Class) *SafeList {
-	g.mu.Lock()
-	g.class = class
-	g.mu.Unlock()
-	return g
-}
-
-func (g *SafeList) WithCategory(category Category) *SafeList {
-	g.mu.Lock()
-	g.category = category
-	g.mu.Unlock()
-	return g
-}
-
-func (g *SafeList) WithSeverity(severity Severity) *SafeList {
-	if !severity.IsValid() {
-		severity = SeverityUnknown
-	}
-	g.mu.Lock()
-	g.severity = severity
-	g.mu.Unlock()
-	return g
-}
-
-func (g *SafeList) WithFields(fields ...any) *SafeList {
-	g.mu.Lock()
-	g.fields = append(g.fields, prepareFields(fields)...)
-	g.mu.Unlock()
-	return g
-}
-
-func (g *SafeList) WithRetryable(retryable bool) *SafeList {
-	g.mu.Lock()
-	g.retryable = retryable
-	g.mu.Unlock()
-	return g
-}
-
-func (g *SafeList) Class() Class {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.class
-}
-func (g *SafeList) Category() Category {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.category
-}
-func (g *SafeList) Fields() []any {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.fields
-}
-func (g *SafeList) IsRetryable() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.retryable
-}
-func (g *SafeList) Severity() Severity {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.severity
-}
-
-func (g *SafeList) add(err Error) *SafeList {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	g.errors = append(g.errors, g.withMetadata(err))
-	return g
-}
-
-// applyMetadata applies accumulated metadata to an error
-func (g *SafeList) withMetadata(err Error) Error {
-	if g.class != ClassUnknown && err.Context().Class() == ClassUnknown {
-		err = err.WithClass(g.class)
-	}
-	if g.category != CategoryUnknown && err.Context().Category() == CategoryUnknown {
-		err = err.WithCategory(g.category)
-	}
-	if g.severity != SeverityUnknown && err.Context().Severity() == SeverityUnknown {
-		err = err.WithSeverity(g.severity)
-	}
-	if len(g.fields) > 0 {
-		err = err.WithFields(g.fields...)
-	}
-	if g.retryable {
-		err = err.WithRetryable(g.retryable)
-	}
-	return err
-}
-
-// SafeSet is a thread-safe version of Set that collects unique errors
-type SafeSet struct {
-	*List
-	seen map[string]int
-	// It won't add the error if the keyGetter returns an empty string
-	keyGetter KeyGetterFunc
-	mu        sync.RWMutex
-}
-
-// NewSafeSet creates a new thread-safe error set that stores only unique errors
-func NewSafeSet(capacityRaw ...int) *SafeSet {
-	var capacity int
-	if len(capacityRaw) > 0 {
-		capacity = capacityRaw[0]
-	}
-	return &SafeSet{
-		List:      NewList(capacity),
-		seen:      make(map[string]int, capacity),
-		keyGetter: MessageKeyGetter,
-	}
-}
-
-func (s *SafeSet) WithKeyGetter(keyGetter func(error) string) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.keyGetter = keyGetter
-	return s
-}
-
-// Add adds an error to the set only if it's unique
-func (s *SafeSet) Add(err error) *SafeSet {
-	if err == nil {
-		return s
-	}
-
-	var erroErr Error
-	if e, ok := err.(Error); ok {
-		erroErr = e
-	} else {
-		erroErr = WrapEmpty(err)
-	}
-
-	return s.add(erroErr)
-}
-
-// New creates a new error with message and fields and adds it to the set if unique
-func (s *SafeSet) New(message string, fields ...any) *SafeSet {
-	erroErr := New(message, fields...)
-	return s.add(erroErr)
-}
-
-// Errorf creates a new error with formatted message and adds it to the set if unique
-func (s *SafeSet) Errorf(message string, args ...any) *SafeSet {
-	erroErr := Newf(message, args...)
-	return s.add(erroErr)
-}
-
-// Wrap wraps an error with additional context and adds it to the set if unique
-func (s *SafeSet) Wrap(err error, message string, fields ...any) *SafeSet {
-	if err == nil {
-		return s.New(message, fields...)
-	}
-	erroErr := Wrap(err, message, fields...)
-	return s.add(erroErr)
-}
-
-// WrapEmpty wraps an error without a message to create an erro.Error from it.
-func (s *SafeSet) WrapEmpty(err error) *SafeSet {
-	if err == nil {
-		return s
-	}
-	erroErr := WrapEmpty(err)
-	return s.add(erroErr)
-}
-
-// Wrapf wraps an error with formatted message and adds it to the set if unique
-func (s *SafeSet) Wrapf(err error, message string, args ...any) *SafeSet {
-	if err == nil {
-		return s.Errorf(message, args...)
-	}
-	erroErr := Wrapf(err, message, args...)
-	return s.add(erroErr)
-}
-
-// Err returns a combined error from all errors in the list, or nil if empty.
-// This prevents returning a non-nil error that represents an empty list.
-func (s *SafeSet) Err() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if len(s.errors) == 0 {
-		return nil
-	}
-
-	// Create a copy of the errors for the multiError
-	errorsCopy := make([]error, len(s.errors))
-	for i, err := range s.errors {
-		errorsCopy[i] = err
-	}
-	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
-}
-
-// Clear removes all errors from the set.
-func (s *SafeSet) Clear() *SafeSet {
-	s.mu.Lock()
-	s.errors = make([]Error, 0, cap(s.errors))
-	s.seen = make(map[string]int, cap(s.errors))
-	s.mu.Unlock()
-	return s
-}
-
-// Copy returns a copy of the set.
-func (s *SafeSet) Copy() *SafeSet {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	newSeen := make(map[string]int, len(s.seen))
-	for k := range s.seen {
-		newSeen[k] = s.seen[k]
-	}
-	return &SafeSet{
-		List:      s.List.Copy(),
-		seen:      newSeen,
-		keyGetter: s.keyGetter,
-	}
-}
-
-// Remove removes error at index i from the list.
-func (g *SafeSet) Remove(i int) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if i < 0 || i >= len(g.errors) {
+// Remove removes an error and its key from the seen map.
+func (s *Set) Remove(i int) bool {
+	if i < 0 || i >= s.Len() {
 		return false
 	}
-	err := g.errors[i]
-	key := g.keyGetter(err)
-	if key == "" {
-		return false
+	err := s.Errs()[i]
+	if s.List.Remove(i) {
+		key := s.keyGetter(err)
+		if key != "" {
+			delete(s.seen, key)
+		}
+		return true
 	}
-	delete(g.seen, key)
-	g.errors = append(g.errors[:i], g.errors[i+1:]...)
-
-	return true
+	return false
 }
 
-// RemoveError removes the first error that matches the given error.
-func (g *SafeSet) RemoveError(err Error) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	for i, e := range g.errors {
-		if e.Context().ID() == err.Context().ID() {
-			g.Remove(i)
-			return true
+// RemoveError removes an error by its instance and its key from the seen map.
+func (s *Set) RemoveError(err Error) bool {
+	if err == nil {
+		return false
+	}
+	id := err.ID()
+	if id == "" {
+		return false
+	}
+	for i, e := range s.Errs() {
+		if e.ID() == id {
+			return s.Remove(i)
 		}
 	}
 	return false
 }
 
-// Errors returns a copy of the errors slice
-func (g *SafeSet) Errors() []error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+// --- Thread-Safe Wrapper: SafeList ---
 
-	result := make([]error, len(g.errors))
-	for i, err := range g.errors {
-		result[i] = err
-	}
-	return result
+// SafeList is a thread-safe version of List.
+type SafeList struct {
+	mu   sync.RWMutex
+	list *List
 }
 
-// Errs returns a copy of the errors slice
-func (g *SafeSet) Errs() []Error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	result := make([]Error, len(g.errors))
-	copy(result, g.errors)
-	return result
+// NewSafeList creates a new thread-safe error list.
+func NewSafeList(capacity ...int) *SafeList {
+	return &SafeList{list: NewList(capacity...)}
 }
 
-// Len returns the number of errors in the list
-func (g *SafeSet) Len() int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	return len(g.errors)
+func (sl *SafeList) Add(err error) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.Add(err)
+	return sl
+}
+func (sl *SafeList) New(message string, fields ...any) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.New(message, fields...)
+	return sl
+}
+func (sl *SafeList) NewLight(message string, fields ...any) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.NewLight(message, fields...)
+	return sl
+}
+func (sl *SafeList) Errorf(message string, args ...any) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.Errorf(message, args...)
+	return sl
+}
+func (sl *SafeList) Wrap(err error, message string, fields ...any) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.Wrap(err, message, fields...)
+	return sl
+}
+func (sl *SafeList) WrapLight(err error, message string, fields ...any) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.WrapLight(err, message, fields...)
+	return sl
+}
+func (sl *SafeList) WrapEmpty(err error) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.WrapEmpty(err)
+	return sl
+}
+func (sl *SafeList) Wrapf(err error, message string, args ...any) *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.Wrapf(err, message, args...)
+	return sl
+}
+func (sl *SafeList) Err() error {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.Err()
+}
+func (sl *SafeList) Remove(i int) bool {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	return sl.list.Remove(i)
+}
+func (sl *SafeList) RemoveError(err Error) bool {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	return sl.list.RemoveError(err)
+}
+func (sl *SafeList) Clear() *SafeList {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	sl.list.Clear()
+	return sl
+}
+func (sl *SafeList) Copy() *SafeList {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return &SafeList{list: sl.list.Copy()}
+}
+func (sl *SafeList) Errors() []error {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.Errors()
+}
+func (sl *SafeList) Errs() []Error {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.Errs()
+}
+func (sl *SafeList) Len() int {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.Len()
+}
+func (sl *SafeList) Empty() bool {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.Empty()
+}
+func (sl *SafeList) NotEmpty() bool {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.NotEmpty()
+}
+func (sl *SafeList) First() Error {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.First()
+}
+func (sl *SafeList) Last() Error {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.list.Last()
 }
 
-// Empty returns true if the list is empty
-func (g *SafeSet) Empty() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+// --- Thread-Safe Wrapper: SafeSet ---
 
-	return len(g.errors) == 0
+// SafeSet is a thread-safe version of Set.
+type SafeSet struct {
+	mu  sync.RWMutex
+	set *Set
 }
 
-// NotEmpty returns true if the list is not empty
-func (g *SafeSet) NotEmpty() bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	return len(g.errors) > 0
+// NewSafeSet creates a new thread-safe error set.
+func NewSafeSet(capacity ...int) *SafeSet {
+	return &SafeSet{set: NewSet(capacity...)}
 }
 
-// First returns the first error in the list, or nil if empty.
-func (g *SafeSet) First() Error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if len(g.errors) == 0 {
-		return nil
-	}
-	return g.errors[0]
+func (ss *SafeSet) Add(err error) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.Add(err)
+	return ss
+}
+func (ss *SafeSet) New(message string, fields ...any) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.New(message, fields...)
+	return ss
+}
+func (ss *SafeSet) NewLight(message string, fields ...any) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.NewLight(message, fields...)
+	return ss
+}
+func (ss *SafeSet) Errorf(message string, args ...any) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.Errorf(message, args...)
+	return ss
+}
+func (ss *SafeSet) Wrap(err error, message string, fields ...any) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.Wrap(err, message, fields...)
+	return ss
+}
+func (ss *SafeSet) WrapLight(err error, message string, fields ...any) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.WrapLight(err, message, fields...)
+	return ss
+}
+func (ss *SafeSet) WrapEmpty(err error) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.WrapEmpty(err)
+	return ss
+}
+func (ss *SafeSet) Wrapf(err error, message string, args ...any) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.Wrapf(err, message, args...)
+	return ss
+}
+func (ss *SafeSet) Err() error {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.Err()
+}
+func (ss *SafeSet) Remove(i int) bool {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.set.Remove(i)
+}
+func (ss *SafeSet) RemoveError(err Error) bool {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.set.RemoveError(err)
+}
+func (ss *SafeSet) Clear() *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.Clear()
+	return ss
+}
+func (ss *SafeSet) Copy() *SafeSet {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return &SafeSet{set: ss.set.Copy()}
+}
+func (ss *SafeSet) Errors() []error {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.Errors()
+}
+func (ss *SafeSet) Errs() []Error {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.Errs()
+}
+func (ss *SafeSet) Len() int {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.Len()
+}
+func (ss *SafeSet) Empty() bool {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.Empty()
+}
+func (ss *SafeSet) NotEmpty() bool {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.NotEmpty()
+}
+func (ss *SafeSet) First() Error {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.First()
+}
+func (ss *SafeSet) Last() Error {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.set.Last()
+}
+func (ss *SafeSet) WithKeyGetter(keyGetter KeyGetterFunc) *SafeSet {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	ss.set.WithKeyGetter(keyGetter)
+	return ss
 }
 
-// Last returns the last error in the list, or nil if empty.
-func (g *SafeSet) Last() Error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+// --- Multi-Error Types ---
 
-	if len(g.errors) == 0 {
-		return nil
-	}
-	return g.errors[len(g.errors)-1]
-}
-
-func (s *SafeSet) WithClass(class Class) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.class = class
-	return s
-}
-
-func (s *SafeSet) WithCategory(category Category) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.category = category
-	return s
-}
-
-func (s *SafeSet) WithSeverity(severity Severity) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.severity = severity
-	return s
-}
-
-func (s *SafeSet) WithFields(fields ...any) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.fields = append(s.fields, prepareFields(fields)...)
-	return s
-}
-
-func (s *SafeSet) WithRetryable(retryable bool) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.retryable = retryable
-	return s
-}
-
-func (s *SafeSet) Class() Class {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.class
-}
-func (s *SafeSet) Category() Category {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.category
-}
-func (s *SafeSet) Fields() []any {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.fields
-}
-func (s *SafeSet) IsRetryable() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.retryable
-}
-func (s *SafeSet) Severity() Severity {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.severity
-}
-
-func (s *SafeSet) add(err Error) *SafeSet {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	err = s.withMetadata(err)
-	key := s.keyGetter(err)
-	if key == "" {
-		return s
-	}
-	if _, ok := s.seen[key]; !ok {
-		s.seen[key] = 1
-		s.errors = append(s.errors, err)
-	} else {
-		s.seen[key]++
-	}
-	return s
-}
-
-// multiError represents multiple errors combined into one
+// multiError represents multiple errors combined into one.
+// It is compatible with Go 1.20's multi-error unwrapping.
 type multiError struct {
 	errors []error
 }
 
-// Error implements the error interface for multiError
 func (m *multiError) Error() string {
 	if len(m.errors) == 0 {
 		return ""
@@ -1114,38 +557,33 @@ func (m *multiError) Error() string {
 	}
 
 	var builder strings.Builder
-	// Estimate capacity: prefix + count + each error (approx 100 chars) + separators
-	estimatedSize := 50 + len(m.errors)*100
-	builder.Grow(estimatedSize)
-
 	builder.WriteString("multiple errors (")
 	builder.WriteString(strconv.Itoa(len(m.errors)))
 	builder.WriteString("): ")
 	for i, err := range m.errors {
+		if i > 0 {
+			builder.WriteString("; ")
+		}
 		builder.WriteString("(")
 		builder.WriteString(strconv.Itoa(i + 1))
 		builder.WriteString(") ")
 		builder.WriteString(err.Error())
-		if i < len(m.errors)-1 {
-			builder.WriteString("; ")
-		}
 	}
 	return builder.String()
 }
 
-// Unwrap returns the underlying errors for error chain traversal
+// Unwrap returns the underlying errors for error chain traversal.
 func (m *multiError) Unwrap() []error {
 	return m.errors
 }
 
-// multiError represents multiple errors combined into one
+// multiErrorSet is the error type returned by a Set, including deduplication counts.
 type multiErrorSet struct {
 	errors    []error
 	counter   map[string]int
 	keyGetter func(error) string
 }
 
-// Error implements the error interface for multiError
 func (m *multiErrorSet) Error() string {
 	if len(m.errors) == 0 {
 		return ""
@@ -1155,30 +593,123 @@ func (m *multiErrorSet) Error() string {
 	}
 
 	var builder strings.Builder
-	// Estimate capacity: prefix + count + each error (approx 100 chars) + counters + separators
-	estimatedSize := 50 + len(m.errors)*120
-	builder.Grow(estimatedSize)
-
-	builder.WriteString("multiple errors (")
+	builder.WriteString("multiple unique errors (")
 	builder.WriteString(strconv.Itoa(len(m.errors)))
 	builder.WriteString("): ")
 	for i, err := range m.errors {
+		if i > 0 {
+			builder.WriteString("; ")
+		}
 		builder.WriteString("(")
 		builder.WriteString(strconv.Itoa(i + 1))
-		builder.WriteString("): ")
+		builder.WriteString(") ")
 		builder.WriteString(err.Error())
-		builder.WriteString(" [")
-		builder.WriteString(strconv.Itoa(m.counter[m.keyGetter(err)]))
-		builder.WriteString("]")
-
-		if i < len(m.errors)-1 {
-			builder.WriteString("; ")
+		if count, ok := m.counter[m.keyGetter(err)]; ok && count > 1 {
+			builder.WriteString(" [")
+			builder.WriteString(strconv.Itoa(count))
+			builder.WriteString(" times]")
 		}
 	}
 	return builder.String()
 }
 
-// Unwrap returns the underlying errors for error chain traversal
+// Unwrap returns the underlying errors for error chain traversal.
 func (m *multiErrorSet) Unwrap() []error {
 	return m.errors
+}
+
+// New creates a new error and adds it to the list.
+func addNew[T interface{ add(Error) }](g T, message string, fields ...any) T {
+	g.add(newBaseError(nil, message, fields...))
+	return g
+}
+
+func addNewLight[T interface{ add(Error) }](g T, message string, fields ...any) T {
+	g.add(newBaseErrorLight(nil, message, fields...))
+	return g
+}
+
+// Errorf creates a new formatted error and adds it to the list.
+func addErrorf[T interface{ add(Error) }](g T, message string, args ...any) T {
+	// Count format verbs in the message
+	formats := countFormatVerbs(message)
+
+	// If there are no format verbs, all args are fields
+	if formats == 0 {
+		g.add(newBaseError(nil, message, args...))
+		return g
+	}
+	if formats > len(args) {
+		formats = len(args)
+	}
+
+	message = fmt.Sprintf(message, args[:formats]...)
+	args = args[formats:]
+
+	// Create a new error with the formatted message and remaining args as fields
+	g.add(newBaseError(nil, message, args...))
+	return g
+}
+
+// Wrap wraps an existing error and adds it to the list.
+func addWrap[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
+	if err == nil {
+		g.add(newBaseError(nil, message, fields...))
+		return g
+	}
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
+		g.add(newWrapError(erroErr, message, fields...))
+		return g
+	}
+	// For external errors, create a new base error that wraps it
+	g.add(newBaseError(err, message, fields...))
+	return g
+}
+
+func addWrapLight[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
+	if err == nil {
+		g.add(newBaseErrorLight(nil, message, fields...))
+		return g
+	}
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
+		g.add(newWrapError(erroErr, message, fields...))
+		return g
+	}
+	g.add(newBaseErrorLight(err, message, fields...))
+	return g
+}
+
+// addWrapEmpty wraps an error without a message and adds it to the list.
+func addWrapEmpty[T interface{ add(Error) }](g T, err error) T {
+	if err == nil {
+		return g
+	}
+
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
+		g.add(newWrapError(erroErr, ""))
+		return g
+	}
+
+	// For external errors, create a new base error that wraps it
+	g.add(newBaseError(err, ""))
+	return g
+}
+
+// Wrapf wraps an existing error with a formatted message and adds it to the list.
+func addWrapf[T interface{ add(Error) }](g T, err error, message string, args ...any) T {
+	if err == nil {
+		g.add(newBaseError(nil, message, args...))
+		return g
+	}
+	// If it's already an erro error, create a wrap that points to its base
+	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
+		g.add(newWrapError(erroErr, message, args...))
+		return g
+	}
+	// For external errors, create a new base error that wraps it
+	g.add(newBaseError(err, message, args...))
+	return g
 }

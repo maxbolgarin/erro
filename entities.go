@@ -2,12 +2,13 @@ package erro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
 
 var (
-	ErrMaxWrapDepthExceeded = NewLight("maximum wrap depth exceeded")
+	ErrMaxWrapDepthExceeded = New("maximum wrap depth exceeded")
 )
 
 // Security configuration constants
@@ -31,61 +32,45 @@ const (
 )
 
 type (
-	FormatErrorFunc func(err ErrorContext) string
+	FormatErrorFunc func(err Error) string
 	KeyGetterFunc   func(err error) string
 )
 
+// Error represents the common interface for all erro errors
 type Error interface {
+	// Error interface
 	error
 	fmt.Formatter
+	json.Marshaler
+	json.Unmarshaler
+	Is(target error) bool
 	Unwrap() error
 
-	WithID(id string) Error
-	WithClass(class Class) Error
-	WithCategory(category Category) Error
-	WithSeverity(severity Severity) Error
-	WithRetryable(retryable bool) Error
-	WithFields(fields ...any) Error
-	WithSpan(span Span) Error
-	WithFormatter(formatter FormatErrorFunc) Error
-	WithStackTraceConfig(config *StackTraceConfig) Error
-
-	RecordMetrics(metrics Metrics) Error
-	SendEvent(ctx context.Context, dispatcher Dispatcher) Error
-
-	Context() ErrorContext
-}
-
-// Error represents the common interface for all erro errors
-type ErrorContext interface {
-	// Extraction methods
+	// Metadata
 	ID() string
 	Class() Class
 	Category() Category
 	Severity() Severity
-	Created() time.Time
+	IsRetryable() bool
 	Message() string
 	Fields() []any
-	AllFields() []any
 	Span() Span
-	IsRetryable() bool
+	Created() time.Time
 
-	// Stack and base error
+	// Wrapping
+	BaseError() Error
+	AllFields() []any
+
+	// Stack trace
 	Stack() Stack
-	BaseError() ErrorContext
-	StackTraceConfig() *StackTraceConfig
-
-	// Error comparison
-	Is(target error) bool
-	Unwrap() error
 }
 
 type Metrics interface {
-	RecordError(err ErrorContext)
+	RecordError(err Error)
 }
 
 type Dispatcher interface {
-	SendEvent(ctx context.Context, err ErrorContext)
+	SendEvent(ctx context.Context, err Error)
 }
 
 type Span interface {
@@ -126,14 +111,14 @@ func Redact(value any) RedactedValue {
 var (
 	// MessageKeyGetter generates a key based on the error's message.
 	MessageKeyGetter KeyGetterFunc = func(err error) string {
-		if e, ok := err.(ErrorContext); ok {
+		if e, ok := err.(Error); ok {
 			return e.Message()
 		}
 		return err.Error()
 	}
 	// IDKeyGetter generates a key based on the error's ID.
 	IDKeyGetter KeyGetterFunc = func(err error) string {
-		if e, ok := err.(ErrorContext); ok {
+		if e, ok := err.(Error); ok {
 			return e.ID()
 		}
 		return err.Error()

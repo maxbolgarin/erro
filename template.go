@@ -14,11 +14,10 @@ type ErrorTemplate struct {
 	severity  Severity
 	fields    []any
 	retryable bool
-	ctx       context.Context
 	span      Span
 
-	metrics    Metrics
-	dispatcher Dispatcher
+	metrics   Metrics
+	sendEvent func(err Error)
 
 	formatter        FormatErrorFunc
 	stackTraceConfig *StackTraceConfig
@@ -36,19 +35,19 @@ func NewTemplate(fields ...any) *ErrorTemplate {
 }
 
 func (t *ErrorTemplate) WithID(id string) *ErrorTemplate {
+	if id == "" {
+		return t
+	}
 	newT := *t
 	newT.id = id
 	return &newT
 }
 
-func (t *ErrorTemplate) WithStack() *ErrorTemplate {
-	newT := *t
-	newT.includeStack = true
-	return &newT
-}
-
 // WithClass sets the error class for the template
 func (t *ErrorTemplate) WithClass(class Class) *ErrorTemplate {
+	if class == "" {
+		return t
+	}
 	newT := *t
 	newT.class = class
 	return &newT
@@ -56,6 +55,9 @@ func (t *ErrorTemplate) WithClass(class Class) *ErrorTemplate {
 
 // WithCategory sets the error category for the template
 func (t *ErrorTemplate) WithCategory(category Category) *ErrorTemplate {
+	if category == "" {
+		return t
+	}
 	newT := *t
 	newT.category = category
 	return &newT
@@ -63,10 +65,10 @@ func (t *ErrorTemplate) WithCategory(category Category) *ErrorTemplate {
 
 // WithSeverity sets the error severity for the template
 func (t *ErrorTemplate) WithSeverity(severity Severity) *ErrorTemplate {
-	newT := *t
 	if !severity.IsValid() {
-		severity = SeverityUnknown
+		return t
 	}
+	newT := *t
 	newT.severity = severity
 	return &newT
 }
@@ -80,6 +82,9 @@ func (t *ErrorTemplate) WithRetryable(retryable bool) *ErrorTemplate {
 
 // WithFields adds fields to the template
 func (t *ErrorTemplate) WithFields(fields ...any) *ErrorTemplate {
+	if len(fields) == 0 {
+		return t
+	}
 	newT := *t
 	preparedFields := prepareFields(fields)
 	newT.fields = make([]any, 0, len(t.fields)+len(preparedFields))
@@ -90,6 +95,9 @@ func (t *ErrorTemplate) WithFields(fields ...any) *ErrorTemplate {
 
 // WithMessageTemplate sets a message template with placeholders
 func (t *ErrorTemplate) WithMessageTemplate(template string) *ErrorTemplate {
+	if template == "" {
+		return t
+	}
 	newT := *t
 	newT.messageTemplate = template
 	return &newT
@@ -97,39 +105,55 @@ func (t *ErrorTemplate) WithMessageTemplate(template string) *ErrorTemplate {
 
 // WithMetrics sets the metrics for the template
 func (t *ErrorTemplate) WithMetrics(metrics Metrics) *ErrorTemplate {
+	if metrics == nil {
+		return t
+	}
 	newT := *t
 	newT.metrics = metrics
 	return &newT
 }
 
 // WithDispatcher sets the dispatcher for the template
-func (t *ErrorTemplate) WithDispatcher(dispatcher Dispatcher) *ErrorTemplate {
+func (t *ErrorTemplate) WithEvent(ctx context.Context, dispatcher Dispatcher) *ErrorTemplate {
+	if dispatcher == nil {
+		return t
+	}
 	newT := *t
-	newT.dispatcher = dispatcher
+	newT.sendEvent = func(err Error) {
+		dispatcher.SendEvent(ctx, err)
+	}
 	return &newT
 }
 
-// WithGoContext sets the context for the template
-func (t *ErrorTemplate) WithGoContext(ctx context.Context) *ErrorTemplate {
+func (t *ErrorTemplate) WithStack() *ErrorTemplate {
 	newT := *t
-	newT.ctx = ctx
+	newT.includeStack = true
 	return &newT
 }
 
 // WithSpan sets the span for the template
 func (t *ErrorTemplate) WithSpan(span Span) *ErrorTemplate {
+	if span == nil {
+		return t
+	}
 	newT := *t
 	newT.span = span
 	return &newT
 }
 
 func (t *ErrorTemplate) WithFormatter(formatter FormatErrorFunc) *ErrorTemplate {
+	if formatter == nil {
+		return t
+	}
 	newT := *t
 	newT.formatter = formatter
 	return &newT
 }
 
 func (t *ErrorTemplate) WithStackTraceConfig(config *StackTraceConfig) *ErrorTemplate {
+	if config == nil {
+		return t
+	}
 	newT := *t
 	newT.stackTraceConfig = config
 	newT.includeStack = true
@@ -173,16 +197,7 @@ func (t *ErrorTemplate) Newf(message string, fields ...any) Error {
 		}
 	}
 
-	err := t.buildError(nil, message, fields...)
-
-	if t.metrics != nil {
-		t.metrics.RecordError(err.Context())
-	}
-	if t.dispatcher != nil {
-		t.dispatcher.SendEvent(t.ctx, err.Context())
-	}
-
-	return err
+	return t.buildError(nil, message, fields...)
 }
 
 func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
@@ -220,17 +235,7 @@ func (t *ErrorTemplate) Wrapf(originalErr error, message string, fields ...any) 
 			message = strings.TrimSuffix(t.messageTemplate, ": %s")
 		}
 	}
-
-	err := t.buildError(originalErr, message, fields...)
-
-	if t.metrics != nil {
-		t.metrics.RecordError(err.Context())
-	}
-	if t.dispatcher != nil {
-		t.dispatcher.SendEvent(t.ctx, err.Context())
-	}
-
-	return err
+	return t.buildError(originalErr, message, fields...)
 }
 
 // formatTemplate formats a template string using fields
@@ -248,7 +253,7 @@ func (t *ErrorTemplate) formatTemplate(fields ...any) string {
 
 func (t *ErrorTemplate) buildError(originalErr error, message string, fields ...any) Error {
 
-	b := NewBuilderWithError(originalErr, message, fields...)
+	b := NewWrapper(originalErr, message, fields...)
 
 	if len(t.fields) > 0 {
 		b.WithFields(t.fields...)
@@ -269,6 +274,12 @@ func (t *ErrorTemplate) buildError(originalErr error, message string, fields ...
 	}
 	if t.span != nil {
 		b.WithSpan(t.span)
+	}
+	if t.metrics != nil {
+		b.WithMetrics(t.metrics)
+	}
+	if t.sendEvent != nil {
+		b.WithEventFunc(t.sendEvent)
 	}
 	if t.formatter != nil {
 		b.WithFormatter(t.formatter)
