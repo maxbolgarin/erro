@@ -15,37 +15,34 @@ func processPayment() erro.Error {
 	return erro.Wrap(sensitiveFunction(), "payment processing failed", "transaction_id", "tx_456")
 }
 
-func handleRequest() erro.Error {
-	return erro.Wrap(processPayment(), "request handling failed", "request_id", "req_789")
+func handleRequest(cfg *erro.StackTraceConfig) erro.Error {
+	return erro.Wrap(processPayment(), "request handling failed", "request_id", "req_789").WithStackTraceConfig(cfg)
 }
 
 func main() {
 	// Development mode (default) - shows all information
 	fmt.Println("=== DEVELOPMENT MODE (Default) ===")
-	err := handleRequest()
+	err := handleRequest(erro.DevelopmentStackTraceConfig())
 	fmt.Printf("%+v\n", err)
 
 	// Production mode - hides sensitive information
 	fmt.Println("\n=== PRODUCTION MODE ===")
-	erro.SetProductionStackTrace()
-	err = handleRequest()
+	err = handleRequest(erro.ProductionStackTraceConfig())
 	fmt.Printf("%+v\n", err)
 
 	// Strict mode - minimal information
 	fmt.Println("\n=== STRICT MODE ===")
-	erro.SetStrictStackTrace()
-	err = handleRequest()
+	err = handleRequest(erro.StrictStackTraceConfig())
 	fmt.Printf("%+v\n", err)
 
 	// Completely disable stack traces
 	fmt.Println("\n=== DISABLED STACK TRACES ===")
-	erro.DisableStackTrace()
-	err = handleRequest()
+	err = handleRequest(erro.NoStackTraceConfig())
 	fmt.Printf("%+v\n", err)
 
 	// Custom configuration
 	fmt.Println("\n=== CUSTOM CONFIGURATION ===")
-	erro.SetDefaultStackTraceConfig(&erro.StackTraceConfig{
+	cfg := &erro.StackTraceConfig{
 		Enabled:           true,
 		ShowFullPaths:     false,
 		ShowFunctionNames: true, // Show function names but not paths
@@ -55,14 +52,13 @@ func main() {
 		PathElements:      1, // Show only 1 path element (just parent directory + filename)
 		FunctionRedacted:  "[FUNC]",
 		MaxFrames:         3,
-	})
-	err = handleRequest()
+	}
+	err = handleRequest(cfg)
 	fmt.Printf("%+v\n", err)
 
 	// Demonstrate secure formatting methods
 	fmt.Println("\n=== SECURE FORMATTING METHODS ===")
-	erro.SetProductionStackTrace()
-	err = handleRequest()
+	err = handleRequest(erro.ProductionStackTraceConfig())
 	fmt.Printf("SecureString: %s\n", err.Context().Stack().String())
 	fmt.Printf("SecureFormatFull:\n%s\n", err.Context().Stack().FormatFull())
 

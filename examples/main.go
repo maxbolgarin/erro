@@ -42,7 +42,7 @@ func main() {
 	// fmt.Println(errLight)
 
 	errBase := errors.New("test")
-	err1 := erro.Wrap(errBase, "wrapped", "wrapped_field").WithCategory(erro.CategoryDatabase).WithClass(erro.ClassValidation).WithRetryable(true).WithID()
+	err1 := erro.Wrap(errBase, "wrapped", "wrapped_field").WithCategory(erro.CategoryDatabase).WithClass(erro.ClassValidation).WithRetryable(true)
 	fmt.Println(erro.Wrap(err1, "wrapped2", "wrapped_field2").WithCategory(erro.CategoryAPI).WithClass(erro.ClassValidation).WithRetryable(true))
 
 	fmt.Println(err1.Context().ID())

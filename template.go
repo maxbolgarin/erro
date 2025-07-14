@@ -31,7 +31,7 @@ type ErrorTemplate struct {
 func NewTemplate(fields ...any) *ErrorTemplate {
 	return &ErrorTemplate{
 		fields:    fields,
-		formatter: GetDefaultFormatter(),
+		formatter: FormatErrorWithFields,
 	}
 }
 

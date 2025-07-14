@@ -374,7 +374,7 @@ func getLogFieldsMap(ec ErrorContext, optsRaw ...LogOptions) map[string]any {
 		if !ok {
 			key = valueToString(fields[i])
 		}
-		fieldsMap[truncateString(key, maxFieldKeyLength)] = fields[i+1]
+		fieldsMap[truncateString(key, MaxKeyLength)] = fields[i+1]
 	}
 	return fieldsMap
 }

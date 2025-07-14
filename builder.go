@@ -31,7 +31,7 @@ func NewBuilder(message string, fields ...any) *Builder {
 	b := &Builder{
 		message:   message,
 		fields:    fields,
-		formatter: GetDefaultFormatter(),
+		formatter: FormatErrorWithFields,
 	}
 	return b
 }
@@ -43,7 +43,7 @@ func NewBuilderWithError(err error, message string, fields ...any) *Builder {
 		cause:     err,
 		message:   message,
 		fields:    fields,
-		formatter: GetDefaultFormatter(),
+		formatter: FormatErrorWithFields,
 	}
 	return b
 }
@@ -85,11 +85,6 @@ func (b *Builder) WithID(id string) *Builder {
 	return b
 }
 
-func (b *Builder) GenerateID() *Builder {
-	b.id = newID(b.class, b.category)
-	return b
-}
-
 // Retryable sets the retryable flag for the error.
 func (b *Builder) WithRetryable(r bool) *Builder {
 	b.retryable = r
@@ -125,6 +120,9 @@ func (b *Builder) WithStack() *Builder {
 func (b *Builder) Build() Error {
 	// --- Case 1: Build a lightweight error ---
 	if !b.isEncludeStack {
+		if b.id == "" {
+			b.id = newID()
+		}
 		return &lightError{
 			message:   b.message,
 			cause:     b.cause,

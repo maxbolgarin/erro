@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -85,13 +86,13 @@ func buildFieldsMessage(message string, fields []any) (out string) {
 		if !ok {
 			key = valueToString(fields[i])
 		}
-		msg = append(msg, truncateString(key, maxFieldKeyLength)...)
+		msg = append(msg, truncateString(key, MaxKeyLength)...)
 		msg = append(msg, '=')
 		value, ok := fields[i+1].(string)
 		if !ok {
 			value = valueToString(fields[i+1])
 		}
-		msg = append(msg, truncateString(value, maxFieldValueLength)...)
+		msg = append(msg, truncateString(value, MaxValueLength)...)
 	}
 
 	return string(msg)
@@ -223,12 +224,11 @@ func formatError(err Error, s fmt.State, verb rune) {
 			// Print with stack trace
 			fmt.Fprint(s, err.Error())
 
-			config := GetDefaultStackTraceConfig()
-			if !config.Enabled {
-				return // No stack trace in disabled mode
+			stack := err.Context().Stack()
+			if len(stack) > 0 {
+				fmt.Fprint(s, "\nStack trace:\n")
+				fmt.Fprint(s, stack.FormatFull())
 			}
-			fmt.Fprint(s, "\nStack trace:\n")
-			fmt.Fprint(s, err.Context().Stack().FormatFull())
 
 		} else {
 			fmt.Fprint(s, err.Error())
@@ -238,40 +238,20 @@ func formatError(err Error, s fmt.State, verb rune) {
 	}
 }
 
-func newID(class Class, category Category) string {
-	var buf [12]byte
+func newID() string {
+	var buf [8]byte
 
-	if len(class) < 2 {
-		buf[0] = 'X'
-		buf[1] = 'X'
-	} else {
-		buf[0] = toUpperByte(class[0])
-		buf[1] = toUpperByte(class[1])
-	}
-	if len(category) < 2 {
-		buf[2] = 'X'
-		buf[3] = 'X'
-	} else {
-		buf[2] = toUpperByte(category[0])
-		buf[3] = toUpperByte(category[1])
-	}
-	buf[4] = '_'
-
-	// Generate a single random 42-bit number (covers 7 digits in base36)
 	rnd := rand.Int63()
-	for i := 5; i < len(buf); i++ {
-		n := int((rnd >> (6 * (i - 5))) & 0x3F) // 6 bits per digit, up to 63
-		buf[i] = '0' + byte(n%10)
+	for i := 0; i < len(buf); i++ {
+		n := int((rnd >> (6 * i)) & 0x3F)
+		n = n % 36
+		if n < 10 {
+			buf[i] = '0' + byte(n)
+		} else {
+			buf[i] = 'a' + byte(n-10)
+		}
 	}
-
 	return string(buf[:])
-}
-
-func toUpperByte(b byte) byte {
-	if b >= 'a' && b <= 'z' {
-		return b - 'a' + 'A'
-	}
-	return b
 }
 
 func safeErrorString(err error) (res string) {
@@ -284,4 +264,23 @@ func safeErrorString(err error) (res string) {
 		}
 	}()
 	return err.Error()
+}
+
+type atomicValue[T any] struct {
+	value atomic.Value
+}
+
+func (a *atomicValue[T]) Load() T {
+	if a.value.Load() == nil {
+		return *new(T)
+	}
+	out, ok := a.value.Load().(T)
+	if !ok {
+		return *new(T)
+	}
+	return out
+}
+
+func (a *atomicValue[T]) Store(value T) {
+	a.value.Store(value)
 }

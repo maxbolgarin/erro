@@ -185,7 +185,6 @@ func Benchmark_NewBuilder_WithStack_NotOptimized(b *testing.B) {
 			WithCategory("test").
 			WithClass("test").
 			WithSeverity("test").
-			GenerateID().
 			WithRetryable(true).
 			WithSpan(nil).
 			WithFields("key3", "val3", "key4", 43).

@@ -25,7 +25,7 @@ type wrapError struct {
 	retryable *bool // Use a pointer for a tri-state: nil=not set, true=set true, false=set false
 	span      Span
 
-	fullMessage string // Full message with fields (caching)
+	fullMessage atomicValue[string] // Full message with fields (caching)
 
 	formatter        FormatErrorFunc
 	stackTraceConfig *StackTraceConfig
@@ -36,8 +36,8 @@ func (e *wrapError) Error() (out string) {
 	if e.wrapMessage == "" {
 		return e.Unwrap().Error()
 	}
-	if e.fullMessage != "" {
-		return e.fullMessage
+	if fullMessage := e.fullMessage.Load(); fullMessage != "" {
+		return fullMessage
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -45,11 +45,12 @@ func (e *wrapError) Error() (out string) {
 			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
 	}()
-	e.fullMessage = e.wrapMessage
+	out = e.wrapMessage
 	if formatter := e.Formatter(); formatter != nil {
-		e.fullMessage = unwrapErrorMessage(e, formatter(e))
+		out = unwrapErrorMessage(e, formatter(e))
 	}
-	return e.fullMessage
+	e.fullMessage.Store(out)
+	return out
 }
 
 func (e *wrapError) Format(s fmt.State, verb rune) {
@@ -62,36 +63,39 @@ func (e *wrapError) Unwrap() error {
 }
 
 // Chaining methods for wrapError - these modify the base error
-func (e *wrapError) WithID(idRaw ...string) Error {
-	var id string
-	if len(idRaw) > 0 {
-		id = truncateString(idRaw[0], maxCodeLength)
-	} else {
-		id = newID(e.Class(), e.Category())
+func (e *wrapError) WithID(id string) Error {
+	if id == "" {
+		return e
 	}
 	return &wrapError{
 		wrapped: e,
-		id:      id,
+		id:      truncateString(id, MaxKeyLength),
 	}
 }
 
 func (e *wrapError) WithCategory(category Category) Error {
+	if category == CategoryUnknown {
+		return e
+	}
 	return &wrapError{
 		wrapped:  e,
-		category: category,
+		category: truncateString(category, MaxValueLength),
 	}
 }
 
 func (e *wrapError) WithClass(class Class) Error {
+	if class == ClassUnknown {
+		return e
+	}
 	return &wrapError{
 		wrapped: e,
-		class:   class,
+		class:   truncateString(class, MaxValueLength),
 	}
 }
 
 func (e *wrapError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
-		severity = SeverityUnknown
+		return e
 	}
 	return &wrapError{
 		wrapped:  e,
@@ -116,7 +120,7 @@ func (e *wrapError) WithFields(fields ...any) Error {
 	newE.fields = append(newE.fields, preparedFields...)
 
 	// Invalidate the message cache on the new copy.
-	newE.fullMessage = ""
+	newE.fullMessage.Store("")
 
 	// Record fields in the span if it exists.
 	if newE.span != nil {
@@ -127,15 +131,22 @@ func (e *wrapError) WithFields(fields ...any) Error {
 }
 
 func (e *wrapError) WithStackTraceConfig(config *StackTraceConfig) Error {
+	if config == nil {
+		return e
+	}
 	newE := *e
 	newE.stackTraceConfig = config
+	newE.fullMessage.Store("")
 	return &newE
 }
 
 func (e *wrapError) WithFormatter(formatter FormatErrorFunc) Error {
+	if formatter == nil {
+		return e
+	}
 	newE := *e
 	newE.formatter = formatter
-	newE.fullMessage = ""
+	newE.fullMessage.Store("")
 	return &newE
 }
 
@@ -286,6 +297,9 @@ func (e *wrapError) Message() string {
 }
 
 func (e *wrapError) Fields() []any {
+	if len(e.fields) == 0 {
+		return e.wrapped.Context().Fields()
+	}
 	out := make([]any, len(e.fields))
 	copy(out, e.fields)
 	return out
@@ -344,7 +358,7 @@ func (e *wrapError) MarshalJSON() ([]byte, error) {
 func newWrapError(wrapped Error, message string, fields ...any) Error {
 	// 1. Perform the check before creating the new wrapper.
 	depth := calculateWrapDepth(wrapped)
-	if depth >= maxWrapDepth {
+	if depth >= MaxWrapDepth {
 		// Do not create a new wrapper. Instead, return a specific error.
 		// We wrap the original 'wrapped' error so it's not lost.
 		return Wrap(ErrMaxWrapDepthExceeded, "failed to wrap error", "original_error", wrapped)
@@ -358,9 +372,10 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 
 	return &wrapError{
 		wrapped:     wrapped,
-		wrapMessage: truncateString(message, maxMessageLength),
+		wrapMessage: truncateString(message, MaxMessageLength),
 		fields:      preparedFields,
-		formatter:   GetDefaultFormatter(),
+		formatter:   FormatErrorWithFields,
+		id:          newID(),
 	}
 }
 

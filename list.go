@@ -204,7 +204,7 @@ func (g *List) WithSeverity(severity Severity) *List {
 }
 
 func (g *List) WithFields(fields ...any) *List {
-	g.fields = safeAppendFields(g.fields, prepareFields(fields))
+	g.fields = append(g.fields, prepareFields(fields)...)
 	return g
 }
 
@@ -720,7 +720,7 @@ func (g *SafeList) WithSeverity(severity Severity) *SafeList {
 
 func (g *SafeList) WithFields(fields ...any) *SafeList {
 	g.mu.Lock()
-	g.fields = safeAppendFields(g.fields, prepareFields(fields))
+	g.fields = append(g.fields, prepareFields(fields)...)
 	g.mu.Unlock()
 	return g
 }
@@ -1043,7 +1043,7 @@ func (s *SafeSet) WithFields(fields ...any) *SafeSet {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.fields = safeAppendFields(s.fields, prepareFields(fields))
+	s.fields = append(s.fields, prepareFields(fields)...)
 	return s
 }
 

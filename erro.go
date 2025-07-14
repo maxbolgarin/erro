@@ -2,12 +2,10 @@ package erro
 
 import (
 	"context"
-	"crypto/md5"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 )
 
 // New creates a new error with optional fields
@@ -43,7 +41,10 @@ func Wrap(err error, message string, fields ...any) Error {
 
 	// If it's already an erro error, create a wrap that points to its base
 	if erroErr, ok := err.(Error); ok && erroErr != nil {
-		// TODO: handle light
+		if IsLight(erroErr) {
+			// If user calls Wrap on a light error, we need to convert it to a base error
+			return newBaseError(erroErr, message, fields...)
+		}
 		return newWrapError(erroErr, message, fields...)
 	}
 
@@ -71,6 +72,10 @@ func Wrapf(err error, message string, args ...any) Error {
 
 	// If it's already an erro error, create a wrap that points to its base
 	if erroErr, ok := err.(Error); ok && erroErr != nil {
+		if IsLight(erroErr) {
+			// If user calls Wrapf on a light error, we need to convert it to a base error
+			return newBaseError(erroErr, message, args...)
+		}
 		return newWrapError(erroErr, message, args...)
 	}
 
@@ -86,20 +91,15 @@ func WrapEmpty(err error) Error {
 
 	// If it's already an erro error, create a wrap that points to its base
 	if erroErr, ok := err.(Error); ok && erroErr != nil {
+		if IsLight(erroErr) {
+			// If user calls WrapEmpty on a light error, we need to convert it to a base error
+			return newBaseError(erroErr, "")
+		}
 		return newWrapError(erroErr, "")
 	}
 
 	// For external errors, create a new base error that wraps it
 	return newBaseError(err, "")
-}
-
-func NewSentinel(message string) Error {
-	err := &lightError{
-		message:   truncateString(message, maxMessageLength),
-		formatter: FormatErrorMessage,
-		id:        fmt.Sprintf("%x", md5.Sum([]byte(message)))[:12],
-	}
-	return err
 }
 
 func Close(err *error, cl io.Closer, msg string, fields ...any) {
@@ -181,142 +181,90 @@ func HTTPCode(err error) int {
 		erroErr = e
 	}
 
-	if erroErr != nil {
-		class := erroErr.Context().Class()
-		category := erroErr.Context().Category()
-		message := erroErr.Context().Message()
-		switch class {
-		case ClassValidation:
+	if erroErr == nil {
+		return status
+	}
+
+	class := erroErr.Context().Class()
+	category := erroErr.Context().Category()
+	switch class {
+	case ClassValidation:
+		status = http.StatusBadRequest
+	case ClassNotFound:
+		status = http.StatusNotFound
+	case ClassAlreadyExists:
+		status = http.StatusConflict
+	case ClassPermissionDenied:
+		status = http.StatusForbidden
+	case ClassUnauthenticated:
+		status = http.StatusUnauthorized
+	case ClassTimeout:
+		status = http.StatusGatewayTimeout
+	case ClassConflict:
+		status = http.StatusConflict
+	case ClassRateLimited:
+		status = http.StatusTooManyRequests
+	case ClassTemporary:
+		status = http.StatusServiceUnavailable
+	case ClassUnavailable:
+		status = http.StatusServiceUnavailable
+	case ClassInternal:
+		status = http.StatusInternalServerError
+	case ClassCancelled:
+		status = 499 // Client Closed Request (non-standard)
+	case ClassNotImplemented:
+		status = http.StatusNotImplemented
+	case ClassSecurity:
+		status = http.StatusForbidden
+	case ClassCritical:
+		status = http.StatusInternalServerError
+	case ClassExternal:
+		status = http.StatusBadGateway
+	case ClassDataLoss:
+		status = http.StatusInternalServerError
+	case ClassResourceExhausted:
+		status = http.StatusTooManyRequests
+	default:
+		// Try category if class is unknown
+		switch category {
+		case CategoryUserInput:
 			status = http.StatusBadRequest
-		case ClassNotFound:
-			status = http.StatusNotFound
-		case ClassAlreadyExists:
-			status = http.StatusConflict
-		case ClassPermissionDenied:
-			status = http.StatusForbidden
-		case ClassUnauthenticated:
+		case CategoryAuth:
 			status = http.StatusUnauthorized
-		case ClassTimeout:
-			status = http.StatusGatewayTimeout
-		case ClassConflict:
-			status = http.StatusConflict
-		case ClassRateLimited:
-			status = http.StatusTooManyRequests
-		case ClassTemporary:
-			status = http.StatusServiceUnavailable
-		case ClassUnavailable:
-			status = http.StatusServiceUnavailable
-		case ClassInternal:
+		case CategoryDatabase:
 			status = http.StatusInternalServerError
-		case ClassCancelled:
-			status = 499 // Client Closed Request (non-standard)
-		case ClassNotImplemented:
-			status = http.StatusNotImplemented
-		case ClassSecurity:
-			status = http.StatusForbidden
-		case ClassCritical:
-			status = http.StatusInternalServerError
-		case ClassExternal:
+		case CategoryNetwork:
 			status = http.StatusBadGateway
-		case ClassDataLoss:
+		case CategoryAPI:
+			status = http.StatusBadGateway
+		case CategoryBusinessLogic:
+			status = http.StatusUnprocessableEntity
+		case CategoryCache:
+			status = http.StatusServiceUnavailable
+		case CategoryConfig:
 			status = http.StatusInternalServerError
-		case ClassResourceExhausted:
-			status = http.StatusTooManyRequests
-		default:
-			// Try category if class is unknown
-			switch category {
-			case CategoryUserInput:
-				status = http.StatusBadRequest
-			case CategoryAuth:
-				status = http.StatusUnauthorized
-			case CategoryDatabase:
-				status = http.StatusInternalServerError
-			case CategoryNetwork:
-				status = http.StatusBadGateway
-			case CategoryAPI:
-				status = http.StatusBadGateway
-			case CategoryBusinessLogic:
-				status = http.StatusUnprocessableEntity
-			case CategoryCache:
-				status = http.StatusServiceUnavailable
-			case CategoryConfig:
-				status = http.StatusInternalServerError
-			case CategoryExternal:
-				status = http.StatusBadGateway
-			case CategorySecurity:
-				status = http.StatusForbidden
-			case CategoryPayment:
-				status = http.StatusPaymentRequired
-			case CategoryStorage:
-				status = http.StatusInsufficientStorage
-			case CategoryProcessing:
-				status = http.StatusUnprocessableEntity
-			case CategoryAnalytics:
-				status = http.StatusInternalServerError
-			case CategoryAI:
-				status = http.StatusInternalServerError
-			case CategoryMonitoring:
-				status = http.StatusInternalServerError
-			case CategoryNotifications:
-				status = http.StatusInternalServerError
-			case CategoryEvents:
-				status = http.StatusInternalServerError
-			}
-			// Fallback to message if still unknown
-			if status == http.StatusInternalServerError && message != "" {
-				status = statusFromMessage(message)
-			}
+		case CategoryExternal:
+			status = http.StatusBadGateway
+		case CategorySecurity:
+			status = http.StatusForbidden
+		case CategoryPayment:
+			status = http.StatusPaymentRequired
+		case CategoryStorage:
+			status = http.StatusInsufficientStorage
+		case CategoryProcessing:
+			status = http.StatusUnprocessableEntity
+		case CategoryAnalytics:
+			status = http.StatusInternalServerError
+		case CategoryAI:
+			status = http.StatusInternalServerError
+		case CategoryMonitoring:
+			status = http.StatusInternalServerError
+		case CategoryNotifications:
+			status = http.StatusInternalServerError
+		case CategoryEvents:
+			status = http.StatusInternalServerError
 		}
-	} else {
-		// Not an erro error, use message string matching
-		status = statusFromMessage(err.Error())
 	}
 
 	return status
-}
-
-// statusFromMessage tries to guess HTTP status code from error message
-func statusFromMessage(msg string) int {
-	msg = strings.ToLower(msg)
-	switch {
-	case strings.Contains(msg, "not found"):
-		return http.StatusNotFound
-	case strings.Contains(msg, "already exists"):
-		return http.StatusConflict
-	case strings.Contains(msg, "permission denied"):
-		return http.StatusForbidden
-	case strings.Contains(msg, "unauthenticated"), strings.Contains(msg, "unauthorized"):
-		return http.StatusUnauthorized
-	case strings.Contains(msg, "timeout"):
-		return http.StatusGatewayTimeout
-	case strings.Contains(msg, "conflict"):
-		return http.StatusConflict
-	case strings.Contains(msg, "rate limit"):
-		return http.StatusTooManyRequests
-	case strings.Contains(msg, "temporary"), strings.Contains(msg, "unavailable"):
-		return http.StatusServiceUnavailable
-	case strings.Contains(msg, "validation"), strings.Contains(msg, "invalid"), strings.Contains(msg, "bad request"):
-		return http.StatusBadRequest
-	case strings.Contains(msg, "cancelled"), strings.Contains(msg, "canceled"):
-		return 499 // Client Closed Request (non-standard)
-	case strings.Contains(msg, "not implemented"):
-		return http.StatusNotImplemented
-	case strings.Contains(msg, "security") || strings.Contains(msg, "forbidden"):
-		return http.StatusForbidden
-	case strings.Contains(msg, "critical"), strings.Contains(msg, "internal"):
-		return http.StatusInternalServerError
-	case strings.Contains(msg, "external") || strings.Contains(msg, "bad gateway"):
-		return http.StatusBadGateway
-	case strings.Contains(msg, "data loss"):
-		return http.StatusInternalServerError
-	case strings.Contains(msg, "resource exhausted"):
-		return http.StatusTooManyRequests
-	case strings.Contains(msg, "payment"):
-		return http.StatusPaymentRequired
-	case strings.Contains(msg, "storage"):
-		return http.StatusInsufficientStorage
-	case strings.Contains(msg, "processing"):
-		return http.StatusUnprocessableEntity
-	}
-	return http.StatusInternalServerError
 }

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
-	"sync/atomic"
 )
 
 var (
@@ -50,9 +50,6 @@ type StackTraceConfig struct {
 	FileNameRedacted string // Placeholder for redacted file names (default: "[some_file]")
 
 	MaxFrames int // Maximum number of frames to show
-
-	SamplingRate    float64 // Sampling rate for stack traces (0.0 - 1.0)
-	samplingCounter uint64
 }
 
 // DevelopmentStackTraceConfig returns the development-safe stack trace configuration
@@ -66,7 +63,6 @@ func DevelopmentStackTraceConfig() *StackTraceConfig {
 		ShowLineNumbers:   true,
 		ShowAllCodeFrames: true,
 		PathElements:      -1, // Show full path
-		SamplingRate:      1.0,
 	}
 }
 
@@ -83,8 +79,7 @@ func ProductionStackTraceConfig() *StackTraceConfig {
 		ShowLineNumbers:   true,  // Show line numbers for debugging
 		ShowAllCodeFrames: false,
 
-		MaxFrames:    10,
-		SamplingRate: 1.0,
+		MaxFrames: 10,
 	}
 }
 
@@ -102,34 +97,12 @@ func StrictStackTraceConfig() *StackTraceConfig {
 		ShowAllCodeFrames: true,
 
 		MaxFrames: 3, // Very limited frames for strict mode
-
-		SamplingRate: 1.0,
 	}
 }
 
 // NoStackTraceConfig returns a configuration that completely disables stack traces
 func NoStackTraceConfig() *StackTraceConfig {
 	return &StackTraceConfig{}
-}
-
-// SetDevelopmentStackTrace enables development-safe stack trace configuration
-func SetDevelopmentStackTrace() {
-	SetDefaultStackTraceConfig(DevelopmentStackTraceConfig())
-}
-
-// SetProductionStackTrace enables production-safe stack trace configuration
-func SetProductionStackTrace() {
-	SetDefaultStackTraceConfig(ProductionStackTraceConfig())
-}
-
-// SetStrictStackTrace enables strict privacy stack trace configuration
-func SetStrictStackTrace() {
-	SetDefaultStackTraceConfig(StrictStackTraceConfig())
-}
-
-// DisableStackTrace completely disables stack traces
-func DisableStackTrace() {
-	SetDefaultStackTraceConfig(NoStackTraceConfig())
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -242,6 +215,8 @@ func (f StackFrame) IsTest() bool {
 		strings.Contains(f.Name, "Test") ||
 		strings.Contains(f.File, "testing/")
 }
+
+var buildInfo, _ = debug.ReadBuildInfo()
 
 // IsErroInternal returns true if this frame is from erro internal functions
 func (f StackFrame) IsErroInternal() bool {
@@ -639,28 +614,12 @@ type rawStack []uintptr
 
 // captureStack captures just the program counters for maximum performance
 func captureStack(skip int) rawStack {
-	cfg := GetDefaultStackTraceConfig()
-	rate := cfg.SamplingRate
-
-	if rate <= 0.0 {
-		return nil
-	}
-
-	if rate < 1.0 {
-		// Deterministic sampling using atomic counter
-		counter := atomic.AddUint64(&cfg.samplingCounter, 1)
-		threshold := uint64(1.0 / rate)
-		if counter%threshold != 0 {
-			return nil
-		}
-	}
-
 	defer func() {
 		if r := recover(); r != nil {
 		}
 	}()
 
-	pcs := make([]uintptr, maxStackDepth)
+	pcs := make([]uintptr, MaxStackDepth)
 	n := runtime.Callers(skip+1, pcs)
 
 	// Copy only the used portion to avoid storing unused memory
@@ -671,16 +630,15 @@ func captureStack(skip int) rawStack {
 }
 
 // toFrames converts the raw stack to resolved stack frames on demand
-func (rs rawStack) toFrames(config *StackTraceConfig) Stack {
+func (rs rawStack) toFrames(cfg *StackTraceConfig) Stack {
 	if len(rs) == 0 {
 		return nil
 	}
 
 	frames := make(Stack, 0, len(rs))
 	runtimeFrames := runtime.CallersFrames(rs)
-	cfg := config
 	if cfg == nil {
-		cfg = GetDefaultStackTraceConfig()
+		cfg = DevelopmentStackTraceConfig()
 	}
 
 	for {

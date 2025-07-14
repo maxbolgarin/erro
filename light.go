@@ -10,7 +10,7 @@ import (
 type lightError struct {
 	message     string
 	cause       error // For wrapping external errors
-	fullMessage string
+	fullMessage atomicValue[string]
 
 	id        string
 	class     Class
@@ -32,8 +32,8 @@ func WrapLight(err error, message string, fields ...any) Error {
 }
 
 func (e *lightError) Error() (out string) {
-	if e.fullMessage != "" {
-		return e.fullMessage
+	if fullMessage := e.fullMessage.Load(); fullMessage != "" {
+		return fullMessage
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -41,11 +41,12 @@ func (e *lightError) Error() (out string) {
 			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
 	}()
-	e.fullMessage = e.message
+	out = e.message
 	if formatter := e.Formatter(); formatter != nil {
-		e.fullMessage = unwrapErrorMessage(e, formatter(e))
+		out = unwrapErrorMessage(e, formatter(e))
 	}
-	return e.fullMessage
+	e.fullMessage.Store(out)
+	return out
 }
 
 // Unwrap implements the Unwrap interface
@@ -54,41 +55,50 @@ func (e *lightError) Unwrap() error {
 }
 
 // Implement Error interface methods (lightweight versions)
-func (e *lightError) WithID(idRaw ...string) Error {
-	newE := *e // Create a copy
-	if len(idRaw) > 0 {
-		newE.id = truncateString(idRaw[0], maxCodeLength)
-	} else if newE.id == "" {
-		newE.id = newID(newE.class, newE.category)
+func (e *lightError) WithID(id string) Error {
+	if id == "" {
+		return e
 	}
+	newE := *e // Create a copy
+	newE.id = truncateString(id, MaxKeyLength)
+	newE.fullMessage.Store("")
 	return &newE
 }
 
 func (e *lightError) WithClass(class Class) Error {
+	if class == ClassUnknown {
+		return e
+	}
 	newE := *e // Create a copy
-	newE.class = class
+	newE.class = truncateString(class, MaxValueLength)
+	newE.fullMessage.Store("")
 	return &newE
 }
 
 func (e *lightError) WithCategory(category Category) Error {
+	if category == CategoryUnknown {
+		return e
+	}
 	newE := *e // Create a copy
-	newE.category = category
+	newE.category = truncateString(category, MaxValueLength)
+	newE.fullMessage.Store("")
 	return &newE
 }
 
 func (e *lightError) WithSeverity(severity Severity) Error {
 	if !severity.IsValid() {
-		severity = SeverityUnknown
+		return e
 	}
 	newE := *e // Create a copy
 	newE.severity = severity
-	newE.fullMessage = ""
+	newE.fullMessage.Store("")
 	return &newE
 }
 
 func (e *lightError) WithRetryable(retryable bool) Error {
-	newE := *e // Create a copy
+	newE := *e
 	newE.retryable = retryable
+	newE.fullMessage.Store("")
 	return &newE
 }
 
@@ -101,12 +111,12 @@ func (e *lightError) WithFields(fields ...any) Error {
 		return e
 	}
 
-	newE := *e // Create a copy
+	newE := *e
 	newE.fields = make([]any, 0, len(e.fields)+len(preparedFields))
 	newE.fields = append(newE.fields, e.fields...)
 	newE.fields = append(newE.fields, preparedFields...)
 
-	newE.fullMessage = "" // Invalidate cache on the copy
+	newE.fullMessage.Store("") // Invalidate cache on the copy
 
 	if newE.span != nil {
 		newE.span.SetAttributes(preparedFields...)
@@ -122,13 +132,17 @@ func (e *lightError) WithSpan(span Span) Error {
 	span.SetAttributes(newE.fields...)
 	span.RecordError(&newE)
 	newE.span = span
+	newE.fullMessage.Store("")
 	return &newE
 }
 
 func (e *lightError) WithFormatter(formatter FormatErrorFunc) Error {
+	if formatter == nil {
+		return e
+	}
 	newE := *e
 	newE.formatter = formatter
-	newE.fullMessage = ""
+	newE.fullMessage.Store("")
 	return &newE
 }
 
@@ -156,32 +170,98 @@ func (e *lightError) SendEvent(ctx context.Context, dispatcher Dispatcher) Error
 // Getter methods
 func (e *lightError) Context() ErrorContext { return e }
 func (e *lightError) ID() string {
-	if e.id == "" {
-		e.id = newID(e.class, e.category)
+	if e.id != "" {
+		return e.id
 	}
-	return e.id
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.ID()
+		}
+	}
+	return ""
 }
-func (e *lightError) Class() Class       { return e.class }
-func (e *lightError) Category() Category { return e.category }
-func (e *lightError) IsRetryable() bool  { return e.retryable }
-func (e *lightError) Span() Span         { return e.span }
-func (e *lightError) Created() time.Time { return time.Time{} }
-func (e *lightError) Message() string    { return e.message }
-
-// Severity checking methods
+func (e *lightError) Class() Class {
+	if e.class != ClassUnknown {
+		return e.class
+	}
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.Class()
+		}
+	}
+	return ClassUnknown
+}
+func (e *lightError) Category() Category {
+	if e.category != CategoryUnknown {
+		return e.category
+	}
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.Category()
+		}
+	}
+	return CategoryUnknown
+}
+func (e *lightError) IsRetryable() bool {
+	if e.retryable {
+		return e.retryable
+	}
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.IsRetryable()
+		}
+	}
+	return false
+}
+func (e *lightError) Span() Span {
+	if e.span != nil {
+		return e.span
+	}
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.Span()
+		}
+	}
+	return nil
+}
+func (e *lightError) Created() time.Time {
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.Created()
+		}
+	}
+	return time.Time{}
+}
+func (e *lightError) Message() string {
+	if e.message != "" {
+		return e.message
+	}
+	if e.cause != nil {
+		return e.cause.Error()
+	}
+	return ""
+}
 func (e *lightError) Severity() Severity {
-	if e.severity == "" {
-		return SeverityUnknown
+	if e.severity != SeverityUnknown {
+		return e.severity
 	}
-	return e.severity
+	if e.cause != nil {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.Severity()
+		}
+	}
+	return SeverityUnknown
 }
-
 func (e *lightError) Fields() []any {
+	if len(e.fields) == 0 {
+		if causeErro, ok := e.cause.(ErrorContext); ok {
+			return causeErro.Fields()
+		}
+	}
 	out := make([]any, len(e.fields))
 	copy(out, e.fields)
 	return out
 }
-
 func (e *lightError) AllFields() []any {
 	var allFields []any
 	// Recursively get the fields from the earlier parts of the chain.
@@ -270,11 +350,11 @@ func (e *lightError) MarshalJSON() ([]byte, error) {
 // newLightError creates a new lightweight error
 func newLightError(cause error, message string, fields ...any) *lightError {
 	e := &lightError{
-		message:   truncateString(message, maxMessageLength),
+		id:        newID(),
+		message:   truncateString(message, MaxMessageLength),
 		cause:     cause,
 		fields:    prepareFields(fields),
-		formatter: GetDefaultFormatter(),
+		formatter: FormatErrorWithFields,
 	}
-	globalGatherer.add(context.Background(), e)
 	return e
 }

@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+var (
+	ErrMaxWrapDepthExceeded = NewLight("maximum wrap depth exceeded")
+)
+
+// Security configuration constants
+const (
+	// Maximum string lengths to prevent memory exhaustion
+	MaxMessageLength = 1000 // Maximum length for error messages
+	MaxKeyLength     = 128  // Maximum length for field keys
+	MaxValueLength   = 1024 // Maximum length for field values (when converted to string)
+
+	// Maximum array/slice lengths to prevent array bombing
+	MaxFieldsCount = 100 // Maximum number of fields (key-value pairs)
+
+	// Wrapping depth limits to prevent stack overflow
+	MaxWrapDepth = 50 // Maximum depth of error wrapping
+
+	// Stack trace limits
+	MaxStackDepth = 50 // Maximum stack depth
+)
+
 type (
 	FormatErrorFunc func(err ErrorContext) string
 	KeyGetterFunc   func(err error) string
@@ -16,7 +37,7 @@ type Error interface {
 	fmt.Formatter
 	Unwrap() error
 
-	WithID(id ...string) Error
+	WithID(id string) Error
 	WithClass(class Class) Error
 	WithCategory(category Category) Error
 	WithSeverity(severity Severity) Error
