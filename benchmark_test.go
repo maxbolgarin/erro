@@ -11,35 +11,35 @@ import (
 
 // New
 
-func BenchmarkNewSTD(b *testing.B) {
+func Benchmark_New_STD(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = errors.New("connection failed")
 	}
 }
 
-func BenchmarkNewLightEmpty(b *testing.B) {
+func Benchmark_New_Light_Empty(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = erro.NewLight("connection failed")
 	}
 }
 
-func BenchmarkNewLightWithFields(b *testing.B) {
+func Benchmark_New_Light_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = erro.NewLight("connection failed", "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
-func BenchmarkNewWithFields(b *testing.B) {
+func Benchmark_New_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = erro.New("connection failed", "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
 
-func BenchmarkNewfWithFields(b *testing.B) {
+func Benchmark_Newf_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		_ = erro.Newf("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
@@ -48,7 +48,7 @@ func BenchmarkNewfWithFields(b *testing.B) {
 
 // Wrapping
 
-func BenchmarkErrorfSTD(b *testing.B) {
+func Benchmark_Errorf_STD(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -57,7 +57,7 @@ func BenchmarkErrorfSTD(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapLightEmpty(b *testing.B) {
+func Benchmark_Wrap_Light_Empty(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -66,7 +66,7 @@ func BenchmarkWrapLightEmpty(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapLightWithFields(b *testing.B) {
+func Benchmark_Wrap_Light_WithFields(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -75,7 +75,7 @@ func BenchmarkWrapLightWithFields(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapWithFields(b *testing.B) {
+func Benchmark_Wrap_WithFields(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -84,7 +84,7 @@ func BenchmarkWrapWithFields(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapWithFieldsNoStack(b *testing.B) {
+func Benchmark_Wrap_WithFields_NoStack(b *testing.B) {
 	baseErr := erro.New("connection refused")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -92,7 +92,7 @@ func BenchmarkWrapWithFieldsNoStack(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapfWithFields(b *testing.B) {
+func Benchmark_Wrapf_WithFields(b *testing.B) {
 	baseErr := errors.New("connection refused")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -102,7 +102,7 @@ func BenchmarkWrapfWithFields(b *testing.B) {
 
 // Error
 
-func BenchmarkNewErrorStringEmpty(b *testing.B) {
+func Benchmark_New_ErrorString_Empty(b *testing.B) {
 	baseErr := erro.New("base error message")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -110,7 +110,7 @@ func BenchmarkNewErrorStringEmpty(b *testing.B) {
 	}
 }
 
-func BenchmarkNewErrorStringWithFields(b *testing.B) {
+func Benchmark_New_ErrorString_WithFields(b *testing.B) {
 	baseErr := erro.New("base error message", "foo", 123, "bar", true)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -118,7 +118,7 @@ func BenchmarkNewErrorStringWithFields(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapErrorDeep(b *testing.B) {
+func Benchmark_Wrap_Error_Deep(b *testing.B) {
 	err := erro.New("root error", "key1", "val1", "key2", 42)
 	for i := 0; i < 10; i++ {
 		err = erro.Wrap(err, fmt.Sprintf("wrap level %d", i), "key3", 3.14, "key4", true)
@@ -131,7 +131,7 @@ func BenchmarkWrapErrorDeep(b *testing.B) {
 
 // Context building
 
-func BenchmarkNewErrorWithContext(b *testing.B) {
+func Benchmark_New_Error_WithContext(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		erro.New("context build", "key1", "val1", "key2", 42).
@@ -145,7 +145,7 @@ func BenchmarkNewErrorWithContext(b *testing.B) {
 	}
 }
 
-func BenchmarkNewLightWithContext(b *testing.B) {
+func Benchmark_New_Light_WithContext(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		erro.NewLight("context build", "key1", "val1", "key2", 42).
@@ -159,7 +159,7 @@ func BenchmarkNewLightWithContext(b *testing.B) {
 	}
 }
 
-func BenchmarkNewBuilderNoStackOptimized(b *testing.B) {
+func Benchmark_NewBuilder_NoStack_Optimized(b *testing.B) {
 	baseErr := erro.New("context build")
 	fields := []any{"key3", "val3", "key4", 43}
 
@@ -177,7 +177,7 @@ func BenchmarkNewBuilderNoStackOptimized(b *testing.B) {
 	}
 }
 
-func BenchmarkNewBuilderWithStackNotOptimized(b *testing.B) {
+func Benchmark_NewBuilder_WithStack_NotOptimized(b *testing.B) {
 	baseErr := errors.New("context build")
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -194,7 +194,7 @@ func BenchmarkNewBuilderWithStackNotOptimized(b *testing.B) {
 	}
 }
 
-func BenchmarkErrorContext(b *testing.B) {
+func Benchmark_Error_Context(b *testing.B) {
 	err := erro.New("context retrieve", "key1", "val1", "key2", 42)
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -215,7 +215,7 @@ func BenchmarkErrorContext(b *testing.B) {
 
 // Log Fields
 
-func BenchmarkLogFields(b *testing.B) {
+func Benchmark_LogFields(b *testing.B) {
 	err := erro.New("full error", "key1", "val1", "key2", 42, "key3", 3.14, "key4", true).
 		WithClass("test").
 		WithCategory("test").
@@ -233,7 +233,7 @@ func BenchmarkLogFields(b *testing.B) {
 	}
 }
 
-func BenchmarkLogFieldsMap(b *testing.B) {
+func Benchmark_LogFieldsMap(b *testing.B) {
 	err := erro.New("full error", "key1", "val1", "key2", 42, "key3", 3.14, "key4", true).
 		WithClass("test").
 		WithCategory("test").
@@ -250,7 +250,7 @@ func BenchmarkLogFieldsMap(b *testing.B) {
 	}
 }
 
-func BenchmarkLogError(b *testing.B) {
+func Benchmark_LogError(b *testing.B) {
 	err := erro.New("full error", "key1", "val1", "key2", 42, "key3", 3.14, "key4", true).
 		WithClass("test").
 		WithCategory("test").
@@ -272,7 +272,7 @@ func BenchmarkLogError(b *testing.B) {
 
 // Template benchmarks
 
-func BenchmarkNewTemplate(b *testing.B) {
+func Benchmark_New_Template(b *testing.B) {
 	ctx := context.Background()
 
 	b.ReportAllocs()
@@ -293,7 +293,7 @@ func BenchmarkNewTemplate(b *testing.B) {
 	}
 }
 
-func BenchmarkNewErrorFromTemplate(b *testing.B) {
+func Benchmark_New_Error_FromTemplate(b *testing.B) {
 	tmpl := erro.NewTemplate().
 		WithClass(erro.ClassValidation).
 		WithCategory(erro.CategoryUserInput).
@@ -308,7 +308,7 @@ func BenchmarkNewErrorFromTemplate(b *testing.B) {
 	}
 }
 
-func BenchmarkNewErrorFromTemplateWithMessageAndFields(b *testing.B) {
+func Benchmark_New_Error_FromTemplate_WithMessageAndFields(b *testing.B) {
 	tmpl := erro.NewTemplate().
 		WithClass(erro.ClassValidation).
 		WithCategory(erro.CategoryUserInput).
@@ -324,7 +324,7 @@ func BenchmarkNewErrorFromTemplateWithMessageAndFields(b *testing.B) {
 	}
 }
 
-func BenchmarkWrapErrorFromTemplateFullWithStack(b *testing.B) {
+func Benchmark_Wrap_Error_FromTemplate_Full_WithStack(b *testing.B) {
 	tmpl := erro.NewTemplate().
 		WithClass(erro.ClassValidation).
 		WithCategory(erro.CategoryUserInput).
@@ -344,5 +344,31 @@ func BenchmarkWrapErrorFromTemplateFullWithStack(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = tmpl.Wrap(baseErr, "wrapped by template", "key1", "value1", "key2", 123)
+	}
+}
+
+// HTTPCode benchmarks
+
+func Benchmark_HTTPCode_WithClass(b *testing.B) {
+	err := erro.New("not found").WithClass(erro.ClassNotFound)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.HTTPCode(err)
+	}
+}
+
+func Benchmark_HTTPCode_StandardError(b *testing.B) {
+	err := errors.New("not found")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.HTTPCode(err)
+	}
+}
+
+func Benchmark_HTTPCode_UnknownClassCategory(b *testing.B) {
+	err := erro.New("some error").WithClass("").WithCategory("")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.HTTPCode(err)
 	}
 }
