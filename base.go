@@ -214,68 +214,34 @@ func (e *baseError) Stack() Stack {
 }
 func (e *baseError) BaseError() ErrorContext { return e }
 
-// Is checks if this error matches the target error
-func (e *baseError) Is(target error) (ok bool) {
-	if target == nil {
+// Is reports whether this error can be considered a match for the target.
+//
+// It is designed for use by the standard `errors.Is` function. The primary
+// matching mechanism for `erro` types is the unique error ID.
+//
+// It checks if the target is also an `erro` type and compares their IDs.
+// If both have a non-empty ID and they match, it returns true.
+//
+// In all other cases, it returns false, delegating the decision to the
+// `errors.Is` function, which will then check the wrapped standard error
+// by calling `Unwrap`.
+func (e *baseError) Is(target error) bool {
+	targetCtx := ExtractContext(target)
+	if targetCtx == nil {
+		// Target is not an `erro` type. We cannot compare by ID.
+		// Delegate to `errors.Is` to check the wrapped `originalErr`.
 		return false
 	}
 
-	// Check direct equality (fastest path)
-	if e == target {
-		return true
+	// Both are `erro` types. Compare by their effective IDs.
+	// The ID() method correctly finds the outermost ID in a chain.
+	eID := e.ID()
+	targetID := targetCtx.ID()
+
+	if eID != "" && targetID != "" {
+		return eID == targetID
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			ok = false
-		}
-	}()
-
-	// Fast path for erro errors - compare by metadata first
-	if targetErro, ok := target.(ErrorContext); ok {
-		// Compare by id if both have non-empty ids (very fast)
-		if e.id != "" && targetErro.ID() != "" {
-			return e.id == targetErro.ID()
-		}
-
-		// Compare base messages without fields (fast)
-		if e.message == targetErro.Message() {
-			return true
-		}
-	}
-
-	// For external errors, check if we wrap it directly
-	if e.originalErr != nil {
-		// Direct reference comparison (very fast)
-		if e.originalErr == target {
-			return true
-		}
-
-		// If the wrapped error has an Is method, use it
-		if x, ok := e.originalErr.(interface{ Is(error) bool }); ok {
-			return x.Is(target)
-		}
-
-		// For external errors, compare the original error's string representation
-		// This avoids building our full error string with fields
-		return e.originalErr.Error() == target.Error()
-	}
-
-	// Last resort: only for comparison with external errors without originalErr
-	// Try to be smart about when to do expensive string comparison
-	if _, isErro := target.(Error); !isErro {
-		// Target is external error, we are baseError - only compare if we have no fields
-		if len(e.fields) == 0 && e.severity == "" {
-			// No fields, safe to compare messages
-			return e.message == target.Error()
-		}
-		// If we have fields, this comparison is likely wrong anyway since
-		// external errors won't match our formatted string with fields
-		return false
-	}
-
-	// Both are erro errors but didn't match on any fast path
-	// This should be rare with good error design
 	return false
 }
 
@@ -295,8 +261,8 @@ func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fiel
 		created:     time.Now(),
 		fields:      prepareFields(fields),
 		stack:       captureStack(skip),
-		formatter:   GetGlobalFormatter(),
+		formatter:   GetDefaultFormatter(),
 	}
-	AddToGatherer(e)
+	globalGatherer.add(context.Background(), e)
 	return e
 }

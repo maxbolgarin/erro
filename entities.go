@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-type FormatErrorFunc func(err ErrorContext) string
+type (
+	FormatErrorFunc func(err ErrorContext) string
+	KeyGetterFunc   func(err error) string
+)
 
 type Error interface {
 	error
@@ -83,6 +86,28 @@ type ErrorSchema struct {
 	SpanID       string         `json:"span_id,omitempty" bson:"span_id,omitempty" db:"span_id,omitempty"`
 	ParentSpanID string         `json:"parent_span_id,omitempty" bson:"parent_span_id,omitempty" db:"parent_span_id,omitempty"`
 }
+
+// Key getter functions for deduplication
+var (
+	// MessageKeyGetter generates a key based on the error's message.
+	MessageKeyGetter KeyGetterFunc = func(err error) string {
+		if e, ok := err.(ErrorContext); ok {
+			return e.Message()
+		}
+		return err.Error()
+	}
+	// IDKeyGetter generates a key based on the error's ID.
+	IDKeyGetter KeyGetterFunc = func(err error) string {
+		if e, ok := err.(ErrorContext); ok {
+			return e.ID()
+		}
+		return err.Error()
+	}
+	// ErrorKeyGetter generates a key based on the error's class.
+	ErrorKeyGetter KeyGetterFunc = func(err error) string {
+		return err.Error()
+	}
+)
 
 type Class string
 

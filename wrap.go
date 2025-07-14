@@ -306,32 +306,34 @@ func (e *wrapError) AllFields() []any {
 	return combined
 }
 
+// Is reports whether this error can be considered a match for the target.
+//
+// It is designed for use by the standard `errors.Is` function. The primary
+// matching mechanism for `erro` types is the unique error ID.
+//
+// It checks if the target is also an `erro` type and compares their effective IDs.
+// The `ID()` method on `wrapError` correctly traverses the chain to find the
+// outermost, most specific ID.
+//
+// If a match is not found, it returns false, allowing `errors.Is` to proceed
+// by calling `Unwrap()` on this error.
 func (e *wrapError) Is(target error) bool {
-	if target == nil {
+	targetCtx := ExtractContext(target)
+	if targetCtx == nil {
+		// Target is not an `erro` type. We cannot compare by ID.
+		// Delegate to `errors.Is` to check the wrapped error.
 		return false
 	}
 
-	// Check for direct equality (are they the same instance in memory?)
-	if e == target {
-		return true
+	// Both are `erro` types. Compare by their effective IDs.
+	// The ID() method correctly finds the outermost ID in a chain.
+	eID := e.ID()
+	targetID := targetCtx.ID()
+
+	if eID != "" && targetID != "" {
+		return eID == targetID
 	}
 
-	// You can add custom logic here. For example, are two different `wrapError`
-	// instances equivalent if they share the same ID?
-	if other, ok := target.(*wrapError); ok {
-		if e.id != "" && e.id == other.id {
-			return true
-		}
-	}
-
-	if e.wrapped != nil {
-		if wrapped, ok := e.wrapped.(interface{ Is(error) bool }); ok {
-			return wrapped.Is(target)
-		}
-	}
-
-	// Add other comparisons if you need them.
-	// If no custom logic matches, they are not equivalent.
 	return false
 }
 
@@ -358,7 +360,7 @@ func newWrapError(wrapped Error, message string, fields ...any) Error {
 		wrapped:     wrapped,
 		wrapMessage: truncateString(message, maxMessageLength),
 		fields:      preparedFields,
-		formatter:   GetGlobalFormatter(),
+		formatter:   GetDefaultFormatter(),
 	}
 }
 

@@ -114,22 +114,22 @@ func NoStackTraceConfig() *StackTraceConfig {
 
 // SetDevelopmentStackTrace enables development-safe stack trace configuration
 func SetDevelopmentStackTrace() {
-	SetGlobalStackTraceConfig(DevelopmentStackTraceConfig())
+	SetDefaultStackTraceConfig(DevelopmentStackTraceConfig())
 }
 
 // SetProductionStackTrace enables production-safe stack trace configuration
 func SetProductionStackTrace() {
-	SetGlobalStackTraceConfig(ProductionStackTraceConfig())
+	SetDefaultStackTraceConfig(ProductionStackTraceConfig())
 }
 
 // SetStrictStackTrace enables strict privacy stack trace configuration
 func SetStrictStackTrace() {
-	SetGlobalStackTraceConfig(StrictStackTraceConfig())
+	SetDefaultStackTraceConfig(StrictStackTraceConfig())
 }
 
 // DisableStackTrace completely disables stack traces
 func DisableStackTrace() {
-	SetGlobalStackTraceConfig(NoStackTraceConfig())
+	SetDefaultStackTraceConfig(NoStackTraceConfig())
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -639,7 +639,7 @@ type rawStack []uintptr
 
 // captureStack captures just the program counters for maximum performance
 func captureStack(skip int) rawStack {
-	cfg := GetGlobalStackTraceConfig()
+	cfg := GetDefaultStackTraceConfig()
 	rate := cfg.SamplingRate
 
 	if rate <= 0.0 {
@@ -680,7 +680,7 @@ func (rs rawStack) toFrames(config *StackTraceConfig) Stack {
 	runtimeFrames := runtime.CallersFrames(rs)
 	cfg := config
 	if cfg == nil {
-		cfg = GetGlobalStackTraceConfig()
+		cfg = GetDefaultStackTraceConfig()
 	}
 
 	for {

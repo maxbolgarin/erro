@@ -250,7 +250,7 @@ type Set struct {
 	*List
 	seen map[string]int
 	// It won't add the error if the keyGetter returns an empty string
-	keyGetter func(error) string
+	keyGetter KeyGetterFunc
 }
 
 // NewSet creates a new error set that stores only unique errors
@@ -477,20 +477,6 @@ func (s *Set) add(err Error) *Set {
 		s.seen[key]++
 	}
 	return s
-}
-
-func MessageKeyGetter(err error) string {
-	if e, ok := err.(ErrorContext); ok {
-		return e.Message()
-	}
-	return err.Error()
-}
-
-func IDKeyGetter(err error) string {
-	if e, ok := err.(ErrorContext); ok {
-		return e.ID()
-	}
-	return err.Error()
 }
 
 // SafeList is a thread-safe version of List that can be used safely across multiple goroutines
@@ -805,7 +791,7 @@ type SafeSet struct {
 	*List
 	seen map[string]int
 	// It won't add the error if the keyGetter returns an empty string
-	keyGetter func(error) string
+	keyGetter KeyGetterFunc
 	mu        sync.RWMutex
 }
 

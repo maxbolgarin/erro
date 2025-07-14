@@ -45,7 +45,7 @@ func FormatErrorWithSeverity(err ErrorContext) string {
 	return severity.Label() + " " + err.Message()
 }
 
-func FormatErrorSimple(err ErrorContext) string {
+func FormatErrorMessage(err ErrorContext) string {
 	return err.Message()
 }
 
@@ -223,7 +223,7 @@ func formatError(err Error, s fmt.State, verb rune) {
 			// Print with stack trace
 			fmt.Fprint(s, err.Error())
 
-			config := GetGlobalStackTraceConfig()
+			config := GetDefaultStackTraceConfig()
 			if !config.Enabled {
 				return // No stack trace in disabled mode
 			}

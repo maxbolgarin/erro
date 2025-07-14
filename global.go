@@ -1,14 +1,20 @@
 package erro
 
 import (
+	"context"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Global stack trace configuration
 var (
 	globalStackTraceConfig atomic.Value
 	globalFormatter        atomic.Value
+	globalGatherer         = &errorGatherer{
+		seen: make(map[string]time.Time),
+	}
 
 	buildInfo *debug.BuildInfo
 )
@@ -19,16 +25,16 @@ func init() {
 	buildInfo, _ = debug.ReadBuildInfo()
 }
 
-// SetGlobalStackTraceConfig sets the global stack trace configuration
-func SetGlobalStackTraceConfig(config *StackTraceConfig) {
+// SetDefaultStackTraceConfig sets the global stack trace configuration
+func SetDefaultStackTraceConfig(config *StackTraceConfig) {
 	if config == nil {
 		config = NoStackTraceConfig()
 	}
 	globalStackTraceConfig.Store(config)
 }
 
-// GetGlobalStackTraceConfig returns the current global stack trace configuration
-func GetGlobalStackTraceConfig() *StackTraceConfig {
+// GetDefaultStackTraceConfig returns the current global stack trace configuration
+func GetDefaultStackTraceConfig() *StackTraceConfig {
 	cfgRaw := globalStackTraceConfig.Load()
 	if cfgRaw == nil {
 		return DevelopmentStackTraceConfig()
@@ -40,8 +46,8 @@ func GetGlobalStackTraceConfig() *StackTraceConfig {
 	return cfg
 }
 
-// SetGlobalStackSamplingRate sets the rate at which stack traces are captured (0.0 - 1.0)
-func SetGlobalStackSamplingRate(rate float64) {
+// SetDefaultStackSamplingRate sets the rate at which stack traces are captured (0.0 - 1.0)
+func SetDefaultStackSamplingRate(rate float64) {
 	if rate < 0 {
 		rate = 0
 	}
@@ -49,7 +55,7 @@ func SetGlobalStackSamplingRate(rate float64) {
 		rate = 1
 	}
 	for {
-		oldCfgPtr := GetGlobalStackTraceConfig()
+		oldCfgPtr := GetDefaultStackTraceConfig()
 		newCfg := *oldCfgPtr
 		newCfg.SamplingRate = rate
 
@@ -64,13 +70,13 @@ type formatterObject struct {
 	formatter FormatErrorFunc
 }
 
-// SetGlobalFormatter sets the global error formatter.
-func SetGlobalFormatter(formatter FormatErrorFunc) {
+// SetDefaultFormatter sets the global error formatter.
+func SetDefaultFormatter(formatter FormatErrorFunc) {
 	globalFormatter.Store(&formatterObject{formatter: formatter})
 }
 
-// GetGlobalFormatter returns the global error formatter.
-func GetGlobalFormatter() FormatErrorFunc {
+// GetDefaultFormatter returns the global error formatter.
+func GetDefaultFormatter() FormatErrorFunc {
 	res := globalFormatter.Load()
 	if res == nil {
 		return FormatErrorWithFields
@@ -80,4 +86,50 @@ func GetGlobalFormatter() FormatErrorFunc {
 		return FormatErrorWithFields
 	}
 	return f.formatter
+}
+
+// errorGatherer accumulates errors that occur in the application.
+type errorGatherer struct {
+	seen map[string]time.Time
+
+	metrics    Metrics
+	dispatcher Dispatcher
+
+	enabled atomic.Bool
+	mu      sync.Mutex
+}
+
+// EnableAutoErrorGatherer enables the global error gatherer.
+func EnableAutoErrorGatherer(metrics Metrics, dispatcher Dispatcher) {
+	globalGatherer.mu.Lock()
+	defer globalGatherer.mu.Unlock()
+
+	globalGatherer.enabled.Store(true)
+	globalGatherer.metrics = metrics
+	globalGatherer.dispatcher = dispatcher
+}
+
+func (g *errorGatherer) add(ctx context.Context, err Error) {
+	if !g.enabled.Load() || err == nil {
+		return
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	key := IDKeyGetter(err)
+	if _, ok := g.seen[key]; ok {
+		g.seen[key] = time.Now()
+		return
+	}
+	g.seen[key] = time.Now()
+
+	g.dispatcher.SendEvent(ctx, err.Context())
+	g.metrics.RecordError(err.Context())
+
+	for key, t := range g.seen {
+		if time.Since(t) > 10*time.Minute {
+			delete(g.seen, key)
+		}
+	}
 }

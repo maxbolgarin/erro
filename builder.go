@@ -31,7 +31,7 @@ func NewBuilder(message string, fields ...any) *Builder {
 	b := &Builder{
 		message:   message,
 		fields:    fields,
-		formatter: GetGlobalFormatter(),
+		formatter: GetDefaultFormatter(),
 	}
 	return b
 }
@@ -43,7 +43,7 @@ func NewBuilderWithError(err error, message string, fields ...any) *Builder {
 		cause:     err,
 		message:   message,
 		fields:    fields,
-		formatter: GetGlobalFormatter(),
+		formatter: GetDefaultFormatter(),
 	}
 	return b
 }

@@ -2,6 +2,7 @@ package erro
 
 import (
 	"context"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"io"
@@ -90,6 +91,15 @@ func WrapEmpty(err error) Error {
 
 	// For external errors, create a new base error that wraps it
 	return newBaseError(err, "")
+}
+
+func NewSentinel(message string) Error {
+	err := &lightError{
+		message:   truncateString(message, maxMessageLength),
+		formatter: FormatErrorMessage,
+		id:        fmt.Sprintf("%x", md5.Sum([]byte(message)))[:12],
+	}
+	return err
 }
 
 func Close(err *error, cl io.Closer, msg string, fields ...any) {
