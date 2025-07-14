@@ -2,6 +2,7 @@ package erro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -215,7 +216,7 @@ func (e *lightError) StackTraceConfig() *StackTraceConfig {
 }
 
 func (e *lightError) BaseError() ErrorContext {
-	if e.cause == nil {
+	if e.cause != nil {
 		if causeErro, ok := e.cause.(Error); ok {
 			return causeErro.Context().BaseError()
 		}
@@ -278,7 +279,7 @@ func (e *lightError) Is(target error) (ok bool) {
 }
 
 func (e *lightError) MarshalJSON() ([]byte, error) {
-	return []byte(e.Error()), nil
+	return json.Marshal(ErrorToJSON(e))
 }
 
 // newLightError creates a new lightweight error

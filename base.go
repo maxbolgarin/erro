@@ -2,6 +2,7 @@ package erro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -64,7 +65,7 @@ func (e *baseError) WithID(idRaw ...string) Error {
 	if len(idRaw) > 0 {
 		id = truncateString(idRaw[0], maxCodeLength)
 	} else {
-		id = newID(e.class, e.category, e.created)
+		id = newID(e.Class(), e.Category())
 	}
 	return &wrapError{
 		wrapped: e,
@@ -75,7 +76,6 @@ func (e *baseError) WithID(idRaw ...string) Error {
 func (e *baseError) WithCategory(category Category) Error {
 	return &wrapError{
 		wrapped:  e,
-		id:       e.id,
 		category: category,
 	}
 }
@@ -83,7 +83,6 @@ func (e *baseError) WithCategory(category Category) Error {
 func (e *baseError) WithClass(class Class) Error {
 	return &wrapError{
 		wrapped: e,
-		id:      e.id,
 		class:   class,
 	}
 }
@@ -94,7 +93,6 @@ func (e *baseError) WithSeverity(severity Severity) Error {
 	}
 	return &wrapError{
 		wrapped:  e,
-		id:       e.id,
 		severity: severity,
 	}
 }
@@ -129,7 +127,6 @@ func (e *baseError) WithFields(fields ...any) Error {
 func (e *baseError) WithRetryable(retryable bool) Error {
 	return &wrapError{
 		wrapped:   e,
-		id:        e.id,
 		retryable: &retryable,
 	}
 }
@@ -142,7 +139,6 @@ func (e *baseError) WithSpan(span Span) Error {
 	span.RecordError(e)
 	return &wrapError{
 		wrapped: e,
-		id:      e.id,
 		span:    span,
 	}
 }
@@ -189,7 +185,7 @@ func (e *baseError) Formatter() FormatErrorFunc {
 func (e *baseError) Context() ErrorContext { return e }
 func (e *baseError) ID() string {
 	if e.id == "" {
-		e.id = newID(e.class, e.category, e.created)
+		e.id = newID(e.Class(), e.Category())
 	}
 	return e.id
 }
@@ -284,7 +280,7 @@ func (e *baseError) Is(target error) (ok bool) {
 }
 
 func (e *baseError) MarshalJSON() ([]byte, error) {
-	return []byte(e.Error()), nil
+	return json.Marshal(ErrorToJSON(e))
 }
 
 // newBaseError creates a new base error with security validation

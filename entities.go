@@ -69,6 +69,21 @@ type Span interface {
 	ParentSpanID() string
 }
 
+type ErrorSchema struct {
+	ID           string         `json:"id" bson:"_id" db:"id"`
+	Class        Class          `json:"class,omitempty" bson:"class,omitempty" db:"class,omitempty"`
+	Category     Category       `json:"category,omitempty" bson:"category,omitempty" db:"category,omitempty"`
+	Severity     Severity       `json:"severity,omitempty" bson:"severity,omitempty" db:"severity,omitempty"`
+	Created      time.Time      `json:"created,omitempty" bson:"created,omitempty" db:"created,omitempty"`
+	Message      string         `json:"message,omitempty" bson:"message,omitempty" db:"message,omitempty"`
+	Fields       []any          `json:"fields,omitempty" bson:"fields,omitempty" db:"fields,omitempty"`
+	Retryable    bool           `json:"retryable,omitempty" bson:"retryable,omitempty" db:"retryable,omitempty"`
+	StackTrace   []StackContext `json:"stack_trace,omitempty" bson:"stack_trace,omitempty" db:"stack_trace,omitempty"`
+	TraceID      string         `json:"trace_id,omitempty" bson:"trace_id,omitempty" db:"trace_id,omitempty"`
+	SpanID       string         `json:"span_id,omitempty" bson:"span_id,omitempty" db:"span_id,omitempty"`
+	ParentSpanID string         `json:"parent_span_id,omitempty" bson:"parent_span_id,omitempty" db:"parent_span_id,omitempty"`
+}
+
 type Class string
 
 const (

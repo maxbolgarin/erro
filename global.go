@@ -1,16 +1,22 @@
 package erro
 
-import "sync/atomic"
+import (
+	"runtime/debug"
+	"sync/atomic"
+)
 
 // Global stack trace configuration
 var (
 	globalStackTraceConfig atomic.Value
 	globalFormatter        atomic.Value
+
+	buildInfo *debug.BuildInfo
 )
 
 func init() {
 	globalStackTraceConfig.Store(DevelopmentStackTraceConfig())
 	globalFormatter.Store(&formatterObject{formatter: FormatErrorWithFields})
+	buildInfo, _ = debug.ReadBuildInfo()
 }
 
 // SetGlobalStackTraceConfig sets the global stack trace configuration

@@ -56,6 +56,36 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 	logFunc(ctx.Message(), getLogFields(ctx, opts)...)
 }
 
+func ErrorToJSON(err ErrorContext) ErrorSchema {
+	schema := ErrorSchema{
+		ID:        err.ID(),
+		Class:     err.Class(),
+		Category:  err.Category(),
+		Severity:  err.Severity(),
+		Created:   err.Created(),
+		Message:   err.Message(),
+		Fields:    err.AllFields(),
+		Retryable: err.IsRetryable(),
+	}
+
+	span := err.Span()
+	if span != nil {
+		schema.TraceID = span.TraceID()
+		schema.SpanID = span.SpanID()
+		schema.ParentSpanID = span.ParentSpanID()
+	}
+
+	stack := err.Stack()
+	if len(stack) > 0 {
+		schema.StackTrace = make([]StackContext, len(stack))
+		for i, frame := range stack {
+			schema.StackTrace[i] = frame.GetContext()
+		}
+	}
+
+	return schema
+}
+
 type LogOption func(*LogOptions)
 
 // LogOptions controls which fields are included in logging output

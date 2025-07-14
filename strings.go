@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-	"unsafe"
 )
 
 func GetFormatErrorWithFullContext(optFuncs ...LogOption) FormatErrorFunc {
@@ -95,7 +94,7 @@ func buildFieldsMessage(message string, fields []any) (out string) {
 		msg = append(msg, truncateString(value, maxFieldValueLength)...)
 	}
 
-	return unsafe.String(unsafe.SliceData(msg), len(msg))
+	return string(msg)
 }
 
 // valueToStringTruncated converts any value to string and truncates efficiently using byte-based approach
@@ -239,8 +238,8 @@ func formatError(err Error, s fmt.State, verb rune) {
 	}
 }
 
-func newID(class Class, category Category, created ...time.Time) string {
-	var buf [8]byte
+func newID(class Class, category Category) string {
+	var buf [12]byte
 
 	if len(class) < 2 {
 		buf[0] = 'X'
@@ -258,17 +257,12 @@ func newID(class Class, category Category, created ...time.Time) string {
 	}
 	buf[4] = '_'
 
-	// Always use a 4-digit unique value (0-9999), padded to 4 bytes
-	var unique int
-	if len(created) == 0 || created[0].IsZero() {
-		unique = rand.Intn(1000)
-	} else {
-		unique = int(created[0].UnixMicro() % 1000)
+	// Generate a single random 42-bit number (covers 7 digits in base36)
+	rnd := rand.Int63()
+	for i := 5; i < len(buf); i++ {
+		n := int((rnd >> (6 * (i - 5))) & 0x3F) // 6 bits per digit, up to 63
+		buf[i] = '0' + byte(n%10)
 	}
-	// Format unique as 3-digit zero-padded string
-	buf[5] = '0' + byte(unique/100)
-	buf[6] = '0' + byte((unique/10)%10)
-	buf[7] = '0' + byte(unique%10)
 
 	return string(buf[:])
 }

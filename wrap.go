@@ -2,6 +2,7 @@ package erro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -66,7 +67,7 @@ func (e *wrapError) WithID(idRaw ...string) Error {
 	if len(idRaw) > 0 {
 		id = truncateString(idRaw[0], maxCodeLength)
 	} else {
-		id = newID(e.class, e.category)
+		id = newID(e.Class(), e.Category())
 	}
 	return &wrapError{
 		wrapped: e,
@@ -323,13 +324,19 @@ func (e *wrapError) Is(target error) bool {
 		}
 	}
 
+	if e.wrapped != nil {
+		if wrapped, ok := e.wrapped.(interface{ Is(error) bool }); ok {
+			return wrapped.Is(target)
+		}
+	}
+
 	// Add other comparisons if you need them.
 	// If no custom logic matches, they are not equivalent.
 	return false
 }
 
 func (e *wrapError) MarshalJSON() ([]byte, error) {
-	return []byte(e.Error()), nil
+	return json.Marshal(ErrorToJSON(e))
 }
 
 func newWrapError(wrapped Error, message string, fields ...any) Error {

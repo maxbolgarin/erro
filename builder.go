@@ -1,33 +1,5 @@
 package erro
 
-import "sync"
-
-var builderPool = sync.Pool{
-	New: func() any {
-		return &Builder{
-			fields: make([]any, 0, 10),
-		}
-	},
-}
-
-func getBuilder() *Builder {
-	return builderPool.Get().(*Builder)
-}
-
-func putBuilder(b *Builder) {
-	b.fields = b.fields[:0]
-	b.cause = nil
-	b.message = ""
-	b.id = ""
-	b.class = ""
-	b.category = ""
-	b.severity = ""
-	b.retryable = false
-	b.formatter = nil
-	b.stackTraceConfig = nil
-	builderPool.Put(b)
-}
-
 // Builder is a mutable, chainable builder for creating any type of immutable error.
 // It provides a performance-optimized path by creating the final error in a single allocation.
 type Builder struct {
@@ -56,21 +28,23 @@ type Builder struct {
 // NewBuilder creates a new builder, optionally starting with a message and fields.
 // This is the entry point for creating a new error from scratch.
 func NewBuilder(message string, fields ...any) *Builder {
-	b := getBuilder()
-	b.message = message
-	b.fields = fields
-	b.formatter = GetGlobalFormatter()
+	b := &Builder{
+		message:   message,
+		fields:    fields,
+		formatter: GetGlobalFormatter(),
+	}
 	return b
 }
 
 // NewBuilderWithError creates a new builder to wrap an existing error.
 // This is the entry point for wrapping an error.
 func NewBuilderWithError(err error, message string, fields ...any) *Builder {
-	b := getBuilder()
-	b.cause = err
-	b.message = message
-	b.fields = fields
-	b.formatter = GetGlobalFormatter()
+	b := &Builder{
+		cause:     err,
+		message:   message,
+		fields:    fields,
+		formatter: GetGlobalFormatter(),
+	}
 	return b
 }
 
@@ -149,8 +123,6 @@ func (b *Builder) WithStack() *Builder {
 // Build creates the final, immutable error based on the builder's configuration.
 // This method performs a single allocation for the new error.
 func (b *Builder) Build() Error {
-	defer putBuilder(b)
-
 	// --- Case 1: Build a lightweight error ---
 	if !b.isEncludeStack {
 		return &lightError{

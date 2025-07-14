@@ -251,8 +251,9 @@ func (f StackFrame) IsErroInternal() bool {
 			return true
 		}
 	}
-	// Also filter by package - if it's in github.com/maxbolgarin/erro and not test code
-	return strings.Contains(f.FullName, "github.com/maxbolgarin/erro") && !f.IsTest()
+
+	// Also filter by package and not test code
+	return strings.Contains(f.FullName, buildInfo.Main.Path) && !f.IsTest()
 }
 
 // getFrameType returns the type of this stack frame
@@ -495,13 +496,13 @@ func (s Stack) FilterByPackage(packageName string) Stack {
 
 // StackContext extracts contextual information from the stack frame
 type StackContext struct {
-	Function   string            // Function name
-	Package    string            // Package name
-	Module     string            // Module name (extracted from full path)
-	File       string            // File name
-	Line       int               // Line number
-	IsUserCode bool              // Whether this is user code
-	Metadata   map[string]string // Additional extracted metadata
+	Function   string            `json:"function" bson:"function" db:"function"`             // Function name
+	Package    string            `json:"package" bson:"package" db:"package"`                // Package name
+	Module     string            `json:"module" bson:"module" db:"module"`                   // Module name (extracted from full path)
+	File       string            `json:"file" bson:"file" db:"file"`                         // File name
+	Line       int               `json:"line" bson:"line" db:"line"`                         // Line number
+	IsUserCode bool              `json:"is_user_code" bson:"is_user_code" db:"is_user_code"` // Whether this is user code
+	Metadata   map[string]string `json:"metadata" bson:"metadata" db:"metadata"`             // Additional extracted metadata
 }
 
 // GetContext extracts rich context information from the stack frame

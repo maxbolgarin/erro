@@ -248,7 +248,8 @@ func (g *List) withMetadata(err Error) Error {
 // It deduplicates errors based on their message and code.
 type Set struct {
 	*List
-	seen      map[string]int
+	seen map[string]int
+	// It won't add the error if the keyGetter returns an empty string
 	keyGetter func(error) string
 }
 
@@ -364,8 +365,11 @@ func (g *Set) Remove(i int) bool {
 	if i < 0 || i >= len(g.errors) {
 		return false
 	}
-	err := g.errors[i]
-	delete(g.seen, g.keyGetter(err))
+	key := g.keyGetter(g.errors[i])
+	if key == "" {
+		return false
+	}
+	delete(g.seen, key)
 	g.errors = append(g.errors[:i], g.errors[i+1:]...)
 
 	return true
@@ -463,6 +467,9 @@ func (s *Set) Severity() Severity { return s.List.Severity() }
 func (s *Set) add(err Error) *Set {
 	err = s.withMetadata(err)
 	key := s.keyGetter(err)
+	if key == "" {
+		return s
+	}
 	if _, ok := s.seen[key]; !ok {
 		s.seen[key] = 1
 		s.errors = append(s.errors, err)
@@ -796,7 +803,8 @@ func (g *SafeList) withMetadata(err Error) Error {
 // SafeSet is a thread-safe version of Set that collects unique errors
 type SafeSet struct {
 	*List
-	seen      map[string]int
+	seen map[string]int
+	// It won't add the error if the keyGetter returns an empty string
 	keyGetter func(error) string
 	mu        sync.RWMutex
 }
@@ -929,7 +937,11 @@ func (g *SafeSet) Remove(i int) bool {
 		return false
 	}
 	err := g.errors[i]
-	delete(g.seen, g.keyGetter(err))
+	key := g.keyGetter(err)
+	if key == "" {
+		return false
+	}
+	delete(g.seen, key)
 	g.errors = append(g.errors[:i], g.errors[i+1:]...)
 
 	return true
@@ -1087,8 +1099,11 @@ func (s *SafeSet) add(err Error) *SafeSet {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.withMetadata(err)
+	err = s.withMetadata(err)
 	key := s.keyGetter(err)
+	if key == "" {
+		return s
+	}
 	if _, ok := s.seen[key]; !ok {
 		s.seen[key] = 1
 		s.errors = append(s.errors, err)
