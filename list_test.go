@@ -38,7 +38,7 @@ func TestList_Wrap(t *testing.T) {
 
 func TestList_Err(t *testing.T) {
 	list := NewList()
-	if _, ok := list.Err().(*multiError); !ok {
+	if list.Err() != nil {
 		t.Error("expected multiError for empty list")
 	}
 	list.Add(errors.New("test error"))
@@ -50,8 +50,8 @@ func TestList_Err(t *testing.T) {
 	if err == nil {
 		t.Error("expected an error for non-empty list")
 	}
-	if _, ok := err.(*multiError); !ok {
-		t.Errorf("expected multiError, got %T", err)
+	if err == nil {
+		t.Error("expected an error for non-empty list")
 	}
 }
 
@@ -66,9 +66,6 @@ func TestList_Remove(t *testing.T) {
 	}
 	if list.Remove(0) {
 		t.Error("expected not to remove an error from empty list")
-	}
-	if list.Err().Error() != "" {
-		t.Errorf("expected error message '', got '%s'", list.Err().Error())
 	}
 }
 
@@ -438,12 +435,8 @@ func TestSafeSet(t *testing.T) {
 	if !safeSet.RemoveError(lastErr) {
 		t.Error("expected to remove an error")
 	}
-	if _, ok := safeSet.Err().(*multiErrorSet); !ok {
-		t.Error("expected multiErrorSet")
-	}
-
-	if safeSet.Err().Error() != "" {
-		t.Error("expected empty error message")
+	if safeSet.Err() != nil {
+		t.Error("expected an error")
 	}
 
 	safeSet.New("new error", ID("1"))

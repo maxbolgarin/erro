@@ -1,5 +1,11 @@
 package erro
 
+// ExtractError ensures that an error can be treated as an [Error].
+//
+// If the given error is already an [Error], it is returned as is.
+// If it's a standard error, it's wrapped in a new [Error] so that
+// it can be used with the features of this package.
+// If the error is nil, it returns nil.
 func ExtractError(err error) Error {
 	if err == nil {
 		return nil
@@ -10,7 +16,15 @@ func ExtractError(err error) Error {
 	return newWrapError(err, "")
 }
 
-// LogFields returns a slice of alternating key-value pairs for structured loggers
+// LogFields returns a slice of alternating key-value pairs for structured
+// logging, extracted from the given error.
+//
+// This is useful for integrating with logging libraries like `slog` that
+// accept key-value pairs.
+//
+// Example:	
+//
+//	slog.Error("something went wrong", erro.LogFields(err)...)
 func LogFields(err error, optFuncs ...LogOption) []any {
 	ctx := ExtractError(err)
 	if ctx == nil {
@@ -20,7 +34,15 @@ func LogFields(err error, optFuncs ...LogOption) []any {
 	return getLogFields(ctx, opts)
 }
 
-// LogFieldsMap returns a map of field key-value pairs for map-based loggers
+// LogFieldsMap returns a map of field key-value pairs for structured logging,
+// extracted from the given error.
+//
+// This is useful for integrating with logging libraries like `logrus` that
+// accept a map of fields.
+//
+// Example:
+//
+//	logrus.WithFields(erro.LogFieldsMap(err)).Error("something went wrong")
 func LogFieldsMap(err error, optFuncs ...LogOption) map[string]any {
 	ctx := ExtractError(err)
 	if ctx == nil {
@@ -30,7 +52,16 @@ func LogFieldsMap(err error, optFuncs ...LogOption) map[string]any {
 	return getLogFieldsMap(ctx, opts)
 }
 
-// WithLogger executes a callback with extracted error context for any logging library
+// LogError executes a callback with the error message and structured fields,
+// allowing for integration with any logging library.
+//
+// If the error is not an [Error], it logs the error message directly.
+//
+// Example:
+//
+//	erro.LogError(err, func(message string, fields ...any) {
+//	    myLogger.Error(message, fields...)
+//	})
 func LogError(err error, logFunc func(message string, fields ...any), optFuncs ...LogOption) {
 	if err == nil || logFunc == nil {
 		return
@@ -46,6 +77,10 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 	logFunc(errError.Message(), getLogFields(errError, opts)...)
 }
 
+// ErrorToJSON converts an error to a serializable [ErrorSchema] struct.
+//
+// This is useful for sending error details over the network or storing them
+// in a structured format. Sensitive fields are redacted.
 func ErrorToJSON(err Error) ErrorSchema {
 	schema := ErrorSchema{
 		ID:        err.ID(),
@@ -88,48 +123,62 @@ func ErrorToJSON(err Error) ErrorSchema {
 	return schema
 }
 
+// LogOption is a function that configures logging options.
 type LogOption func(*LogOptions)
 
-// LogOptions controls which fields are included in logging output
+// LogOptions controls which fields are included in logging output.
 type LogOptions struct {
-	// User-defined fields
+	// IncludeUserFields determines whether to include user-defined fields.
 	IncludeUserFields bool
 
-	// Error metadata
-	IncludeID        bool
-	IncludeCategory  bool
-	IncludeSeverity  bool
+	// IncludeID determines whether to include the error ID.
+	IncludeID bool
+	// IncludeCategory determines whether to include the error category.
+	IncludeCategory bool
+	// IncludeSeverity determines whether to include the error severity.
+	IncludeSeverity bool
+	// IncludeRetryable determines whether to include the retryable flag.
 	IncludeRetryable bool
-	IncludeTracing   bool
+	// IncludeTracing determines whether to include tracing information (TraceID, SpanID).
+	IncludeTracing bool
 
-	// Timing information
+	// IncludeCreatedTime determines whether to include the error creation timestamp.
 	IncludeCreatedTime bool
 
-	// Stack context
+	// IncludeFunction determines whether to include the function name from the stack trace.
 	IncludeFunction bool
-	IncludePackage  bool
-	IncludeFile     bool
-	IncludeLine     bool
-	IncludeStack    bool
+	// IncludePackage determines whether to include the package name from the stack trace.
+	IncludePackage bool
+	// IncludeFile determines whether to include the file name from the stack trace.
+	IncludeFile bool
+	// IncludeLine determines whether to include the line number from the stack trace.
+	IncludeLine bool
+	// IncludeStack determines whether to include the full stack trace.
+	IncludeStack bool
 
-	// Stack formatting options
+	// StackFormat defines how stack traces should be formatted.
 	StackFormat StackFormat
 
-	// Field name prefix. Default is "error_"
+	// FieldNamePrefix is a prefix added to all field names. Default is "error_".
 	FieldNamePrefix string
 }
 
-// StackFormat defines how stack traces should be formatted
+// StackFormat defines how stack traces should be formatted in logs.
 type StackFormat int
 
 const (
-	StackFormatString StackFormat = iota // Default string format
-	StackFormatList                      // List of call chain
-	StackFormatFull                      // Full stack trace format
-	StackFormatJSON                      // JSON format for structured logging
+	// StackFormatString formats the stack trace as a single string.
+	StackFormatString StackFormat = iota
+	// StackFormatList formats the stack trace as a list of function calls.
+	StackFormatList
+	// StackFormatFull formats the stack trace with detailed information.
+	StackFormatFull
+	// StackFormatJSON formats the stack trace as a JSON object.
+	StackFormatJSON
 )
 
 var (
+	// DefaultLogOptions includes a balanced set of fields for typical logging.
 	DefaultLogOptions = LogOptions{
 		IncludeUserFields:  true,
 		IncludeID:          true,
@@ -146,6 +195,7 @@ var (
 		StackFormat:        StackFormatJSON,
 		FieldNamePrefix:    "error_",
 	}
+	// MinimalLogOptions includes a minimal set of fields for concise logging.
 	MinimalLogOptions = LogOptions{
 		IncludeUserFields: true,
 		IncludeID:         true,
@@ -153,6 +203,7 @@ var (
 		StackFormat:       StackFormatJSON,
 		FieldNamePrefix:   "error_",
 	}
+	// VerboseLogOptions includes all available fields for detailed debugging.
 	VerboseLogOptions = LogOptions{
 		IncludeUserFields:  true,
 		IncludeID:          true,
@@ -170,6 +221,7 @@ var (
 		FieldNamePrefix:    "error_",
 	}
 
+	// VerboseLogOpts is a slice of [LogOption] functions for verbose logging.
 	VerboseLogOpts = []func(*LogOptions){
 		WithUserFields(true),
 		WithID(true),
@@ -185,6 +237,7 @@ var (
 		WithStack(true),
 	}
 
+	// MinimalLogOpts is a slice of [LogOption] functions for minimal logging.
 	MinimalLogOpts = []func(*LogOptions){
 		WithUserFields(true),
 		WithID(true),
@@ -199,6 +252,7 @@ var (
 		WithLine(false),
 		WithStack(false),
 	}
+	// EmptyLogOpts is a slice of [LogOption] functions to exclude all fields.
 	EmptyLogOpts = []func(*LogOptions){
 		WithUserFields(false),
 		WithID(false),
@@ -216,11 +270,12 @@ var (
 	}
 )
 
+// MergeLogOpts merges multiple slices of [LogOption] functions into one.
 func MergeLogOpts(opts []LogOption, addsOpts ...LogOption) []LogOption {
 	return append(opts, addsOpts...)
 }
 
-// WithUserFields enables/disables user-defined fields
+// WithUserFields returns a [LogOption] to enable or disable user-defined fields.
 func WithUserFields(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeUserFields = true
@@ -230,7 +285,7 @@ func WithUserFields(include ...bool) LogOption {
 	}
 }
 
-// WithID enables/disables error id field
+// WithID returns a [LogOption] to enable or disable the error ID field.
 func WithID(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeID = true
@@ -240,7 +295,7 @@ func WithID(include ...bool) LogOption {
 	}
 }
 
-// WithCategory enables/disables error category field
+// WithCategory returns a [LogOption] to enable or disable the error category field.
 func WithCategory(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeCategory = true
@@ -250,7 +305,7 @@ func WithCategory(include ...bool) LogOption {
 	}
 }
 
-// WithSeverity enables/disables error severity field
+// WithSeverity returns a [LogOption] to enable or disable the error severity field.
 func WithSeverity(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeSeverity = true
@@ -260,7 +315,7 @@ func WithSeverity(include ...bool) LogOption {
 	}
 }
 
-// WithTracing enables/disables tracing field
+// WithTracing returns a [LogOption] to enable or disable tracing fields.
 func WithTracing(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeTracing = true
@@ -270,7 +325,7 @@ func WithTracing(include ...bool) LogOption {
 	}
 }
 
-// WithRetryable enables/disables retryable flag field
+// WithRetryable returns a [LogOption] to enable or disable the retryable flag field.
 func WithRetryable(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeRetryable = true
@@ -280,7 +335,7 @@ func WithRetryable(include ...bool) LogOption {
 	}
 }
 
-// WithCreatedTime enables/disables creation timestamp field
+// WithCreatedTime returns a [LogOption] to enable or disable the creation timestamp field.
 func WithCreatedTime(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeCreatedTime = true
@@ -290,7 +345,7 @@ func WithCreatedTime(include ...bool) LogOption {
 	}
 }
 
-// WithFunction enables/disables function name field
+// WithFunction returns a [LogOption] to enable or disable the function name field.
 func WithFunction(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeFunction = true
@@ -300,7 +355,7 @@ func WithFunction(include ...bool) LogOption {
 	}
 }
 
-// WithPackage enables/disables package name field
+// WithPackage returns a [LogOption] to enable or disable the package name field.
 func WithPackage(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludePackage = true
@@ -310,7 +365,7 @@ func WithPackage(include ...bool) LogOption {
 	}
 }
 
-// WithFile enables/disables file name field
+// WithFile returns a [LogOption] to enable or disable the file name field.
 func WithFile(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeFile = true
@@ -320,7 +375,7 @@ func WithFile(include ...bool) LogOption {
 	}
 }
 
-// WithLine enables/disables line number field
+// WithLine returns a [LogOption] to enable or disable the line number field.
 func WithLine(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeLine = true
@@ -330,7 +385,7 @@ func WithLine(include ...bool) LogOption {
 	}
 }
 
-// WithStack enables/disables full stack trace field
+// WithStack returns a [LogOption] to enable or disable the full stack trace field.
 func WithStack(include ...bool) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeStack = true
@@ -340,7 +395,7 @@ func WithStack(include ...bool) LogOption {
 	}
 }
 
-// WithStackFormat sets the stack trace format
+// WithStackFormat returns a [LogOption] to set the stack trace format.
 func WithStackFormat(format StackFormat) LogOption {
 	return func(opts *LogOptions) {
 		opts.IncludeStack = true
@@ -348,14 +403,14 @@ func WithStackFormat(format StackFormat) LogOption {
 	}
 }
 
-// WithFieldNamePrefix sets the field name prefix
+// WithFieldNamePrefix returns a [LogOption] to set the field name prefix.
 func WithFieldNamePrefix(prefix string) LogOption {
 	return func(opts *LogOptions) {
 		opts.FieldNamePrefix = prefix
 	}
 }
 
-// ApplyOptions applies a set of option functions to LogOptions
+// ApplyOptions applies a set of option functions to [LogOptions].
 func (opts *LogOptions) ApplyOptions(optFuncs ...LogOption) LogOptions {
 	for _, optFunc := range optFuncs {
 		optFunc(opts)
@@ -363,7 +418,7 @@ func (opts *LogOptions) ApplyOptions(optFuncs ...LogOption) LogOptions {
 	return *opts
 }
 
-// logFields converts ErrorContext to slog-compatible fields with options
+// getLogFieldsMap converts [Error] to slog-compatible fields with options
 func getLogFieldsMap(ec Error, optsRaw ...LogOptions) map[string]any {
 	fields := getLogFields(ec, optsRaw...)
 
@@ -381,7 +436,7 @@ func getLogFieldsMap(ec Error, optsRaw ...LogOptions) map[string]any {
 	return fieldsMap
 }
 
-// logFieldsMap converts ErrorContext to logrus-compatible fields with options
+// getLogFields converts [Error] to logrus-compatible fields with options
 func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 	if ec == nil {
 		return nil

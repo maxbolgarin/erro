@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// baseError holds the root error with all context and metadata
+// baseError holds the root error with all context and metadata.
 type baseError struct {
 	// Core error info
 	originalErr error               // Original error if wrapping external error
@@ -32,7 +32,7 @@ type baseError struct {
 	stackTraceConfig *StackTraceConfig
 }
 
-// Error implements the error interface
+// Error implements the error interface.
 func (e *baseError) Error() (out string) {
 	if fullMessage := e.fullMessage.Load(); fullMessage != "" {
 		return fullMessage
@@ -65,12 +65,12 @@ func (e *baseError) Error() (out string) {
 	return out
 }
 
-// Format implements fmt.Formatter for stack trace printing
+// Format implements [fmt.Formatter] for stack trace printing.
 func (e *baseError) Format(s fmt.State, verb rune) {
 	formatError(e, s, verb)
 }
 
-// Unwrap implements the Unwrap interface
+// Unwrap implements the [errors.Unwrap] interface.
 func (e *baseError) Unwrap() error {
 	if e.wrappedErr != nil {
 		return e.wrappedErr
@@ -78,17 +78,17 @@ func (e *baseError) Unwrap() error {
 	return e.originalErr
 }
 
-// Is reports whether this error can be considered a match for the target.
+// Is reports whether this [Error] can be considered a match for the target.
 //
-// It is designed for use by the standard `errors.Is` function. The primary
-// matching mechanism for `erro` types is the unique error ID.
+// It is designed for use by the standard [errors.Is] function. The primary
+// matching mechanism for [Error] types is the unique error ID.
 //
-// It checks if the target is also an `erro` type and compares their IDs.
+// It checks if the target is also an [Error] type and compares their IDs.
 // If both have a non-empty ID and they match, it returns true.
 //
 // In all other cases, it returns false, delegating the decision to the
-// `errors.Is` function, which will then check the wrapped standard error
-// by calling `Unwrap`.
+// [errors.Is] function, which will then check the wrapped standard error
+// by calling [Unwrap].
 func (e *baseError) Is(target error) bool {
 	if e == nil {
 		return false
@@ -120,6 +120,7 @@ func (e *baseError) Is(target error) bool {
 	return false
 }
 
+// As implements the [errors.As] interface.
 func (e *baseError) As(target any) bool {
 	targetPtr, ok := target.(**baseError)
 	if ok && targetPtr != nil {
@@ -135,10 +136,12 @@ func (e *baseError) As(target any) bool {
 	return false
 }
 
+// MarshalJSON implements the [json.Marshaler] interface.
 func (e *baseError) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ErrorToJSON(e))
 }
 
+// UnmarshalJSON implements the [json.Unmarshaler] interface.
 func (e *baseError) UnmarshalJSON(data []byte) error {
 	var schema ErrorSchema
 	if err := json.Unmarshal(data, &schema); err != nil {
@@ -160,7 +163,7 @@ func (e *baseError) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Getter methods for baseError
+// ID returns the error's identifier.
 func (e *baseError) ID() string {
 	if e.id == "" && e.wrappedErr != nil {
 		return e.wrappedErr.ID()
@@ -168,6 +171,7 @@ func (e *baseError) ID() string {
 	return e.id
 }
 
+// Class returns the error's class.
 func (e *baseError) Class() ErrorClass {
 	if e.class == "" && e.wrappedErr != nil {
 		return e.wrappedErr.Class()
@@ -175,6 +179,7 @@ func (e *baseError) Class() ErrorClass {
 	return e.class
 }
 
+// Category returns the error's category.
 func (e *baseError) Category() ErrorCategory {
 	if e.category == "" && e.wrappedErr != nil {
 		return e.wrappedErr.Category()
@@ -182,6 +187,7 @@ func (e *baseError) Category() ErrorCategory {
 	return e.category
 }
 
+// Severity returns the error's severity.
 func (e *baseError) Severity() ErrorSeverity {
 	if e.severity == "" && e.wrappedErr != nil {
 		return e.wrappedErr.Severity()
@@ -189,6 +195,7 @@ func (e *baseError) Severity() ErrorSeverity {
 	return e.severity
 }
 
+// IsRetryable returns true if the error is marked as retryable.
 func (e *baseError) IsRetryable() bool {
 	if !e.retryable && e.wrappedErr != nil {
 		return e.wrappedErr.IsRetryable()
@@ -196,6 +203,7 @@ func (e *baseError) IsRetryable() bool {
 	return e.retryable
 }
 
+// Message returns the error's message.
 func (e *baseError) Message() string {
 	if e.message != "" {
 		return e.message
@@ -209,6 +217,7 @@ func (e *baseError) Message() string {
 	return ""
 }
 
+// Fields returns the error's fields.
 func (e *baseError) Fields() []any {
 	if len(e.fields) == 0 && e.wrappedErr != nil {
 		return e.wrappedErr.Fields()
@@ -218,6 +227,7 @@ func (e *baseError) Fields() []any {
 	return fields
 }
 
+// Created returns the time the error was created.
 func (e *baseError) Created() time.Time {
 	if e.created.IsZero() && e.wrappedErr != nil {
 		return e.wrappedErr.Created()
@@ -225,6 +235,7 @@ func (e *baseError) Created() time.Time {
 	return e.created
 }
 
+// Span returns the error's trace span.
 func (e *baseError) Span() TraceSpan {
 	if e.span == nil && e.wrappedErr != nil {
 		return e.wrappedErr.Span()
@@ -232,6 +243,7 @@ func (e *baseError) Span() TraceSpan {
 	return e.span
 }
 
+// AllFields returns all fields from the error and its wrapped errors.
 func (e *baseError) AllFields() []any {
 	var wrappedFields []any
 	if e.wrappedErr != nil {
@@ -245,6 +257,7 @@ func (e *baseError) AllFields() []any {
 	return fields
 }
 
+// BaseError returns the lowest-level error in the wrap chain.
 func (e *baseError) BaseError() Error {
 	if e.wrappedErr != nil {
 		return e.wrappedErr.BaseError()
@@ -252,14 +265,17 @@ func (e *baseError) BaseError() Error {
 	return e
 }
 
+// LogFields returns the error's fields for logging.
 func (e *baseError) LogFields(opts ...LogOptions) []any {
 	return getLogFields(e, opts...)
 }
 
+// LogFieldsMap returns the error's fields for logging as a map.
 func (e *baseError) LogFieldsMap(opts ...LogOptions) map[string]any {
 	return getLogFieldsMap(e, opts...)
 }
 
+// Stack returns the error's stack trace.
 func (e *baseError) Stack() Stack {
 	return e.getStack(e.StackTraceConfig())
 }
@@ -276,6 +292,7 @@ func (e *baseError) getStack(cfg *StackTraceConfig) Stack {
 	return frames
 }
 
+// StackTraceConfig returns the configuration for the stack trace.
 func (e *baseError) StackTraceConfig() *StackTraceConfig {
 	if e.stackTraceConfig == nil && e.wrappedErr != nil {
 		return e.wrappedErr.StackTraceConfig()
@@ -283,6 +300,7 @@ func (e *baseError) StackTraceConfig() *StackTraceConfig {
 	return e.stackTraceConfig
 }
 
+// Formatter returns the error's message formatter.
 func (e *baseError) Formatter() FormatErrorFunc {
 	if e.formatter == nil && e.wrappedErr != nil {
 		return e.wrappedErr.Formatter()

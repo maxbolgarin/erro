@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 )
 
+// GetFormatErrorWithFullContextBase returns a [FormatErrorFunc] that formats an error with full context.
 func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
 	return func(err Error) string {
 		if _, ok := err.(*baseError); ok {
@@ -20,6 +21,7 @@ func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
 	}
 }
 
+// GetFormatErrorWithFullContext returns a [FormatErrorFunc] that formats an error with full context, including log fields.
 func GetFormatErrorWithFullContext(optFuncs ...LogOption) FormatErrorFunc {
 	return func(err Error) string {
 		fields := getLogFields(err, DefaultLogOptions.ApplyOptions(optFuncs...))
@@ -27,10 +29,12 @@ func GetFormatErrorWithFullContext(optFuncs ...LogOption) FormatErrorFunc {
 	}
 }
 
+// FormatErrorWithFields formats an [Error] with its message and fields.
 func FormatErrorWithFields(err Error) string {
 	return buildFieldsMessage(buildMessage(err), err.Fields())
 }
 
+// FormatErrorMessage formats an error with its message only.
 func FormatErrorMessage(err Error) string {
 	return buildMessage(err)
 }
@@ -67,7 +71,6 @@ func buildMessage(err Error) string {
 	return msg.String()
 }
 
-// buildFieldsMessage creates message with fields appended
 func buildFieldsMessage(message string, fields []any) (out string) {
 	if len(fields) == 0 {
 		return message
@@ -78,7 +81,6 @@ func buildFieldsMessage(message string, fields []any) (out string) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			// Fallback to safe string conversion
 			out = message
 		}
 	}()
@@ -102,21 +104,15 @@ func buildFieldsMessage(message string, fields []any) (out string) {
 }
 
 func truncateString[T ~string](s T, maxLen int) T {
-	// Efficient byte-based truncation that preserves UTF-8 boundaries
 	if len(s) <= maxLen {
 		return s
 	}
-
-	// Fast path for ASCII strings (most common case)
 	if isASCII(s) {
 		return s[:maxLen]
 	}
-
-	// Slow path for UTF-8 strings - truncate at safe boundary
 	return truncateUTF8(s, maxLen)
 }
 
-// isASCII checks if string contains only ASCII characters (fast path)
 func isASCII[T ~string](s T) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= utf8.RuneSelf {
@@ -126,7 +122,6 @@ func isASCII[T ~string](s T) bool {
 	return true
 }
 
-// truncateUTF8 truncates string at UTF-8 boundary without expensive rune conversion
 func truncateUTF8[T ~string](s T, maxBytes int) T {
 	if maxBytes <= 0 {
 		return ""
@@ -134,8 +129,6 @@ func truncateUTF8[T ~string](s T, maxBytes int) T {
 	if len(s) <= maxBytes {
 		return s
 	}
-
-	// Find the largest valid UTF-8 prefix within maxBytes
 	for i := maxBytes; i > 0; i-- {
 		if utf8.ValidString(string(s[:i])) {
 			return s[:i]
@@ -144,16 +137,14 @@ func truncateUTF8[T ~string](s T, maxBytes int) T {
 	return ""
 }
 
-// ApplyFormatVerbs finds verbs like %s, %d, %v in the format string and replaces
-// each with the next arg. It is a faster, non-allocating alternative to fmt.Sprintf
-// for simple cases. It does not support flags or complex verbs.
+// ApplyFormatVerbs replaces format verbs in a string with arguments.
 func ApplyFormatVerbs(format string, args ...any) (string, []any) {
 	if format == "" {
 		return "", args
 	}
 
 	var result strings.Builder
-	result.Grow(len(format) + len(args)*8) // A better guess for growth
+	result.Grow(len(format) + len(args)*8)
 	argIdx := 0
 	i := 0
 	for i < len(format) {
@@ -163,17 +154,13 @@ func ApplyFormatVerbs(format string, args ...any) (string, []any) {
 			continue
 		}
 
-		// We have a '%'
-
 		if i+1 >= len(format) {
-			// Dangling '%' at the end
 			result.WriteByte(format[i])
 			i++
 			continue
 		}
 
 		if format[i+1] == '%' {
-			// Escaped '%%'
 			result.WriteRune('%')
 			i += 2
 			continue
@@ -182,9 +169,8 @@ func ApplyFormatVerbs(format string, args ...any) (string, []any) {
 		if argIdx < len(args) {
 			appendValue(&result, args[argIdx], MaxValueLength)
 			argIdx++
-			i += 2 // Skips verb character (e.g., 's' in "%s")
+			i += 2
 		} else {
-			// not enough arguments
 			result.WriteByte(format[i])
 			result.WriteByte(format[i+1])
 			i += 2
@@ -198,15 +184,12 @@ func formatError(err Error, s fmt.State, verb rune) {
 	switch verb {
 	case 'v':
 		if s.Flag('+') {
-			// Print with stack trace
 			fmt.Fprint(s, err.Error())
-
 			stack := err.Stack()
 			if len(stack) > 0 {
 				fmt.Fprint(s, "\nStack trace:\n")
 				fmt.Fprint(s, stack.FormatFull())
 			}
-
 		} else {
 			fmt.Fprint(s, err.Error())
 		}
@@ -266,7 +249,7 @@ func appendValue(b *strings.Builder, value any, maxLen int) {
 		return
 	}
 
-	var tmp [64]byte // Temporary buffer for formatting primitives
+	var tmp [64]byte
 
 	switch v := value.(type) {
 	case string:
@@ -279,8 +262,6 @@ func appendValue(b *strings.Builder, value any, maxLen int) {
 		}
 		b.Write(v)
 	case time.Time:
-		// time.Format still allocates, but it's the standard way.
-		// For extreme optimization, a custom formatter would be needed.
 		b.WriteString(truncateString(v.Format(time.RFC3339), maxLen))
 	case fmt.Stringer:
 		if v != nil {
@@ -317,16 +298,12 @@ func appendValue(b *strings.Builder, value any, maxLen int) {
 	case bool:
 		b.Write(strconv.AppendBool(tmp[:0], v))
 	case []string:
-		// This still allocates with strings.Join, but it's cleaner.
-		// For max efficiency, loop and write string/rune.
 		b.WriteString(truncateString(strings.Join(v, ","), maxLen))
 	default:
-		// Fallback for other types, which will allocate.
 		b.WriteString(truncateString(fmt.Sprintf("%v", v), maxLen))
 	}
 }
 
-// valueToStringTruncated converts any value to string and truncates efficiently using byte-based approach
 func valueToString(value any) string {
 	if value == nil {
 		return ""
@@ -352,7 +329,7 @@ func valueToString(value any) string {
 		}
 		str = v.Error()
 	case int:
-		return strconv.FormatInt(int64(v), 10) // Numbers don't need truncation
+		return strconv.FormatInt(int64(v), 10)
 	case int8:
 		return strconv.FormatInt(int64(v), 10)
 	case int16:
