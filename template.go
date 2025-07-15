@@ -22,7 +22,7 @@ func (t *ErrorTemplate) New(fields ...any) Error {
 	if len(fields) < numVerbs {
 		// Not enough arguments for the format string.
 		// This is a programmer error, but we should handle it gracefully.
-		return newf(t.messageTemplate, mergeFields(fields, t.opts)...)
+		return newBaseError(t.messageTemplate, mergeFields(fields, t.opts)...)
 	}
 
 	formatArgs := fields[:numVerbs]
@@ -35,7 +35,7 @@ func (t *ErrorTemplate) New(fields ...any) Error {
 func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
 	numVerbs := countVerbs(t.messageTemplate)
 	if len(fields) < numVerbs {
-		return wrapf(originalErr, t.messageTemplate, mergeFields(fields, t.opts)...)
+		return newWrapError(originalErr, t.messageTemplate, mergeFields(fields, t.opts)...)
 	}
 
 	formatArgs := fields[:numVerbs]

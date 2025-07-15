@@ -96,6 +96,11 @@ func StrictStackTraceConfig() *StackTraceConfig {
 	}
 }
 
+// DisabledStackTraceConfig returns a configuration that completely disables stack traces.
+func DisabledStackTraceConfig() *StackTraceConfig {
+	return &StackTraceConfig{}
+}
+
 // StackFrame stores a frame's runtime information in a human readable format
 // Enhanced with additional context for better error diagnostics
 type StackFrame struct {

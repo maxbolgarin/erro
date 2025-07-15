@@ -37,21 +37,21 @@ func main() {
 
 	// Completely disable stack traces
 	fmt.Println("\n=== DISABLED STACK TRACES ===")
-	err = handleRequest(erro.NoStackTraceConfig())
+	err = handleRequest(erro.DisabledStackTraceConfig())
 	fmt.Printf("%+v\n", err)
 
 	// Custom configuration
 	fmt.Println("\n=== CUSTOM CONFIGURATION ===")
 	cfg := &erro.StackTraceConfig{
-		Enabled:           true,
-		ShowFullPaths:     false,
+		ShowFileNames:	  true,
+		ShowFullPaths:	  false,
 		ShowFunctionNames: true, // Show function names but not paths
-		ShowPackageNames:  false,
-		ShowLineNumbers:   false,
+		ShowPackageNames:	  false,
+		ShowLineNumbers:	  false,
 		ShowAllCodeFrames: true,
-		PathElements:      1, // Show only 1 path element (just parent directory + filename)
-		FunctionRedacted:  "[FUNC]",
-		MaxFrames:         3,
+		PathElements:	  1, // Show only 1 path element (just parent directory + filename)
+		FunctionRedacted:	  "[FUNC]",
+		MaxFrames:		  3,
 	}
 	err = handleRequest(cfg)
 	fmt.Printf("%+v\n", err)

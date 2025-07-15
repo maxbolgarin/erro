@@ -52,7 +52,7 @@ func (g *List) Wrap(err error, message string, meta ...any) *List {
 // Err returns a combined error from all errors in the list, or nil if empty.
 func (g *List) Err() error {
 	if len(g.errors) == 0 {
-		return nil
+		return &multiError{}
 	}
 	if len(g.errors) == 1 {
 		return g.errors[0]
@@ -74,11 +74,15 @@ func (g *List) Remove(i int) bool {
 }
 
 // RemoveError removes the first error that matches the given error by ID.
-func (g *List) RemoveError(err Error) bool {
+func (g *List) RemoveError(err error) bool {
 	if err == nil {
 		return false
 	}
-	id := err.ID()
+	errError, ok := err.(Error)
+	if !ok {
+		return false
+	}
+	id := errError.ID()
 	if id == "" {
 		return false
 	}
@@ -188,7 +192,7 @@ func (s *Set) WithKeyGetter(keyGetter KeyGetterFunc) *Set {
 // Err returns a combined error that includes deduplication counts.
 func (s *Set) Err() error {
 	if s.Len() == 0 {
-		return nil
+		return &multiErrorSet{}
 	}
 	if s.Len() == 1 {
 		return s.First()
@@ -233,16 +237,16 @@ func (s *Set) Remove(i int) bool {
 }
 
 // RemoveError removes an error by its instance and its key from the seen map.
-func (s *Set) RemoveError(err Error) bool {
+func (s *Set) RemoveError(err error) bool {
 	if err == nil {
 		return false
 	}
-	id := err.ID()
+	id := s.keyGetter(err)
 	if id == "" {
 		return false
 	}
 	for i, e := range s.Errs() {
-		if e.ID() == id {
+		if s.keyGetter(e) == id {
 			return s.Remove(i)
 		}
 	}
@@ -453,10 +457,6 @@ func (m *multiError) Error() string {
 	if len(m.errors) == 0 {
 		return ""
 	}
-	if len(m.errors) == 1 {
-		return m.errors[0].Error()
-	}
-
 	var builder strings.Builder
 	builder.WriteString("multiple errors (")
 	builder.WriteString(strconv.Itoa(len(m.errors)))
@@ -489,10 +489,6 @@ func (m *multiErrorSet) Error() string {
 	if len(m.errors) == 0 {
 		return ""
 	}
-	if len(m.errors) == 1 {
-		return m.errors[0].Error()
-	}
-
 	var builder strings.Builder
 	builder.WriteString("multiple unique errors (")
 	builder.WriteString(strconv.Itoa(len(m.errors)))

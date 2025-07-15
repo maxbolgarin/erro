@@ -36,14 +36,14 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 		return
 	}
 
-	ctx := ExtractError(err)
-	if ctx == nil {
-		logFunc(err.Error(), nil)
+	errError, ok := err.(Error)
+	if !ok {
+		logFunc(err.Error())
 		return
 	}
 
 	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
-	logFunc(ctx.Message(), getLogFields(ctx, opts)...)
+	logFunc(errError.Message(), getLogFields(errError, opts)...)
 }
 
 func ErrorToJSON(err Error) ErrorSchema {

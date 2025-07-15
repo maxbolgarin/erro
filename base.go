@@ -112,7 +112,7 @@ func (e *baseError) Is(target error) bool {
 	targetSeverity := targetErr.Severity()
 	targetRetryable := targetErr.IsRetryable()
 
-	if targetClass != ClassUnknown && targetCategory != CategoryUnknown {
+	if targetID == "" && (targetClass != ClassUnknown || targetCategory != CategoryUnknown) {
 		return e.Class() == targetClass && e.Category() == targetCategory &&
 			e.Severity() == targetSeverity && e.IsRetryable() == targetRetryable
 	}

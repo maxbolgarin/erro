@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maxbolgarin/erro"
 )
@@ -22,7 +23,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewWithFields(t *testing.T) {
-	err := erro.New("test error", "key1", "value1", "key2", 123)
+	err := erro.New("test error", "key1", "value1", "key2", 123, nil, nil)
 	if !strings.HasPrefix(err.Error(), "test error") {
 		t.Errorf("Expected prefix 'test error', got '%s'", err.Error())
 	}
@@ -31,6 +32,40 @@ func TestNewWithFields(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "key2=123") {
 		t.Errorf("Expected to contain 'key2=123', got '%s'", err.Error())
+	}
+}
+
+func TestNewWithFieldsOdd(t *testing.T) {
+	err := erro.New("test error", "key1", "value1", "key2", 123, "key3")
+	if !strings.HasPrefix(err.Error(), "test error") {
+		t.Errorf("Expected prefix 'test error', got '%s'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "key1=value1") {
+		t.Errorf("Expected to contain 'key1=value1', got '%s'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "key2=123") {
+		t.Errorf("Expected to contain 'key2=123', got '%s'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "key3="+erro.MissingFieldPlaceholder) {
+		t.Errorf("Expected to contain 'key3="+erro.MissingFieldPlaceholder+"', got '%s'", err.Error())
+	}
+}
+
+func TestNewWithFieldsMany(t *testing.T) {
+	targetLength := 2*erro.MaxFieldsCount + 100
+
+	fields := make([]any, 0, targetLength)
+	for i := 0; i < targetLength; i++ {
+		fields = append(fields, fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i))
+	}
+
+	if len(fields) != 2*targetLength {
+		t.Errorf("Expected %d fields, got %d", targetLength, len(fields))
+	}
+
+	err := erro.New("test error", fields...)
+	if len(err.Fields()) != 2*erro.MaxFieldsCount {
+		t.Errorf("Expected %d fields, got %d", erro.MaxFieldsCount, len(err.Fields()))
 	}
 }
 
@@ -77,6 +112,17 @@ func TestIs(t *testing.T) {
 	if !erro.Is(wrappedStdErr, stdErr) {
 		t.Errorf("Expected Is to be true for wrapped standard error")
 	}
+
+	template := &templateError{
+		class:     erro.ClassValidation,
+		category:  erro.CategoryDatabase,
+		severity:  erro.SeverityHigh,
+		retryable: true,
+	}
+	errWithMeta := erro.New("some error", erro.ClassValidation, erro.CategoryDatabase, erro.SeverityHigh, erro.Retryable())
+	if !erro.Is(errWithMeta, template) {
+		t.Error("expected Is to be true for template error")
+	}
 }
 
 func TestAs(t *testing.T) {
@@ -99,6 +145,78 @@ func TestAs(t *testing.T) {
 	if customTarget.msg != "custom" {
 		t.Errorf("Expected custom error message to be 'custom', got '%s'", customTarget.msg)
 	}
+
+	var notAPointer customError
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("The code did not panic")
+		}
+	}()
+	erro.As(baseErr, notAPointer)
+
+	var asBaseErr *customError
+	wrappedBaseErr := erro.Wrap(erro.New("base"), "wrapped")
+	if erro.As(wrappedBaseErr, &asBaseErr) {
+		t.Error("expected As to be false for wrapped base error")
+	}
+
+	var asBaseErrTarget *erro.Error
+	if erro.As(wrappedBaseErr, &asBaseErrTarget) {
+		t.Error("expected As to be false for wrapped base error")
+	}
+
+	var asBaseErrTarget2 **erro.Error
+	if erro.As(wrappedBaseErr, &asBaseErrTarget2) {
+		t.Error("expected As to be false for wrapped base error")
+	}
+
+	var asBaseErrTarget3 **customError
+	if erro.As(wrappedBaseErr, &asBaseErrTarget3) {
+		t.Error("expected As to be false for wrapped base error")
+	}
+}
+
+type templateError struct {
+	class     erro.ErrorClass
+	category  erro.ErrorCategory
+	severity  erro.ErrorSeverity
+	retryable bool
+}
+
+func (e *templateError) Error() string                { return "" }
+func (e *templateError) Class() erro.ErrorClass       { return e.class }
+func (e *templateError) Category() erro.ErrorCategory { return e.category }
+func (e *templateError) Severity() erro.ErrorSeverity { return e.severity }
+func (e *templateError) IsRetryable() bool            { return e.retryable }
+func (e *templateError) ID() string                   { return "" }
+func (e *templateError) Message() string              { return "" }
+func (e *templateError) Fields() []any                { return nil }
+func (e *templateError) AllFields() []any             { return nil }
+func (e *templateError) Created() time.Time           { return time.Time{} }
+func (e *templateError) Span() erro.TraceSpan         { return nil }
+func (e *templateError) Stack() erro.Stack            { return nil }
+func (e *templateError) LogFields(...erro.LogOptions) []any {
+	return nil
+}
+func (e *templateError) LogFieldsMap(...erro.LogOptions) map[string]any {
+	return nil
+}
+func (e *templateError) BaseError() erro.Error                    { return e }
+func (e *templateError) StackTraceConfig() *erro.StackTraceConfig { return nil }
+func (e *templateError) Formatter() erro.FormatErrorFunc          { return nil }
+func (e *templateError) Unwrap() error                            { return nil }
+func (e *templateError) Is(target error) bool                     { return false }
+func (e *templateError) As(target any) bool                       { return false }
+func (e *templateError) Format(s fmt.State, verb rune)            {}
+func (e *templateError) MarshalJSON() ([]byte, error)             { return nil, nil }
+func (e *templateError) UnmarshalJSON(data []byte) error          { return nil }
+
+func TestAsBaseError(t *testing.T) {
+	err := erro.New("test")
+	var target any
+	if !erro.As(err, &target) {
+		t.Error("expected As to be true")
+	}
 }
 
 type customError struct {
@@ -108,7 +226,6 @@ type customError struct {
 func (e *customError) Error() string {
 	return e.msg
 }
-
 
 func TestGetters(t *testing.T) {
 	err := erro.New("test message",
@@ -227,6 +344,16 @@ func TestClose(t *testing.T) {
 	if !strings.Contains(err.Error(), "close error") {
 		t.Errorf("Expected error to contain 'close error'")
 	}
+
+	var err2 error
+	erro.Close(&err2, &mockCloser{err: nil}, "failed to close")
+	if err2 != nil {
+		t.Errorf("Expected error to be nil, got '%s'", err2.Error())
+	}
+	erro.Close(&err2, nil, "failed to close")
+	if err2 != nil {
+		t.Errorf("Expected error to be nil, got '%s'", err2.Error())
+	}
 }
 
 func TestShutdown(t *testing.T) {
@@ -244,6 +371,20 @@ func TestShutdown(t *testing.T) {
 	if !strings.Contains(err.Error(), "shutdown error") {
 		t.Errorf("Expected error to contain 'shutdown error'")
 	}
+
+	var err3 error
+	erro.Shutdown(context.Background(), &err3, nil, "failed to close")
+	if err3 != nil {
+		t.Errorf("Expected error to be nil, got '%s'", err3.Error())
+	}
+
+	var err4 error
+	erro.Shutdown(context.Background(), &err4, func(ctx context.Context) error {
+		return nil
+	}, "failed to close")
+	if err4 != nil {
+		t.Errorf("Expected error to be nil, got '%s'", err4.Error())
+	}
 }
 
 func TestJoin(t *testing.T) {
@@ -258,5 +399,21 @@ func TestJoin(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "err2") {
 		t.Errorf("Expected error to contain 'err2'")
+	}
+	err = erro.Join(nil)
+	if err != nil {
+		t.Errorf("Expected error to be nil, got '%s'", err.Error())
+	}
+}
+
+func TestLogFields(t *testing.T) {
+	err := erro.New("test error", "key", "value")
+	fields := err.LogFields()
+	if len(fields) != 6 {
+		t.Errorf("unexpected number of fields: %d", len(fields))
+	}
+	fieldsMap := err.LogFieldsMap()
+	if len(fieldsMap) != 3 {
+		t.Errorf("unexpected number of fields in map: %d", len(fieldsMap))
 	}
 }

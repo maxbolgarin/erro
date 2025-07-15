@@ -105,3 +105,21 @@ func TestUnmarshalJSON(t *testing.T) {
 		t.Errorf("Unexpected fields: %v", fields)
 	}
 }
+
+func TestMarshalJSONWithStack(t *testing.T) {
+	err := erro.New("test error", erro.StackTrace())
+
+	b, jErr := json.Marshal(err)
+	if jErr != nil {
+		t.Fatalf("json.Marshal failed: %v", jErr)
+	}
+
+	var data map[string]interface{}
+	if jErr = json.Unmarshal(b, &data); jErr != nil {
+		t.Fatalf("json.Unmarshal failed: %v", jErr)
+	}
+
+	if _, ok := data["stack_trace"]; !ok {
+		t.Errorf("Expected 'stack_trace' field to exist")
+	}
+}

@@ -43,6 +43,37 @@ func TestTemplate(t *testing.T) {
 	}
 }
 
+func TestTemplate_NoArgs(t *testing.T) {
+	tmpl := erro.NewTemplate("template error: %s",
+		erro.ClassValidation,
+		erro.CategoryUserInput,
+		erro.SeverityHigh,
+		erro.Retryable(),
+		erro.ID("TEMPLATE_ID"),
+	)
+
+	err := tmpl.New()
+
+	if err.ID() != "TEMPLATE_ID" {
+		t.Errorf("Expected ID 'TEMPLATE_ID', got '%s'", err.ID())
+	}
+	if err.Class() != erro.ClassValidation {
+		t.Errorf("Expected class 'validation', got '%s'", err.Class())
+	}
+	if err.Category() != erro.CategoryUserInput {
+		t.Errorf("Expected category 'user_input', got '%s'", err.Category())
+	}
+	if err.Severity() != erro.SeverityHigh {
+		t.Errorf("Expected severity 'high', got '%s'", err.Severity())
+	}
+	if !err.IsRetryable() {
+		t.Errorf("Expected retryable to be true")
+	}
+	if !strings.Contains(err.Error(), "template error") {
+		t.Errorf("Expected message 'template error', got '%s'", err.Error())
+	}
+}
+
 func TestTemplateWrap(t *testing.T) {
 	tmpl := erro.NewTemplate("template wrap: %s",
 		erro.ClassInternal,
@@ -60,6 +91,29 @@ func TestTemplateWrap(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "template wrap: wrapped message") {
 		t.Errorf("Expected message 'template wrap: wrapped message', got '%s'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "base error") {
+		t.Errorf("Expected message to contain 'base error', got '%s'", err.Error())
+	}
+}
+
+func TestTemplateWrap_NoArgs(t *testing.T) {
+	tmpl := erro.NewTemplate("template wrap: %s",
+		erro.ClassInternal,
+		erro.CategoryDatabase,
+	)
+
+	baseErr := errors.New("base error")
+	err := tmpl.Wrap(baseErr)
+
+	if err.Class() != erro.ClassInternal {
+		t.Errorf("Expected class 'internal', got '%s'", err.Class())
+	}
+	if err.Category() != erro.CategoryDatabase {
+		t.Errorf("Expected category 'database', got '%s'", err.Category())
+	}
+	if !strings.Contains(err.Error(), "template wrap") {
+		t.Errorf("Expected message 'template wrap', got '%s'", err.Error())
 	}
 	if !strings.Contains(err.Error(), "base error") {
 		t.Errorf("Expected message to contain 'base error', got '%s'", err.Error())

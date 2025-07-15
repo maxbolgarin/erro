@@ -157,30 +157,37 @@ func ApplyFormatVerbs(format string, args ...any) (string, []any) {
 	argIdx := 0
 	i := 0
 	for i < len(format) {
-		if format[i] == '%' {
-			if i+1 < len(format) {
-				if format[i+1] == '%' {
-					// Escaped percent %%
-					result.WriteRune('%')
-					i += 2
-					continue
-				}
-
-				// Check for arg placeholder
-				if argIdx < len(args) {
-					// Replace verb with next arg
-					appendValue(&result, args[argIdx], MaxValueLength)
-					argIdx++
-				}
-				i += 2 // Skips verb character (e.g., 's' in "%s")
-			} else {
-				// Dangling '%' at the end of the string
-				result.WriteByte(format[i])
-				i++
-			}
-		} else {
+		if format[i] != '%' {
 			result.WriteByte(format[i])
 			i++
+			continue
+		}
+
+		// We have a '%'
+
+		if i+1 >= len(format) {
+			// Dangling '%' at the end
+			result.WriteByte(format[i])
+			i++
+			continue
+		}
+
+		if format[i+1] == '%' {
+			// Escaped '%%'
+			result.WriteRune('%')
+			i += 2
+			continue
+		}
+
+		if argIdx < len(args) {
+			appendValue(&result, args[argIdx], MaxValueLength)
+			argIdx++
+			i += 2 // Skips verb character (e.g., 's' in "%s")
+		} else {
+			// not enough arguments
+			result.WriteByte(format[i])
+			result.WriteByte(format[i+1])
+			i += 2
 		}
 	}
 

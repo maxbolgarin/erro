@@ -60,4 +60,10 @@ func TestHTTPCode(t *testing.T) {
 			}
 		})
 	}
+
+	var err2 = &customError{}
+	code := erro.HTTPCode(err2)
+	if code != http.StatusInternalServerError {
+		t.Errorf("Expected HTTP code %d, got %d", http.StatusOK, code)
+	}
 }
