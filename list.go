@@ -1,7 +1,6 @@
 package erro
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,36 +40,13 @@ func (g *List) Add(err error) *List {
 }
 
 // New creates a new error and adds it to the list.
-func (g *List) New(message string, fields ...any) *List {
-	return addNew(g, message, fields...)
-}
-
-func (g *List) NewLight(message string, fields ...any) *List {
-	return addNewLight(g, message, fields...)
-}
-
-// Errorf creates a new formatted error and adds it to the list.
-func (g *List) Errorf(message string, args ...any) *List {
-	return addErrorf(g, message, args...)
+func (g *List) New(message string, meta ...any) *List {
+	return addNew(g, message, meta...)
 }
 
 // Wrap wraps an existing error and adds it to the list.
-func (g *List) Wrap(err error, message string, fields ...any) *List {
-	return addWrap(g, err, message, fields...)
-}
-
-func (g *List) WrapLight(err error, message string, fields ...any) *List {
-	return addWrapLight(g, err, message, fields...)
-}
-
-// WrapEmpty wraps an error without a message and adds it to the list.
-func (g *List) WrapEmpty(err error) *List {
-	return addWrapEmpty(g, err)
-}
-
-// Wrapf wraps an existing error with a formatted message and adds it to the list.
-func (g *List) Wrapf(err error, message string, args ...any) *List {
-	return addWrapf(g, err, message, args...)
+func (g *List) Wrap(err error, message string, meta ...any) *List {
+	return addWrap(g, err, message, meta...)
 }
 
 // Err returns a combined error from all errors in the list, or nil if empty.
@@ -194,26 +170,11 @@ func (s *Set) Add(err error) *Set {
 	s.add(ExtractError(err))
 	return s
 }
-func (s *Set) New(message string, fields ...any) *Set {
-	return addNew(s, message, fields...)
+func (s *Set) New(message string, meta ...any) *Set {
+	return addNew(s, message, meta...)
 }
-func (s *Set) NewLight(message string, fields ...any) *Set {
-	return addNewLight(s, message, fields...)
-}
-func (s *Set) Errorf(message string, args ...any) *Set {
-	return addErrorf(s, message, args...)
-}
-func (s *Set) Wrap(err error, message string, fields ...any) *Set {
-	return addWrap(s, err, message, fields...)
-}
-func (s *Set) WrapLight(err error, message string, fields ...any) *Set {
-	return addWrapLight(s, err, message, fields...)
-}
-func (s *Set) WrapEmpty(err error) *Set {
-	return addWrapEmpty(s, err)
-}
-func (s *Set) Wrapf(err error, message string, args ...any) *Set {
-	return addWrapf(s, err, message, args...)
+func (s *Set) Wrap(err error, message string, meta ...any) *Set {
+	return addWrap(s, err, message, meta...)
 }
 
 // --- Set Overridden Methods ---
@@ -307,46 +268,16 @@ func (sl *SafeList) Add(err error) *SafeList {
 	sl.list.Add(err)
 	return sl
 }
-func (sl *SafeList) New(message string, fields ...any) *SafeList {
+func (sl *SafeList) New(message string, meta ...any) *SafeList {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
-	sl.list.New(message, fields...)
+	sl.list.New(message, meta...)
 	return sl
 }
-func (sl *SafeList) NewLight(message string, fields ...any) *SafeList {
+func (sl *SafeList) Wrap(err error, message string, meta ...any) *SafeList {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
-	sl.list.NewLight(message, fields...)
-	return sl
-}
-func (sl *SafeList) Errorf(message string, args ...any) *SafeList {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	sl.list.Errorf(message, args...)
-	return sl
-}
-func (sl *SafeList) Wrap(err error, message string, fields ...any) *SafeList {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	sl.list.Wrap(err, message, fields...)
-	return sl
-}
-func (sl *SafeList) WrapLight(err error, message string, fields ...any) *SafeList {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	sl.list.WrapLight(err, message, fields...)
-	return sl
-}
-func (sl *SafeList) WrapEmpty(err error) *SafeList {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	sl.list.WrapEmpty(err)
-	return sl
-}
-func (sl *SafeList) Wrapf(err error, message string, args ...any) *SafeList {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	sl.list.Wrapf(err, message, args...)
+	sl.list.Wrap(err, message, meta...)
 	return sl
 }
 func (sl *SafeList) Err() error {
@@ -430,46 +361,16 @@ func (ss *SafeSet) Add(err error) *SafeSet {
 	ss.set.Add(err)
 	return ss
 }
-func (ss *SafeSet) New(message string, fields ...any) *SafeSet {
+func (ss *SafeSet) New(message string, meta ...any) *SafeSet {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	ss.set.New(message, fields...)
+	ss.set.New(message, meta...)
 	return ss
 }
-func (ss *SafeSet) NewLight(message string, fields ...any) *SafeSet {
+func (ss *SafeSet) Wrap(err error, message string, meta ...any) *SafeSet {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	ss.set.NewLight(message, fields...)
-	return ss
-}
-func (ss *SafeSet) Errorf(message string, args ...any) *SafeSet {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	ss.set.Errorf(message, args...)
-	return ss
-}
-func (ss *SafeSet) Wrap(err error, message string, fields ...any) *SafeSet {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	ss.set.Wrap(err, message, fields...)
-	return ss
-}
-func (ss *SafeSet) WrapLight(err error, message string, fields ...any) *SafeSet {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	ss.set.WrapLight(err, message, fields...)
-	return ss
-}
-func (ss *SafeSet) WrapEmpty(err error) *SafeSet {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	ss.set.WrapEmpty(err)
-	return ss
-}
-func (ss *SafeSet) Wrapf(err error, message string, args ...any) *SafeSet {
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	ss.set.Wrapf(err, message, args...)
+	ss.set.Wrap(err, message, meta...)
 	return ss
 }
 func (ss *SafeSet) Err() error {
@@ -618,98 +519,14 @@ func (m *multiErrorSet) Unwrap() []error {
 	return m.errors
 }
 
-// New creates a new error and adds it to the list.
-func addNew[T interface{ add(Error) }](g T, message string, fields ...any) T {
-	g.add(newBaseErrorWithStack(nil, message, fields...))
-	return g
-}
-
-func addNewLight[T interface{ add(Error) }](g T, message string, fields ...any) T {
-	g.add(newBaseError(nil, message, fields...))
-	return g
-}
-
 // Errorf creates a new formatted error and adds it to the list.
-func addErrorf[T interface{ add(Error) }](g T, message string, args ...any) T {
-	// Count format verbs in the message
-	formats := countFormatVerbs(message)
-
-	// If there are no format verbs, all args are fields
-	if formats == 0 {
-		g.add(newBaseErrorWithStack(nil, message, args...))
-		return g
-	}
-	if formats > len(args) {
-		formats = len(args)
-	}
-
-	message = fmt.Sprintf(message, args[:formats]...)
-	args = args[formats:]
-
-	// Create a new error with the formatted message and remaining args as fields
-	g.add(newBaseErrorWithStack(nil, message, args...))
+func addNew[T interface{ add(Error) }](g T, message string, meta ...any) T {
+	g.add(newf(message, meta...))
 	return g
 }
 
 // Wrap wraps an existing error and adds it to the list.
-func addWrap[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
-	if err == nil {
-		g.add(newBaseErrorWithStack(nil, message, fields...))
-		return g
-	}
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
-		g.add(newWrapError(erroErr, message, fields...))
-		return g
-	}
-	// For external errors, create a new base error that wraps it
-	g.add(newBaseErrorWithStack(err, message, fields...))
-	return g
-}
-
-func addWrapLight[T interface{ add(Error) }](g T, err error, message string, fields ...any) T {
-	if err == nil {
-		g.add(newBaseError(nil, message, fields...))
-		return g
-	}
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
-		g.add(newWrapError(erroErr, message, fields...))
-		return g
-	}
-	g.add(newBaseError(err, message, fields...))
-	return g
-}
-
-// addWrapEmpty wraps an error without a message and adds it to the list.
-func addWrapEmpty[T interface{ add(Error) }](g T, err error) T {
-	if err == nil {
-		return g
-	}
-
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
-		g.add(newWrapError(erroErr, ""))
-		return g
-	}
-
-	// For external errors, create a new base error that wraps it
-	g.add(newBaseErrorWithStack(err, ""))
-	return g
-}
-
-// Wrapf wraps an existing error with a formatted message and adds it to the list.
-func addWrapf[T interface{ add(Error) }](g T, err error, message string, args ...any) T {
-	if err == nil {
-		g.add(newBaseErrorWithStack(nil, message, args...))
-		return g
-	}
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
-		g.add(newWrapError(erroErr, message, args...))
-		return g
-	}
-	// For external errors, create a new base error that wraps it
-	g.add(newBaseErrorWithStack(err, message, args...))
+func addWrap[T interface{ add(Error) }](g T, err error, message string, meta ...any) T {
+	g.add(wrapf(err, message, meta...))
 	return g
 }

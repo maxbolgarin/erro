@@ -16,14 +16,14 @@ type baseError struct {
 	fullMessage atomicValue[string] // Full message with fields (caching)
 
 	// Metadata
-	id        string    // Error id
-	class     Class     // Error class
-	category  Category  // Error category
-	severity  Severity  // Error severity
-	retryable bool      // Retryable flag
-	fields    []any     // Key-value fields
-	span      Span      // Span
-	created   time.Time // Creation timestamp
+	id        string        // Error id
+	class     ErrorClass    // Error class
+	category  ErrorCategory // Error category
+	severity  ErrorSeverity // Error severity
+	retryable bool          // Retryable flag
+	fields    []any         // Key-value fields
+	span      TraceSpan     // Span
+	created   time.Time     // Creation timestamp
 
 	stack  rawStack           // Stack trace (program counters only - resolved on demand)
 	frames atomicValue[Stack] // Stack trace frames (for caching)
@@ -45,15 +45,22 @@ func (e *baseError) Error() (out string) {
 			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
 	}()
-	out = e.message
+
 	if formatter := e.Formatter(); formatter != nil {
 		out = formatter(e)
 		if unwrapped := e.Unwrap(); unwrapped != nil {
-			if out == "" {
-				return unwrapped.Error()
+			unwrappedMsg := unwrapped.Error()
+			if unwrappedMsg == "" {
+				return out
 			}
-			return out + ": " + unwrapped.Error()
+			if out == "" {
+				return unwrappedMsg
+			}
+			return out + ": " + unwrappedMsg
 		}
+	}
+	if out == "" {
+		out = FormatErrorMessage(e)
 	}
 	return out
 }
@@ -83,30 +90,31 @@ func (e *baseError) Unwrap() error {
 // `errors.Is` function, which will then check the wrapped standard error
 // by calling `Unwrap`.
 func (e *baseError) Is(target error) bool {
-	targetCtx := ExtractError(target)
-	if targetCtx == nil {
-		// Target is not an `erro` type. We cannot compare by ID.
-		// Delegate to `errors.Is` to check the wrapped `originalErr`.
+	if e == nil {
+		return false
+	}
+	targetErr, ok := target.(Error)
+	if !ok {
 		return false
 	}
 
-	// Both are `erro` types. Compare by their effective IDs.
-	// The ID() method correctly finds the outermost ID in a chain.
+	// 1. Compare by ID if both are specified. This is the strongest link.
 	eID := e.ID()
-	targetID := targetCtx.ID()
-
+	targetID := targetErr.ID()
 	if eID != "" && targetID != "" {
 		return eID == targetID
 	}
 
-	if e.wrappedErr != nil {
-		return e.wrappedErr.Is(target)
-	}
+	// 2. Compare by Class if the target's class is specified.
+	// This allows for checking against error "types" or templates.
+	targetClass := targetErr.Class()
+	targetCategory := targetErr.Category()
+	targetSeverity := targetErr.Severity()
+	targetRetryable := targetErr.IsRetryable()
 
-	if e.originalErr != nil {
-		if isErr, ok := e.originalErr.(interface{ Is(error) bool }); ok {
-			return isErr.Is(target)
-		}
+	if targetClass != ClassUnknown && targetCategory != CategoryUnknown {
+		return e.Class() == targetClass && e.Category() == targetCategory &&
+			e.Severity() == targetSeverity && e.IsRetryable() == targetRetryable
 	}
 
 	return false
@@ -160,21 +168,21 @@ func (e *baseError) ID() string {
 	return e.id
 }
 
-func (e *baseError) Class() Class {
+func (e *baseError) Class() ErrorClass {
 	if e.class == "" && e.wrappedErr != nil {
 		return e.wrappedErr.Class()
 	}
 	return e.class
 }
 
-func (e *baseError) Category() Category {
+func (e *baseError) Category() ErrorCategory {
 	if e.category == "" && e.wrappedErr != nil {
 		return e.wrappedErr.Category()
 	}
 	return e.category
 }
 
-func (e *baseError) Severity() Severity {
+func (e *baseError) Severity() ErrorSeverity {
 	if e.severity == "" && e.wrappedErr != nil {
 		return e.wrappedErr.Severity()
 	}
@@ -211,7 +219,7 @@ func (e *baseError) Created() time.Time {
 	return e.created
 }
 
-func (e *baseError) Span() Span {
+func (e *baseError) Span() TraceSpan {
 	if e.span == nil && e.wrappedErr != nil {
 		return e.wrappedErr.Span()
 	}
@@ -236,6 +244,14 @@ func (e *baseError) BaseError() Error {
 		return e.wrappedErr.BaseError()
 	}
 	return e
+}
+
+func (e *baseError) LogFields(opts ...LogOptions) []any {
+	return getLogFields(e, opts...)
+}
+
+func (e *baseError) LogFieldsMap(opts ...LogOptions) map[string]any {
+	return getLogFieldsMap(e, opts...)
 }
 
 func (e *baseError) Stack() Stack {
@@ -268,61 +284,97 @@ func (e *baseError) Formatter() FormatErrorFunc {
 	return e.formatter
 }
 
-// newBaseErrorWithStack creates a new base error with security validation
-func newBaseErrorWithStack(originalErr error, message string, fields ...any) *baseError {
-	return newBaseErrorWithStackSkip(3, originalErr, message, fields...)
-}
-
-func newBaseError(originalErr error, message string, fields ...any) *baseError {
-	return newBaseErrorWithStackSkip(0, originalErr, message, fields...)
-}
-
-func newBaseErrorWithStackSkip(skip int, originalErr error, message string, fields ...any) *baseError {
+func newBaseError(message string, meta ...any) *baseError {
 	e := &baseError{
-		id:          newID(),
-		originalErr: originalErr,
-		message:     truncateString(message, MaxMessageLength),
-		created:     time.Now(),
-		fields:      prepareFields(fields),
-		stack:       captureStack(skip),
-		formatter:   FormatErrorWithFields,
+		message:   truncateString(message, MaxMessageLength),
+		formatter: FormatErrorWithFields,
+		created:   time.Now(),
 	}
+	return applyMeta(e, meta...)
+}
+
+func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
+	e := &baseError{
+		message:   truncateString(message, MaxMessageLength),
+		formatter: FormatErrorWithFields,
+	}
+	switch err := errorToWrap.(type) {
+	case *baseError:
+		e.wrappedErr = err
+	default:
+		e.originalErr = err
+	}
+	return applyMeta(e, meta...)
+}
+
+func applyMeta(e *baseError, meta ...any) *baseError {
+	if len(meta) == 0 {
+		return e
+	}
+
+	preparedFields := make([]any, 0, getFieldsCapFromMeta(meta))
+	for _, f := range meta {
+		if f == nil {
+			continue
+		}
+		switch f := f.(type) {
+		case errorOpt:
+			f(e)
+		case errorFields:
+			if fields := f(); len(fields) > 0 {
+				preparedFields = append(preparedFields, fields...)
+			}
+		case ErrorClass:
+			e.class = f
+		case ErrorCategory:
+			e.category = f
+		case ErrorSeverity:
+			e.severity = f
+		case errorWork:
+			continue
+		default:
+			preparedFields = append(preparedFields, f)
+		}
+	}
+	if len(preparedFields)%2 != 0 {
+		preparedFields = append(preparedFields, MissingFieldPlaceholder)
+	}
+	if len(preparedFields) > maxPairsCount {
+		newPreparedFields := make([]any, maxPairsCount)
+		copy(newPreparedFields, preparedFields)
+		preparedFields = newPreparedFields
+	}
+	e.fields = preparedFields
+	if e.id == "" {
+		e.id = newID()
+	}
+	runWorkers(e, meta)
 	return e
 }
 
-func newWrapError(errorToWrap *baseError, message string, fields ...any) *baseError {
-	e := &baseError{
-		id:         newID(),
-		wrappedErr: errorToWrap,
-		message:    truncateString(message, MaxMessageLength),
-		created:    time.Now(),
-		fields:     prepareFields(fields),
-		formatter:  FormatErrorWithFields,
+func getFieldsCapFromMeta(meta []any) int {
+	cap := 0
+	for _, f := range meta {
+		switch f := f.(type) {
+		case errorFields:
+			cap += len(f())
+		case errorOpt, errorWork, ErrorClass, ErrorCategory, ErrorSeverity:
+			continue
+		default:
+			cap++
+		}
 	}
-	return e
+	if cap%2 != 0 {
+		cap++
+	}
+	return cap
 }
 
-// prepareFields prepares fields with validation and safe truncation
-func prepareFields(fields []any) []any {
-	if len(fields) == 0 {
-		return fields
+func runWorkers(e *baseError, meta []any) {
+	for _, f := range meta {
+		switch f := f.(type) {
+		case errorWork:
+			f(e)
+		}
 	}
-
-	// Limit the number of fields to prevent DOS
-	maxElements := MaxFieldsCount * 2
-	if len(fields) > maxElements {
-		fields = fields[:maxElements]
-	}
-
-	// Ensure even number of elements (key-value pairs)
-	if len(fields)%2 != 0 {
-		result := make([]any, len(fields)+1)
-		copy(result, fields)
-		result[len(fields)] = "<missing>"
-		return result
-	}
-
-	result := make([]any, len(fields))
-	copy(result, fields)
-	return result
 }

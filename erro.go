@@ -3,27 +3,18 @@ package erro
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 )
 
 // New creates a new error with optional fields
 func New(message string, fields ...any) Error {
-	return newf(newBaseError, message, fields...)
-}
-
-func NewWithStack(message string, fields ...any) Error {
-	return newf(newBaseErrorWithStack, message, fields...)
+	return newf(message, fields...)
 }
 
 // Wrap wraps an existing error with additional context
 func Wrap(err error, message string, fields ...any) Error {
-	return wrap(newBaseError, err, message, fields...)
-}
-
-func WrapWithStack(err error, message string, fields ...any) Error {
-	return wrap(newBaseErrorWithStack, err, message, fields...)
+	return wrapf(err, message, fields...)
 }
 
 func Close(err *error, cl io.Closer, msg string, fields ...any) {
@@ -193,47 +184,18 @@ func HTTPCode(err error) int {
 	return status
 }
 
-func newf(errConstructor func(err error, message string, fields ...any) *baseError, message string, args ...any) *baseError {
-	// Count format verbs in the message
-	formats := countFormatVerbs(message)
-
-	// If there are no format verbs, all args are fields
-	if formats == 0 {
-		return errConstructor(nil, message, args...)
+func newf(message string, meta ...any) *baseError {
+	if len(meta) == 0 {
+		return newBaseError(message)
 	}
-	if formats > len(args) {
-		formats = len(args)
-	}
-
-	message = fmt.Sprintf(message, args[:formats]...)
-	args = args[formats:]
-
-	// Create a new error with the formatted message and remaining args as fields
-	return errConstructor(nil, message, args...)
+	message, meta = ApplyFormatVerbs(message, meta...)
+	return newBaseError(message, meta...)
 }
 
-func wrap(errConstructor func(err error, message string, fields ...any) *baseError, err error, message string, fields ...any) *baseError {
+func wrapf(err error, message string, meta ...any) *baseError {
 	if err == nil {
 		return nil
 	}
-
-	// Find where format args end and fields begin
-	formats := countFormatVerbs(message)
-
-	// If there are no format verbs, all args are fields
-	if formats > 0 {
-		if formats > len(fields) {
-			formats = len(fields)
-		}
-		message = fmt.Sprintf(message, fields[:formats]...)
-		fields = fields[formats:]
-	}
-
-	// If it's already an erro error, create a wrap that points to its base
-	if erroErr, ok := err.(*baseError); ok && erroErr != nil {
-		return newWrapError(erroErr, message, fields...)
-	}
-
-	// For external errors, create a new base error that wraps it
-	return errConstructor(err, message, fields...)
+	message, meta = ApplyFormatVerbs(message, meta...)
+	return newWrapError(err, message, meta...)
 }

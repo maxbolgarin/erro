@@ -16,7 +16,7 @@ func processPayment() erro.Error {
 }
 
 func handleRequest(cfg *erro.StackTraceConfig) erro.Error {
-	return erro.NewWrapper(processPayment(), "request handling failed", "request_id", "req_789").WithStackTraceConfig(cfg).Build()
+	return erro.Wrap(processPayment(), "request handling failed", "request_id", "req_789", erro.StackTrace(cfg))
 }
 
 func main() {

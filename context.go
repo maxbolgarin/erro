@@ -7,7 +7,7 @@ func ExtractError(err error) Error {
 	if erroErr, ok := err.(Error); ok {
 		return erroErr
 	}
-	return newBaseError(err, "")
+	return newWrapError(err, "")
 }
 
 // LogFields returns a slice of alternating key-value pairs for structured loggers

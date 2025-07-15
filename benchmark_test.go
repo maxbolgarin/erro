@@ -39,7 +39,7 @@ func Benchmark_NewWithStack(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.NewWithStack("connection failed")
+		_ = erro.New("connection failed", erro.StackTrace())
 	}
 }
 
@@ -47,7 +47,7 @@ func Benchmark_NewWithStack_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.NewWithStack("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
+		_ = erro.New("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
 	}
 }
 
@@ -85,7 +85,7 @@ func Benchmark_WrapWithStack(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.WrapWithStack(baseErr, "connection failed")
+		_ = erro.Wrap(baseErr, "connection failed", erro.StackTrace())
 	}
 }
 
@@ -94,7 +94,7 @@ func Benchmark_WrapWithStack_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.WrapWithStack(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
+		_ = erro.Wrap(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
 	}
 }
 
@@ -132,51 +132,95 @@ func Benchmark_Wrap_Error_Deep(b *testing.B) {
 
 // Context building
 
-func Benchmark_NewWrapper_NoStack_Optimized(b *testing.B) {
-	baseErr := erro.New("context build")
-	fields := []any{"key3", "val3", "key4", 43}
-	id := "ID_123"
-	var span erro.Span
-	var metrics erro.Metrics
-	var dispatcher erro.Dispatcher
+func Benchmark_New_AllMeta_WithStack(b *testing.B) {
+	var span erro.TraceSpan
+	var metrics erro.ErrorMetrics
+	var dispatcher erro.EventDispatcher
 	ctx := context.Background()
-	cfg := erro.DevelopmentStackTraceConfig()
 	formatter := erro.FormatErrorWithFields
+	cfg := erro.StrictStackTraceConfig()
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		erro.NewWrapper(baseErr, "context build", fields...).
-			WithCategory(erro.CategoryDatabase).
-			WithClass(erro.ClassValidation).
-			WithSeverity(erro.SeverityHigh).
-			WithID(id).
-			WithRetryable(true).
-			WithSpan(span).
-			WithMetrics(metrics).
-			WithEvent(ctx, dispatcher).
-			WithStackTraceConfig(cfg).
-			WithFormatter(formatter).
-			Build()
+		_ = erro.New("context build address=%s:%d", "localhost", 5432,
+			"key1", "val1", "key2", 42,
+			"refacted_key", erro.Redact("redacted_value"),
+			erro.Fields("key3", "val3", "key4", 43),
+
+			erro.CategoryDatabase,
+			erro.ClassValidation,
+			erro.SeverityHigh,
+
+			erro.Retryable(),
+			erro.RecordSpan(span),
+			erro.RecordMetrics(metrics),
+			erro.SendEvent(ctx, dispatcher),
+			erro.Formatter(formatter),
+			erro.StackTrace(cfg),
+		)
 	}
 }
 
-func Benchmark_NewWrapper_WithStack_NotOptimized(b *testing.B) {
-	baseErr := errors.New("context build")
+func Benchmark_New_AllMeta_NoStack(b *testing.B) {
+	var span erro.TraceSpan
+	var metrics erro.ErrorMetrics
+	var dispatcher erro.EventDispatcher
+	ctx := context.Background()
+	formatter := erro.FormatErrorWithFields
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		erro.NewWrapper(baseErr, "context build", "key1", "val1", "key2", 42).
-			WithCategory("test").
-			WithClass("test").
-			WithSeverity("test").
-			WithRetryable(true).
-			WithSpan(nil).
-			WithStackTraceConfig(erro.DevelopmentStackTraceConfig()).
-			WithFormatter(erro.FormatErrorWithFields).
-			WithEvent(context.Background(), nil).
-			WithMetrics(nil).
-			WithStack().
-			Build()
+		_ = erro.New("context build address=%s:%d", "localhost", 5432,
+			"key1", "val1", "key2", 42,
+			"refacted_key", erro.Redact("redacted_value"),
+			erro.Fields("key3", "val3", "key4", 43),
+
+			erro.CategoryDatabase,
+			erro.ClassValidation,
+			erro.SeverityHigh,
+
+			erro.Retryable(),
+			erro.RecordSpan(span),
+			erro.RecordMetrics(metrics),
+			erro.SendEvent(ctx, dispatcher),
+			erro.Formatter(formatter),
+		)
+	}
+}
+
+func Benchmark_New_AllMeta_NoStack_Optimized(b *testing.B) {
+	fields := []any{}
+	id := "ID_123"
+	var span erro.TraceSpan
+	var metrics erro.ErrorMetrics
+	var dispatcher erro.EventDispatcher
+	ctx := context.Background()
+	formatter := erro.FormatErrorWithFields
+
+	opts := []any{
+		"address", "localhost:5432",
+		"key1", "val1", "key2", 42,
+		"refacted_key", erro.Redact("redacted_value"),
+		erro.Fields(fields...),
+
+		erro.CategoryDatabase,
+		erro.ClassValidation,
+		erro.SeverityHigh,
+
+		erro.ID(id),
+		erro.Retryable(),
+		erro.RecordSpan(span),
+		erro.RecordMetrics(metrics),
+		erro.SendEvent(ctx, dispatcher),
+		erro.Formatter(formatter),
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_ = erro.New("context build", opts...)
 	}
 }
 
@@ -201,16 +245,7 @@ func Benchmark_Error_Context(b *testing.B) {
 // Log Fields
 
 func Benchmark_LogFields(b *testing.B) {
-	err := erro.NewError("context build", "key1", "val1", "key2", 42).
-		WithCategory("test").
-		WithClass("test").
-		WithSeverity("test").
-		WithRetryable(true).
-		WithSpan(nil).
-		WithFields("key3", "val3", "key4", 43).
-		WithStack().
-		Build()
-
+	err := newErr()
 	b.ReportAllocs()
 	b.ResetTimer()
 
@@ -220,15 +255,7 @@ func Benchmark_LogFields(b *testing.B) {
 }
 
 func Benchmark_LogFieldsMap(b *testing.B) {
-	err := erro.NewError("context build", "key1", "val1", "key2", 42).
-		WithCategory("test").
-		WithClass("test").
-		WithSeverity("test").
-		WithRetryable(true).
-		WithSpan(nil).
-		WithFields("key3", "val3", "key4", 43).
-		WithStack().
-		Build()
+	err := newErr()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -238,15 +265,7 @@ func Benchmark_LogFieldsMap(b *testing.B) {
 }
 
 func Benchmark_LogError(b *testing.B) {
-	err := erro.NewError("context build", "key1", "val1", "key2", 42).
-		WithCategory("test").
-		WithClass("test").
-		WithSeverity("test").
-		WithRetryable(true).
-		WithSpan(nil).
-		WithFields("key3", "val3", "key4", 43).
-		WithStack().
-		Build()
+	err := newErr()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -261,53 +280,25 @@ func Benchmark_LogError(b *testing.B) {
 // Template benchmarks
 
 func Benchmark_New_Template(b *testing.B) {
-	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = newTemplateWithStack()
+	}
+}
+
+func Benchmark_New_FromTemplate(b *testing.B) {
+	tmpl := newTemplate()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.NewTemplate("key1", "value1", "key2", 123).
-			WithClass(erro.ClassValidation).
-			WithCategory(erro.CategoryUserInput).
-			WithSeverity(erro.SeverityHigh).
-			WithRetryable(true).
-			WithID("TEMPLATE_ID").
-			WithStack().
-			WithEvent(ctx, nil).
-			WithSpan(nil).
-			WithMetrics(nil).
-			WithMessageTemplate("template error: %s")
+		_ = tmpl.New()
 	}
 }
 
-func Benchmark_New_Error_FromTemplate(b *testing.B) {
-	tmpl := erro.NewTemplate().
-		WithClass(erro.ClassValidation).
-		WithCategory(erro.CategoryUserInput).
-		WithSeverity(erro.SeverityHigh).
-		WithRetryable(true).
-		WithID("TEMPLATE_ID").
-		WithStackTraceConfig(erro.DevelopmentStackTraceConfig()).
-		WithFormatter(erro.FormatErrorWithFields).
-		WithStack().
-		WithEvent(context.Background(), nil).
-		WithMetrics(nil)
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = tmpl.New("something went wrong")
-	}
-}
-
-func Benchmark_New_Error_FromTemplate_WithMessageAndFields(b *testing.B) {
-	tmpl := erro.NewTemplate().
-		WithClass(erro.ClassValidation).
-		WithCategory(erro.CategoryUserInput).
-		WithSeverity(erro.SeverityHigh).
-		WithRetryable(true).
-		WithID("TEMPLATE_ID").
-		WithMessageTemplate("template error: %s")
+func Benchmark_New_FromTemplate_WithMessageAndFields(b *testing.B) {
+	tmpl := newTemplate()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -316,20 +307,44 @@ func Benchmark_New_Error_FromTemplate_WithMessageAndFields(b *testing.B) {
 	}
 }
 
-func Benchmark_Wrap_Error_FromTemplate_Full_WithStack(b *testing.B) {
-	tmpl := erro.NewTemplate().
-		WithClass(erro.ClassValidation).
-		WithCategory(erro.CategoryUserInput).
-		WithSeverity(erro.SeverityHigh).
-		WithRetryable(true).
-		WithID("TEMPLATE_ID").
-		WithStack().
-		WithSpan(nil).
-		WithMetrics(nil).
-		WithEvent(context.Background(), nil).
-		WithMessageTemplate("template error: %s")
+func Benchmark_New_FromTemplate_Full(b *testing.B) {
+	tmpl := newTemplateWithStack()
 
-	baseErr := errors.New("base error")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tmpl.New("something went wrong", "key1", "value1", "key2", 123)
+	}
+}
+
+func Benchmark_Wrap_FromTemplate(b *testing.B) {
+	tmpl := newTemplate()
+
+	baseErr := erro.New("base error")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tmpl.Wrap(baseErr)
+	}
+}
+
+func Benchmark_Wrap_FromTemplate_WithMessageAndFields(b *testing.B) {
+	tmpl := newTemplate()
+
+	baseErr := erro.New("base error")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tmpl.Wrap(baseErr, "wrapped by template", "key1", "value1", "key2", 123)
+	}
+}
+
+func Benchmark_Wrap_FromTemplate_Full(b *testing.B) {
+	tmpl := newTemplateWithStack()
+
+	baseErr := erro.New("base error")
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -341,7 +356,7 @@ func Benchmark_Wrap_Error_FromTemplate_Full_WithStack(b *testing.B) {
 // HTTPCode benchmarks
 
 func Benchmark_HTTPCode_WithClass(b *testing.B) {
-	err := erro.NewError("not found").WithClass(erro.ClassNotFound).Build()
+	err := erro.New("not found", erro.ClassNotFound)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = erro.HTTPCode(err)
@@ -357,9 +372,88 @@ func Benchmark_HTTPCode_StandardError(b *testing.B) {
 }
 
 func Benchmark_HTTPCode_UnknownClassCategory(b *testing.B) {
-	err := erro.NewError("some error").WithClass("").WithCategory("").Build()
+	err := erro.New("some error", erro.ClassValidation, erro.CategoryDatabase)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = erro.HTTPCode(err)
 	}
+}
+
+func Benchmark_Sprintf_vs_ApplyFormatVerbs(b *testing.B) {
+	format := "connection failed address=%s:%d key1=%s key2=%d key3=%f key4=%t"
+	arg1 := "localhost"
+	arg2 := 5432
+	arg3 := "value1"
+	arg4 := 123
+	arg5 := 3.14
+	arg6 := true
+
+	b.Run("fmt.Sprintf", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_ = fmt.Sprintf(format, arg1, arg2, arg3, arg4, arg5, arg6)
+		}
+	})
+
+	b.Run("ApplyFormatVerbs", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = erro.ApplyFormatVerbs(format, arg1, arg2, arg3, arg4, arg5, arg6)
+		}
+	})
+}
+
+func newErr() erro.Error {
+	fields := []any{"key3", "val3", "key4", 43}
+	id := "ID_123"
+	var span erro.TraceSpan
+	var metrics erro.ErrorMetrics
+	var dispatcher erro.EventDispatcher
+	ctx := context.Background()
+	formatter := erro.FormatErrorWithFields
+
+	return erro.New("context build",
+		erro.CategoryDatabase,
+		erro.ClassValidation,
+		erro.SeverityHigh,
+
+		erro.ID(id),
+		erro.Retryable(),
+		erro.Fields(fields...),
+		erro.RecordSpan(span),
+		erro.RecordMetrics(metrics),
+		erro.SendEvent(ctx, dispatcher),
+		erro.Formatter(formatter),
+	)
+}
+
+func newTemplate() *erro.ErrorTemplate {
+	return erro.NewTemplate("template error: %s",
+		erro.ClassValidation,
+		erro.CategoryUserInput,
+		erro.SeverityHigh,
+		erro.Retryable(),
+		erro.ID("TEMPLATE_ID"),
+		erro.RecordSpan(nil),
+		erro.RecordMetrics(nil),
+		erro.SendEvent(context.Background(), nil),
+		erro.Formatter(nil),
+	)
+}
+
+func newTemplateWithStack() *erro.ErrorTemplate {
+	return erro.NewTemplate("template error: %s",
+		erro.ClassValidation,
+		erro.CategoryUserInput,
+		erro.SeverityHigh,
+		erro.Retryable(),
+		erro.ID("TEMPLATE_ID"),
+		erro.StackTrace(erro.StrictStackTraceConfig()),
+		erro.RecordSpan(nil),
+		erro.RecordMetrics(nil),
+		erro.SendEvent(context.Background(), nil),
+		erro.Formatter(nil),
+	)
 }
