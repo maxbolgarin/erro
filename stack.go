@@ -36,7 +36,6 @@ const (
 
 // StackTraceConfig controls what information is included in stack traces
 type StackTraceConfig struct {
-	Enabled       bool // Whether to show stack traces
 	ShowFileNames bool // Whether to show file names
 	ShowFullPaths bool // Whether to show file paths
 	PathElements  int  // Number of path elements to include (0 = filename only, -1 = full path)
@@ -55,7 +54,6 @@ type StackTraceConfig struct {
 // DevelopmentStackTraceConfig returns the development-safe stack trace configuration
 func DevelopmentStackTraceConfig() *StackTraceConfig {
 	return &StackTraceConfig{
-		Enabled:           true,
 		ShowFileNames:     true,
 		ShowFullPaths:     true,
 		ShowFunctionNames: true,
@@ -69,7 +67,6 @@ func DevelopmentStackTraceConfig() *StackTraceConfig {
 // ProductionStackTraceConfig returns a production-safe stack trace configuration
 func ProductionStackTraceConfig() *StackTraceConfig {
 	return &StackTraceConfig{
-		Enabled:       true,
 		ShowFileNames: true,
 		ShowFullPaths: false, // Hide full paths, show only filenames
 		PathElements:  2,     // Show 2 path elements from project root (e.g., "examples/privacy/main.go")
@@ -86,7 +83,6 @@ func ProductionStackTraceConfig() *StackTraceConfig {
 // StrictStackTraceConfig returns a strict privacy stack trace configuration
 func StrictStackTraceConfig() *StackTraceConfig {
 	return &StackTraceConfig{
-		Enabled:       true,
 		ShowFileNames: true,  // Hide all file names
 		ShowFullPaths: false, // Hide all path information
 		PathElements:  0,     // Show only filename
@@ -98,11 +94,6 @@ func StrictStackTraceConfig() *StackTraceConfig {
 
 		MaxFrames: 3, // Very limited frames for strict mode
 	}
-}
-
-// NoStackTraceConfig returns a configuration that completely disables stack traces
-func NoStackTraceConfig() *StackTraceConfig {
-	return &StackTraceConfig{}
 }
 
 // StackFrame stores a frame's runtime information in a human readable format
@@ -245,7 +236,7 @@ func (f StackFrame) getFrameType() string {
 }
 
 func (f StackFrame) getFunctionName() string {
-	if f.StackTraceConfig == nil || !f.StackTraceConfig.Enabled {
+	if f.StackTraceConfig == nil {
 		return f.FullName
 	}
 	if f.StackTraceConfig.ShowFunctionNames {
@@ -261,7 +252,7 @@ func (f StackFrame) getFunctionName() string {
 }
 
 func (f StackFrame) getFileName() string {
-	if f.StackTraceConfig == nil || !f.StackTraceConfig.Enabled {
+	if f.StackTraceConfig == nil {
 		return f.File
 	}
 

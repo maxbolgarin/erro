@@ -14,6 +14,9 @@ func New(message string, fields ...any) Error {
 
 // Wrap wraps an existing error with additional context
 func Wrap(err error, message string, fields ...any) Error {
+	if err == nil {
+		return nil
+	}
 	return wrapf(err, message, fields...)
 }
 
@@ -77,12 +80,6 @@ func Join(errs ...error) error {
 		}
 	}
 	return e
-}
-
-// IsLight checks if any error is a lightweight error
-func IsLight(err error) bool {
-	errBase, ok := err.(*baseError)
-	return ok && errBase.stack == nil
 }
 
 func HTTPCode(err error) int {
@@ -193,9 +190,6 @@ func newf(message string, meta ...any) *baseError {
 }
 
 func wrapf(err error, message string, meta ...any) *baseError {
-	if err == nil {
-		return nil
-	}
 	message, meta = ApplyFormatVerbs(message, meta...)
 	return newWrapError(err, message, meta...)
 }

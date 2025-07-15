@@ -197,10 +197,16 @@ func (e *baseError) IsRetryable() bool {
 }
 
 func (e *baseError) Message() string {
-	if e.message == "" && e.wrappedErr != nil {
+	if e.message != "" {
+		return e.message
+	}
+	if e.wrappedErr != nil {
 		return e.wrappedErr.Message()
 	}
-	return e.message
+	if e.originalErr != nil {
+		return e.originalErr.Error()
+	}
+	return ""
 }
 
 func (e *baseError) Fields() []any {
@@ -345,7 +351,7 @@ func applyMeta(e *baseError, meta ...any) *baseError {
 		preparedFields = newPreparedFields
 	}
 	e.fields = preparedFields
-	if e.id == "" {
+	if e.id == "" && e.wrappedErr == nil {
 		e.id = newID()
 	}
 	runWorkers(e, meta)

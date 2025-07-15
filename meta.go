@@ -38,22 +38,22 @@ func Formatter(f FormatErrorFunc) errorOpt {
 func StackTrace(c ...*StackTraceConfig) errorOpt {
 	return func(err *baseError) {
 		err.stack = captureStack(3)
-		if len(c) == 0 {
+		if len(c) > 0 {
+			err.stackTraceConfig = c[0]
+		} else {
 			err.stackTraceConfig = nil
-			return
 		}
-		err.stackTraceConfig = c[0]
 	}
 }
 
 func StackTraceWithSkip(skip int, c ...*StackTraceConfig) errorOpt {
 	return func(err *baseError) {
 		err.stack = captureStack(skip)
-		if len(c) == 0 {
+		if len(c) > 0 {
+			err.stackTraceConfig = c[0]
+		} else {
 			err.stackTraceConfig = nil
-			return
 		}
-		err.stackTraceConfig = c[0]
 	}
 }
 

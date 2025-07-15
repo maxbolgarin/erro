@@ -235,36 +235,23 @@ func (a *atomicValue[T]) Store(value T) {
 	a.value.Store(value)
 }
 
-// prepareFields prepares fields with validation and safe truncation
-func prepareFields(fields []any) []any {
-	if len(fields) == 0 {
-		return fields
-	}
-
-	// Limit the number of fields to prevent DOS
-	maxElements := maxPairsCount
-	if len(fields) > maxElements {
-		fields = fields[:maxElements]
-	}
-
-	// Ensure even number of elements (key-value pairs)
-	if len(fields)%2 != 0 {
-		result := make([]any, len(fields)+1)
-		copy(result, fields)
-		result[len(fields)] = MissingFieldPlaceholder
-		return result
-	}
-
-	result := make([]any, len(fields))
-	copy(result, fields)
-	return result
-}
-
 func mergeFields(fields []any, opts []any) []any {
 	newFields := make([]any, 0, len(fields)+len(opts))
 	newFields = append(newFields, opts...)
 	newFields = append(newFields, fields...)
 	return newFields
+}
+
+func countVerbs(s string) int {
+	count := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' {
+			if i+1 < len(s) && s[i+1] != '%' {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func appendValue(b *strings.Builder, value any, maxLen int) {

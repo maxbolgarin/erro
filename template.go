@@ -1,6 +1,6 @@
 package erro
 
-import "strings"
+import "fmt"
 
 // ErrorTemplate represents a template for creating errors with predefined metadata
 type ErrorTemplate struct {
@@ -18,40 +18,31 @@ func NewTemplate(messageTemplate string, opts ...any) *ErrorTemplate {
 
 // Create creates an error using the template
 func (t *ErrorTemplate) New(fields ...any) Error {
-	if len(fields) == 0 {
-		// Remove all format verbs from the message template
-		message := strings.TrimSuffix(t.messageTemplate, ": %s")
-		message, _ = ApplyFormatVerbs(message)
-		return newBaseError(message, t.opts...)
+	numVerbs := countVerbs(t.messageTemplate)
+	if len(fields) < numVerbs {
+		// Not enough arguments for the format string.
+		// This is a programmer error, but we should handle it gracefully.
+		return newf(t.messageTemplate, mergeFields(fields, t.opts)...)
 	}
 
-	if t.messageTemplate == "" {
-		msg, ok := fields[0].(string)
-		if ok {
-			return newf(msg, mergeFields(fields[1:], t.opts)...)
-		}
-		return newBaseError("", mergeFields(fields, t.opts)...)
-	}
+	formatArgs := fields[:numVerbs]
+	metaFields := fields[numVerbs:]
 
-	return newf(t.messageTemplate, mergeFields(fields, t.opts)...)
+	message := fmt.Sprintf(t.messageTemplate, formatArgs...)
+	return newf(message, mergeFields(metaFields, t.opts)...)
 }
 
 func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
-	if len(fields) == 0 {
-		// Remove all format verbs from the message template
-		message, _ := ApplyFormatVerbs(t.messageTemplate)
-		return newWrapError(originalErr, message, t.opts...)
+	numVerbs := countVerbs(t.messageTemplate)
+	if len(fields) < numVerbs {
+		return wrapf(originalErr, t.messageTemplate, mergeFields(fields, t.opts)...)
 	}
 
-	if t.messageTemplate == "" {
-		msg, ok := fields[0].(string)
-		if ok {
-			return wrapf(originalErr, msg, mergeFields(fields[1:], t.opts)...)
-		}
-		return newWrapError(originalErr, "", mergeFields(fields, t.opts)...)
-	}
+	formatArgs := fields[:numVerbs]
+	metaFields := fields[numVerbs:]
 
-	return wrapf(originalErr, t.messageTemplate, mergeFields(fields, t.opts)...)
+	message := fmt.Sprintf(t.messageTemplate, formatArgs...)
+	return wrapf(originalErr, message, mergeFields(metaFields, t.opts)...)
 }
 
 // Predefined templates with message templates
