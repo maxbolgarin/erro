@@ -8,39 +8,45 @@ import (
 )
 
 var (
+	// ErrMaxWrapDepthExceeded is returned when the maximum error wrapping depth is exceeded.
 	ErrMaxWrapDepthExceeded = New("maximum wrap depth exceeded")
 )
 
 // Security configuration constants
 const (
-	// Maximum string lengths to prevent memory exhaustion
-	MaxMessageLength = 1000 // Maximum length for error messages
-	MaxKeyLength     = 128  // Maximum length for field keys
-	MaxValueLength   = 1024 // Maximum length for field values (when converted to string)
+	// MaxMessageLength is the maximum length for error messages.
+	MaxMessageLength = 1000
+	// MaxKeyLength is the maximum length for field keys.
+	MaxKeyLength = 128
+	// MaxValueLength is the maximum length for field values when converted to a string.
+	MaxValueLength = 1024
 
-	// Maximum array/slice lengths to prevent array bombing
-	MaxFieldsCount = 100 // Maximum number of fields (key-value pairs)
+	// MaxFieldsCount is the maximum number of fields (key-value pairs).
+	MaxFieldsCount = 100
 	maxPairsCount  = MaxFieldsCount * 2
 
-	// Wrapping depth limits to prevent stack overflow
-	MaxWrapDepth = 50 // Maximum depth of error wrapping
+	// MaxWrapDepth is the maximum depth of error wrapping.
+	MaxWrapDepth = 50
 
-	// Stack trace limits
-	MaxStackDepth = 50 // Maximum stack depth
+	// MaxStackDepth is the maximum stack depth.
+	MaxStackDepth = 50
 
-	// Redacted placeholder
-	RedactedPlaceholder     = "[REDACTED]"
+	// RedactedPlaceholder is the placeholder for redacted values.
+	RedactedPlaceholder = "[REDACTED]"
+	// MissingFieldPlaceholder is the placeholder for missing field values.
 	MissingFieldPlaceholder = "<missing>"
 )
 
 type (
+	// FormatErrorFunc is a function that formats an error into a string.
 	FormatErrorFunc func(err Error) string
-	KeyGetterFunc   func(err error) string
+	// KeyGetterFunc is a function that generates a key for an error, used for deduplication.
+	KeyGetterFunc func(err error) string
 )
 
-// Error represents the common interface for all erro errors
+// Error represents the common interface for all erro errors.
 type Error interface {
-	// Error interface
+	// error interface
 	error
 	fmt.Formatter
 	json.Marshaler
@@ -70,14 +76,17 @@ type Error interface {
 	Stack() Stack
 }
 
+// ErrorMetrics is an interface for recording error metrics.
 type ErrorMetrics interface {
 	RecordError(err Error)
 }
 
+// EventDispatcher is an interface for sending error events.
 type EventDispatcher interface {
 	SendEvent(ctx context.Context, err Error)
 }
 
+// TraceSpan is an interface for recording errors in a trace span.
 type TraceSpan interface {
 	RecordError(err Error)
 	SetAttributes(attributes ...any)
@@ -86,6 +95,7 @@ type TraceSpan interface {
 	ParentSpanID() string
 }
 
+// ErrorSchema is a serializable representation of an error.
 type ErrorSchema struct {
 	ID           string         `json:"id" bson:"_id" db:"id"`
 	Class        ErrorClass     `json:"class,omitempty" bson:"class,omitempty" db:"class,omitempty"`
@@ -114,21 +124,29 @@ func Redact(value any) RedactedValue {
 
 // Key getter functions for deduplication
 var (
-	// MessageKeyGetter generates a key based on the error's message.
+	// MessageKeyGetter generates a key based on the error's message without fields.
 	MessageKeyGetter KeyGetterFunc = func(err error) string {
-		if e, ok := err.(Error); ok {
-			return e.Message()
+		if erroErr, ok := err.(Error); ok {
+			return erroErr.Message()
+		}
+		var erroErr Error
+		if As(err, &erroErr) {
+			return erroErr.Message()
 		}
 		return err.Error()
 	}
 	// IDKeyGetter generates a key based on the error's ID.
 	IDKeyGetter KeyGetterFunc = func(err error) string {
-		if e, ok := err.(Error); ok {
-			return e.ID()
+		if erroErr, ok := err.(Error); ok {
+			return erroErr.ID()
+		}
+		var erroErr Error
+		if As(err, &erroErr) {
+			return erroErr.ID()
 		}
 		return err.Error()
 	}
-	// ErrorKeyGetter generates a key based on the error's class.
+	// ErrorKeyGetter generates a key based on the error's string representation (err.Error()).
 	ErrorKeyGetter KeyGetterFunc = func(err error) string {
 		return err.Error()
 	}
