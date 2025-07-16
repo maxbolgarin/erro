@@ -322,11 +322,12 @@ func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
 		message:   truncateString(message, MaxMessageLength),
 		formatter: FormatErrorWithFields,
 	}
-	switch err := errorToWrap.(type) {
-	case *baseError:
-		e.wrappedErr = err
-	default:
-		e.originalErr = err
+	var wrappedErr *baseError
+	if As(errorToWrap, &wrappedErr) {
+		e.wrappedErr = wrappedErr
+		e.originalErr = wrappedErr.originalErr
+	} else {
+		e.originalErr = errorToWrap
 	}
 	return applyMeta(e, meta...)
 }
@@ -377,21 +378,21 @@ func applyMeta(e *baseError, meta ...any) *baseError {
 }
 
 func getFieldsCapFromMeta(meta []any) int {
-	cap := 0
+	resultedCap := 0
 	for _, f := range meta {
 		switch f := f.(type) {
 		case errorFields:
-			cap += len(f())
+			resultedCap += len(f())
 		case errorOpt, errorWork, ErrorClass, ErrorCategory, ErrorSeverity:
 			continue
 		default:
-			cap++
+			resultedCap++
 		}
 	}
-	if cap%2 != 0 {
-		cap++
+	if resultedCap%2 != 0 {
+		resultedCap++
 	}
-	return cap
+	return resultedCap
 }
 
 func runWorkers(e *baseError, meta []any) {

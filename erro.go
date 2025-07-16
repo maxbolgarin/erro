@@ -439,8 +439,8 @@ func HTTPCode(err error) int {
 
 	status := http.StatusInternalServerError
 	var erroErr Error
-	if e, ok := err.(Error); ok && e != nil {
-		erroErr = e
+	if As(err, &erroErr) {
+		return status
 	}
 
 	if erroErr == nil {
