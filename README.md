@@ -3,8 +3,7 @@
 [![Go Version][version-img]][doc] [![GoDoc][doc-img]][doc] [![Build][ci-img]][ci] [![Coverage][coverage-img]][coverage] [![GoReport][report-img]][report]
 
 
-
-**Transform your Go error handling.** `erro` is a powerful, production-ready error library that gives you everything the standard `errors` package should have provided: structured context, stack traces, automatic HTTP status codes, seamless logging integration and comprehensive debugging tools.
+**Move your error handling to the next level.** `erro` is a powerful, production-ready error library that gives you everything the standard `errors` package should have provided: structured context, stack traces, automatic HTTP status codes, seamless logging integration and comprehensive debugging tools.
 
 #### 📦 Installation
 
@@ -265,6 +264,17 @@ errors.Unwrap(err1)  // ✅ Works
 
 ## 📊 Performance & Benchmark
 
+### What AI says about this package after writing edge cases tests
+
+**The erro library now demonstrates:**
+
+- Robust security with DoS protection
+- Excellent performance (~416ns/error)
+- Memory safety with no leaks
+- Thread safety with comprehensive concurrency testing
+- Standards compliance with Go error interfaces
+- High test coverage (93.9%) with extensive edge case coverage
+
 ### Benchmarks
 
 ```bash
@@ -321,7 +331,7 @@ Benchmark_New_AllMeta_NoStack_Optimized-8                5399748               2
 ```text
 Benchmark_Error_Context-8                              32185711                37.31 ns/op           64 B/op          1 allocs/op
 Benchmark_LogFields_Default-8                            3546006               334.6 ns/op           816 B/op         11 allocs/op
-Benchmark_LogFields_Minimal-8                            3618733               313.0 ns/op           736 B/op          6 allocs/op
+Benchmark_LogFields_Minimal-8   	                     6461720	           188.5 ns/op	         720 B/op	       5 allocs/op
 Benchmark_LogFields_Verbose-8                            2183089               556.9 ns/op           912 B/op         17 allocs/op
 Benchmark_LogFieldsMap-8                                 1936456               594.7 ns/op          1480 B/op         15 allocs/op
 Benchmark_LogError-8                                     3604401               358.0 ns/op           784 B/op         11 allocs/op
@@ -374,6 +384,9 @@ Benchmark_ApplyFormatVerbs-8                             4271595               2
 
 ## 📚 Documentation
 
+- **[Stack Trace Configuration](docs/stack-trace-configuration.md)** - Configure stack traces for different environments
+- **[Log Fields Configuration](docs/log-fields-configuration.md)** - Master structured logging integration
+- **[Template Creation](docs/template-creation.md)** - Create consistent, reusable error patterns
 - **[API Reference](https://pkg.go.dev/github.com/maxbolgarin/erro)** - Complete API documentation
 - **[Examples](examples/)** - Usage examples
 

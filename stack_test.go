@@ -18,10 +18,6 @@ func TestStackTraceConfig(t *testing.T) {
 	if strict.ShowFunctionNames {
 		t.Error("expected no function names in strict config")
 	}
-	disabled := DisabledStackTraceConfig()
-	if disabled.ShowFileNames {
-		t.Error("expected no file names in disabled config")
-	}
 }
 
 func TestStackFrame_String(t *testing.T) {
@@ -181,7 +177,8 @@ func TestIsUselessRuntimeFrame(t *testing.T) {
 		t.Error("expected useless frame")
 	}
 	if isUselessRuntimeFrame("main.main", "") {
-		t.Error("expected non-useless frame")	}
+		t.Error("expected non-useless frame")
+	}
 }
 
 func TestExtractPathElements(t *testing.T) {

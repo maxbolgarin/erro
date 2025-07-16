@@ -152,7 +152,7 @@ func TestLogError(t *testing.T) {
 	}
 
 	err := New("test error", "key", "value")
-	LogError(err, logFunc)
+	LogError(err, logFunc, WithUserFields(true))
 
 	if loggedMessage != "test error" {
 		t.Errorf("expected message 'test error', got '%s'", loggedMessage)
@@ -453,19 +453,6 @@ func TestMinimalLogOpts(t *testing.T) {
 	}
 }
 
-func TestEmptyLogOpts(t *testing.T) {
-	opts := &LogOptions{}
-	for _, opt := range EmptyLogOpts {
-		opt(opts)
-	}
-	if opts.IncludeUserFields || opts.IncludeID || opts.IncludeSeverity || opts.IncludeCategory || opts.IncludeTracing || opts.IncludeRetryable || opts.IncludeCreatedTime || opts.IncludeFunction || opts.IncludePackage || opts.IncludeFile || opts.IncludeLine || opts.IncludeStack {
-		t.Error("mismatch in empty log options")
-	}
-	if opts.FieldNamePrefix != "" {
-		t.Error("expected empty field name prefix")
-	}
-}
-
 func TestExtractError_Nil(t *testing.T) {
 	if err := ExtractError(nil); err != nil {
 		t.Error("expected nil for nil error")
@@ -731,5 +718,336 @@ func TestLogFieldsWithOptions(t *testing.T) {
 	}
 	if !foundStack {
 		t.Error("stack field not found")
+	}
+}
+
+func TestLogFieldsWithOptionsStruct(t *testing.T) {
+	err := New("test error", "key", "value", ErrorCategory("test_cat"), ErrorSeverity("test_sev"), Retryable(), StackTrace())
+	span := newMockSpan("trace1", "span1", "parent1")
+	err = Wrap(err, "wrapped", RecordSpan(span))
+
+	opts := LogOptions{
+		IncludeUserFields:  true,
+		IncludeID:          true,
+		IncludeCategory:    true,
+		IncludeSeverity:    true,
+		IncludeRetryable:   true,
+		IncludeTracing:     true,
+		IncludeCreatedTime: true,
+		IncludeFunction:    true,
+		IncludePackage:     true,
+		IncludeFile:        true,
+		IncludeLine:        true,
+		IncludeStack:       true,
+		StackFormat:        StackFormatList,
+		FieldNamePrefix:    "err_",
+	}
+
+	fields := LogFieldsWithOptions(err, opts)
+	if len(fields) == 0 {
+		t.Fatal("expected fields, got none")
+	}
+
+	// Check for specific fields
+	foundCategory := false
+	foundStack := false
+	foundUserField := false
+	foundTraceID := false
+	for i := 0; i < len(fields); i += 2 {
+		key := fields[i].(string)
+		if key == "err_category" && fields[i+1] == ErrorCategory("test_cat") {
+			foundCategory = true
+		}
+		if key == "err_stack" {
+			foundStack = true
+		}
+		if key == "key" && fields[i+1] == "value" {
+			foundUserField = true
+		}
+		if key == "trace_id" && fields[i+1] == "trace1" {
+			foundTraceID = true
+		}
+	}
+	if !foundCategory {
+		t.Error("category field not found or incorrect")
+	}
+	if !foundStack {
+		t.Error("stack field not found")
+	}
+	if !foundUserField {
+		t.Error("user field not found")
+	}
+	if !foundTraceID {
+		t.Error("trace_id field not found")
+	}
+}
+
+func TestLogFieldsWithOptionsStruct_NilError(t *testing.T) {
+	opts := LogOptions{IncludeUserFields: true}
+	fields := LogFieldsWithOptions(nil, opts)
+	if fields != nil {
+		t.Errorf("expected nil fields for nil error, got %v", fields)
+	}
+}
+
+func TestLogFieldsWithOptionsStruct_MinimalOptions(t *testing.T) {
+	err := New("test error", "key", "value")
+	opts := LogOptions{IncludeUserFields: true}
+	fields := LogFieldsWithOptions(err, opts)
+
+	if len(fields) < 2 {
+		t.Error("expected at least user fields")
+	}
+
+	// Should only have user fields
+	foundNonUserField := false
+	for i := 0; i < len(fields); i += 2 {
+		key := fields[i].(string)
+		if key != "key" {
+			foundNonUserField = true
+			break
+		}
+	}
+	if foundNonUserField {
+		t.Error("found non-user field when only user fields should be included")
+	}
+}
+
+func TestLogFieldsWithOptionsStruct_StandardError(t *testing.T) {
+	err := errors.New("standard error")
+	opts := LogOptions{IncludeUserFields: true, IncludeCategory: true, IncludeSeverity: true, IncludeFunction: true}
+	fields := LogFieldsWithOptions(err, opts)
+
+	if len(fields) > 0 {
+		t.Errorf("expected no fields for standard error, got %v", fields)
+	}
+}
+
+func TestLogFieldsMapWithOptionsStruct(t *testing.T) {
+	err := New("test error", "key", "value", ErrorCategory("test_cat"), ErrorSeverity("test_sev"), Retryable(), StackTrace())
+	span := newMockSpan("trace1", "span1", "parent1")
+	err = Wrap(err, "wrapped", RecordSpan(span))
+
+	opts := LogOptions{
+		IncludeUserFields:  true,
+		IncludeID:          true,
+		IncludeCategory:    true,
+		IncludeSeverity:    true,
+		IncludeRetryable:   true,
+		IncludeTracing:     true,
+		IncludeCreatedTime: true,
+		IncludeFunction:    true,
+		IncludePackage:     true,
+		IncludeFile:        true,
+		IncludeLine:        true,
+		IncludeStack:       true,
+		StackFormat:        StackFormatJSON,
+		FieldNamePrefix:    "err_",
+	}
+
+	fieldsMap := LogFieldsMapWithOptions(err, opts)
+	if len(fieldsMap) == 0 {
+		t.Fatal("expected fields map, got none")
+	}
+
+	// Check for specific fields
+	if category, ok := fieldsMap["err_category"]; !ok || category != ErrorCategory("test_cat") {
+		t.Error("category field not found or incorrect in map")
+	}
+	if _, ok := fieldsMap["err_stack"]; !ok {
+		t.Error("stack field not found in map")
+	}
+	if userVal, ok := fieldsMap["key"]; !ok || userVal != "value" {
+		t.Error("user field not found or incorrect in map")
+	}
+	if traceID, ok := fieldsMap["trace_id"]; !ok || traceID != "trace1" {
+		t.Error("trace_id field not found or incorrect in map")
+	}
+}
+
+func TestLogFieldsMapWithOptionsStruct_NilError(t *testing.T) {
+	opts := LogOptions{IncludeUserFields: true}
+	fieldsMap := LogFieldsMapWithOptions(nil, opts)
+	if fieldsMap != nil {
+		t.Errorf("expected nil fields map for nil error, got %v", fieldsMap)
+	}
+}
+
+func TestLogFieldsMapWithOptionsStruct_EmptyOptions(t *testing.T) {
+	err := New("test error", "key", "value")
+	opts := LogOptions{} // All fields disabled
+	fieldsMap := LogFieldsMapWithOptions(err, opts)
+
+	if len(fieldsMap) > 0 {
+		t.Errorf("expected empty fields map with disabled options, got %v", fieldsMap)
+	}
+}
+
+func TestLogFieldsMapWithOptionsStruct_StandardError(t *testing.T) {
+	err := errors.New("standard error")
+	opts := LogOptions{IncludeUserFields: true, IncludeCategory: true, IncludeSeverity: true, IncludeFunction: true}
+	fieldsMap := LogFieldsMapWithOptions(err, opts)
+
+	if len(fieldsMap) > 0 {
+		t.Errorf("expected no fields for standard error, got %v", fieldsMap)
+	}
+}
+
+func TestLogErrorWithOptionsStruct(t *testing.T) {
+	var loggedMessage string
+	var loggedFields []any
+	logFunc := func(message string, fields ...any) {
+		loggedMessage = message
+		loggedFields = fields
+	}
+
+	err := New("test error", "key", "value", ErrorCategory("test_cat"), ErrorSeverity("critical"))
+	opts := LogOptions{
+		IncludeUserFields: true,
+		IncludeCategory:   true,
+		IncludeSeverity:   true,
+		FieldNamePrefix:   "err_",
+	}
+
+	LogErrorWithOptions(err, logFunc, opts)
+
+	if loggedMessage != "test error" {
+		t.Errorf("expected message 'test error', got '%s'", loggedMessage)
+	}
+	if len(loggedFields) == 0 {
+		t.Error("expected some fields, got none")
+	}
+
+	// Check for specific fields in logged output
+	foundCategory := false
+	foundSeverity := false
+	foundUserField := false
+	for i := 0; i < len(loggedFields); i += 2 {
+		key := loggedFields[i].(string)
+		if key == "err_category" && loggedFields[i+1] == ErrorCategory("test_cat") {
+			foundCategory = true
+		}
+		if key == "err_severity" && loggedFields[i+1] == ErrorSeverity("critical") {
+			foundSeverity = true
+		}
+		if key == "key" && loggedFields[i+1] == "value" {
+			foundUserField = true
+		}
+	}
+	if !foundCategory {
+		t.Error("category field not found in logged output")
+	}
+	if !foundSeverity {
+		t.Error("severity field not found in logged output")
+	}
+	if !foundUserField {
+		t.Error("user field not found in logged output")
+	}
+}
+
+func TestLogErrorWithOptionsStruct_NilError(t *testing.T) {
+	var called bool
+	logFunc := func(message string, fields ...any) {
+		called = true
+	}
+	opts := LogOptions{IncludeUserFields: true}
+	LogErrorWithOptions(nil, logFunc, opts)
+	if called {
+		t.Error("logFunc should not be called for nil error")
+	}
+}
+
+func TestLogErrorWithOptionsStruct_NilLogFunc(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("LogErrorWithOptions panicked with nil logFunc: %v", r)
+		}
+	}()
+	err := New("test error")
+	opts := LogOptions{IncludeUserFields: true}
+	LogErrorWithOptions(err, nil, opts)
+}
+
+func TestLogErrorWithOptionsStruct_StandardError(t *testing.T) {
+	var loggedMessage string
+	var loggedFields []any
+	logFunc := func(message string, fields ...any) {
+		loggedMessage = message
+		loggedFields = fields
+	}
+
+	err := errors.New("standard error")
+	opts := LogOptions{IncludeUserFields: true, IncludeCategory: true}
+	LogErrorWithOptions(err, logFunc, opts)
+
+	if loggedMessage != "standard error" {
+		t.Errorf("expected message 'standard error', got '%s'", loggedMessage)
+	}
+	if len(loggedFields) != 0 {
+		t.Errorf("expected nil fields for standard error, got %v", loggedFields)
+	}
+}
+
+func TestLogErrorWithOptionsStruct_MinimalOptions(t *testing.T) {
+	var loggedMessage string
+	var loggedFields []any
+	logFunc := func(message string, fields ...any) {
+		loggedMessage = message
+		loggedFields = fields
+	}
+
+	err := New("test error", "key", "value")
+	opts := LogOptions{} // All fields disabled
+	LogErrorWithOptions(err, logFunc, opts)
+
+	if loggedMessage != "test error" {
+		t.Errorf("expected message 'test error', got '%s'", loggedMessage)
+	}
+	if len(loggedFields) > 0 {
+		t.Errorf("expected no fields with disabled options, got %v", loggedFields)
+	}
+}
+
+func TestLogErrorWithOptionsStruct_WithTracing(t *testing.T) {
+	var loggedMessage string
+	var loggedFields []any
+	logFunc := func(message string, fields ...any) {
+		loggedMessage = message
+		loggedFields = fields
+	}
+
+	span := newMockSpan("trace1", "span1", "parent1")
+	err := New("test error", RecordSpan(span))
+	opts := LogOptions{IncludeTracing: true}
+	LogErrorWithOptions(err, logFunc, opts)
+
+	if loggedMessage != "test error" {
+		t.Errorf("expected message 'test error', got '%s'", loggedMessage)
+	}
+
+	// Check for tracing fields
+	foundTraceID := false
+	foundSpanID := false
+	foundParentSpanID := false
+	for i := 0; i < len(loggedFields); i += 2 {
+		key := loggedFields[i].(string)
+		if key == "trace_id" && loggedFields[i+1] == "trace1" {
+			foundTraceID = true
+		}
+		if key == "span_id" && loggedFields[i+1] == "span1" {
+			foundSpanID = true
+		}
+		if key == "parent_span_id" && loggedFields[i+1] == "parent1" {
+			foundParentSpanID = true
+		}
+	}
+	if !foundTraceID {
+		t.Error("trace_id field not found in logged output")
+	}
+	if !foundSpanID {
+		t.Error("span_id field not found in logged output")
+	}
+	if !foundParentSpanID {
+		t.Error("parent_span_id field not found in logged output")
 	}
 }

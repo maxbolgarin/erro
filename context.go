@@ -36,7 +36,26 @@ func LogFields(err error, optFuncs ...LogOption) []any {
 	}
 	opts := DefaultLogOptions
 	if len(optFuncs) > 0 {
-		opts = opts.ApplyOptions(optFuncs...)
+		opts = (&LogOptions{}).ApplyOptions(optFuncs...)
+	}
+	return getLogFields(ctx, opts)
+}
+
+// LogFieldsWithOptions returns a slice of alternating key-value pairs for structured
+// logging, extracted from the given error.
+//
+// This is useful for integrating with logging libraries like `slog` that
+// accept key-value pairs.
+//
+// Example:
+//
+//	slog.Error("something went wrong", erro.LogFieldsWithOptions(err, erro.LogOptions{
+//	    IncludeUserFields: true,
+//	})...)
+func LogFieldsWithOptions(err error, opts LogOptions) []any {
+	ctx := ExtractError(err)
+	if ctx == nil {
+		return nil
 	}
 	return getLogFields(ctx, opts)
 }
@@ -57,7 +76,26 @@ func LogFieldsMap(err error, optFuncs ...LogOption) map[string]any {
 	}
 	opts := DefaultLogOptions
 	if len(optFuncs) > 0 {
-		opts = opts.ApplyOptions(optFuncs...)
+		opts = (&LogOptions{}).ApplyOptions(optFuncs...)
+	}
+	return getLogFieldsMap(ctx, opts)
+}
+
+// LogFieldsMapWithOptions returns a map of field key-value pairs for structured logging,
+// extracted from the given error.
+//
+// This is useful for integrating with logging libraries like `logrus` that
+// accept a map of fields.
+//
+// Example:
+//
+//	logrus.WithFields(erro.LogFieldsMapWithOptions(err, erro.LogOptions{
+//	    IncludeUserFields: true,
+//	})).Error("something went wrong")
+func LogFieldsMapWithOptions(err error, opts LogOptions) map[string]any {
+	ctx := ExtractError(err)
+	if ctx == nil {
+		return nil
 	}
 	return getLogFieldsMap(ctx, opts)
 }
@@ -85,7 +123,38 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 		}
 	}
 
-	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
+	opts := DefaultLogOptions
+	if len(optFuncs) > 0 {
+		opts = (&LogOptions{}).ApplyOptions(optFuncs...)
+	}
+	logFunc(errError.Message(), getLogFields(errError, opts)...)
+}
+
+// LogErrorWithOptions executes a callback with the error message and structured fields,
+// allowing for integration with any logging library.
+//
+// If the error is not an [Error], it logs the error message directly.
+//
+// Example:
+//
+//	erro.LogErrorWithOptions(err, func(message string, fields ...any) {
+//	    myLogger.Error(message, fields...)
+//	}, erro.LogOptions{
+//	    IncludeUserFields: true,
+//	})
+func LogErrorWithOptions(err error, logFunc func(message string, fields ...any), opts LogOptions) {
+	if err == nil || logFunc == nil {
+		return
+	}
+
+	errError, ok := err.(Error)
+	if !ok {
+		if !As(err, &errError) {
+			logFunc(err.Error())
+			return
+		}
+	}
+
 	logFunc(errError.Message(), getLogFields(errError, opts)...)
 }
 
@@ -228,32 +297,6 @@ var (
 	MinimalLogOpts = []LogOption{
 		WithUserFields(true),
 		WithSeverity(true),
-		WithID(false),
-		WithCategory(false),
-		WithTracing(false),
-		WithRetryable(false),
-		WithCreatedTime(false),
-		WithFunction(false),
-		WithPackage(false),
-		WithFile(false),
-		WithLine(false),
-		WithStack(false),
-	}
-	// EmptyLogOpts is a slice of [LogOption] functions to exclude all fields.
-	EmptyLogOpts = []LogOption{
-		WithUserFields(false),
-		WithID(false),
-		WithSeverity(false),
-		WithCategory(false),
-		WithTracing(false),
-		WithRetryable(false),
-		WithCreatedTime(false),
-		WithFunction(false),
-		WithPackage(false),
-		WithFile(false),
-		WithLine(false),
-		WithStack(false),
-		WithFieldNamePrefix(""),
 	}
 )
 

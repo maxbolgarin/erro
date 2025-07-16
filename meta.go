@@ -39,10 +39,12 @@ func Formatter(f FormatErrorFunc) errorOpt {
 	}
 }
 
+var defaultSkipFrames = 6
+
 // StackTrace captures a stack trace for the error.
 func StackTrace(c ...*StackTraceConfig) errorOpt {
 	return func(err *baseError) {
-		err.stack = captureStack(5)
+		err.stack = captureStack(defaultSkipFrames)
 		if len(c) > 0 {
 			err.stackTraceConfig = c[0]
 		} else {
@@ -54,7 +56,10 @@ func StackTrace(c ...*StackTraceConfig) errorOpt {
 // StackTraceWithSkip captures a stack trace, skipping a specified number of frames.
 func StackTraceWithSkip(skip int, c ...*StackTraceConfig) errorOpt {
 	return func(err *baseError) {
-		err.stack = captureStack(skip)
+		if skip < 0 {
+			skip = 0
+		}
+		err.stack = captureStack(defaultSkipFrames + skip)
 		if len(c) > 0 {
 			err.stackTraceConfig = c[0]
 		} else {

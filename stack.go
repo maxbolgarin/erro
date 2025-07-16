@@ -89,11 +89,6 @@ func StrictStackTraceConfig() *StackTraceConfig {
 	}
 }
 
-// DisabledStackTraceConfig returns a configuration that completely disables stack traces.
-func DisabledStackTraceConfig() *StackTraceConfig {
-	return &StackTraceConfig{}
-}
-
 // StackFrame stores a frame's runtime information in a human-readable format,
 // enhanced with additional context for better error diagnostics.
 type StackFrame struct {
@@ -597,6 +592,7 @@ func (rs rawStack) toFrames(cfg *StackTraceConfig) Stack {
 
 	for {
 		runtimeFrame, more := runtimeFrames.Next()
+		fmt.Println(runtimeFrame.Function, runtimeFrame.File, runtimeFrame.Line)
 
 		if isUselessRuntimeFrame(runtimeFrame.Function, runtimeFrame.File) {
 			if !more {

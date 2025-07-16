@@ -8,7 +8,7 @@ import (
 )
 
 func sensitiveFunction(cfg *erro.StackTraceConfig) erro.Error {
-	return erro.New("sensitive error occurred", "user_id", "12345", "api_key", "secret_key_123", erro.StackTrace(cfg))
+	return erro.New("sensitive error occurred", "user_id", "12345", "api_key", "secret_key_123", erro.StackTraceWithSkip(0, cfg))
 }
 
 func processPayment(cfg *erro.StackTraceConfig) erro.Error {
@@ -33,11 +33,6 @@ func main() {
 	// Strict mode - minimal information
 	fmt.Println("\n=== STRICT MODE ===")
 	err = handleRequest(erro.StrictStackTraceConfig())
-	fmt.Printf("%+v\n", err)
-
-	// Completely disable stack traces
-	fmt.Println("\n=== DISABLED STACK TRACES ===")
-	err = handleRequest(erro.DisabledStackTraceConfig())
 	fmt.Printf("%+v\n", err)
 
 	// Custom configuration
