@@ -428,8 +428,8 @@ func TestDefaultLogOptions(t *testing.T) {
 	if !DefaultLogOptions.IncludeUserFields {
 		t.Error("expected IncludeUserFields to be true")
 	}
-	if !DefaultLogOptions.IncludeID {
-		t.Error("expected IncludeID to be true")
+	if DefaultLogOptions.IncludeID {
+		t.Error("expected IncludeID to be false")
 	}
 }
 
@@ -437,8 +437,8 @@ func TestMinimalLogOptions(t *testing.T) {
 	if !MinimalLogOptions.IncludeUserFields {
 		t.Error("expected IncludeUserFields to be true")
 	}
-	if !MinimalLogOptions.IncludeID {
-		t.Error("expected IncludeID to be true")
+	if MinimalLogOptions.IncludeID {
+		t.Error("expected IncludeID to be false")
 	}
 	if MinimalLogOptions.IncludeCategory {
 		t.Error("expected IncludeCategory to be false")

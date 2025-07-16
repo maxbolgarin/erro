@@ -21,4 +21,18 @@ func main() {
 
 	// Printing with stack trace
 	fmt.Printf("Error with stack trace:\n%+v\n", err3)
+
+	// Error with all possible meta fields
+	err4 := erro.New(
+		"payment declined",
+		"user_id", 42,
+		"order_id", 1001,
+		erro.CategoryAI,
+		erro.ClassAlreadyExists,
+		erro.ID("err-xyz-789"),
+		erro.Retryable(),
+		erro.StackTrace(erro.ProductionStackTraceConfig()),
+		erro.Formatter(erro.GetFormatErrorWithFullContext(erro.VerboseLogOpts...)),
+	)
+	fmt.Printf("\nError with all meta fields:\n%+v\n\n", err4)
 }

@@ -452,7 +452,7 @@ func TestMultiErrorSet_Error(t *testing.T) {
 		counter:   counter,
 		keyGetter: func(err error) string { return err.Error() },
 	}
-	expected := "multiple unique errors (2): (1) err1 [2 times]; (2) err2"
+	expected := "multiple unique errors (2): [1] err1 (2 times); [2] err2"
 	if m.Error() != expected {
 		t.Errorf("expected '%s', got '%s'", expected, m.Error())
 	}

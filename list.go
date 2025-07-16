@@ -557,9 +557,9 @@ func (m *multiError) Error() string {
 		if i > 0 {
 			builder.WriteString("; ")
 		}
-		builder.WriteString("(")
+		builder.WriteString("[")
 		builder.WriteString(strconv.Itoa(i + 1))
-		builder.WriteString(") ")
+		builder.WriteString("] ")
 		builder.WriteString(err.Error())
 	}
 	return builder.String()
@@ -586,14 +586,14 @@ func (m *multiErrorSet) Error() string {
 		if i > 0 {
 			builder.WriteString("; ")
 		}
-		builder.WriteString("(")
+		builder.WriteString("[")
 		builder.WriteString(strconv.Itoa(i + 1))
-		builder.WriteString(") ")
+		builder.WriteString("] ")
 		builder.WriteString(err.Error())
 		if count, ok := m.counter[m.keyGetter(err)]; ok && count > 1 {
-			builder.WriteString(" [")
+			builder.WriteString(" (")
 			builder.WriteString(strconv.Itoa(count))
-			builder.WriteString(" times]")
+			builder.WriteString(" times)")
 		}
 	}
 	return builder.String()

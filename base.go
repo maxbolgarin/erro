@@ -220,7 +220,7 @@ func (e *baseError) Message() string {
 // Fields returns the error's fields.
 func (e *baseError) Fields() []any {
 	if len(e.fields) == 0 && e.wrappedErr != nil {
-		return e.wrappedErr.Fields()
+		return nil // Get fields only from current level
 	}
 	fields := make([]any, len(e.fields))
 	copy(fields, e.fields)

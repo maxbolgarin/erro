@@ -22,7 +22,7 @@ func ExtractError(err error) Error {
 // This is useful for integrating with logging libraries like `slog` that
 // accept key-value pairs.
 //
-// Example:	
+// Example:
 //
 //	slog.Error("something went wrong", erro.LogFields(err)...)
 func LogFields(err error, optFuncs ...LogOption) []any {
@@ -181,7 +181,7 @@ var (
 	// DefaultLogOptions includes a balanced set of fields for typical logging.
 	DefaultLogOptions = LogOptions{
 		IncludeUserFields:  true,
-		IncludeID:          true,
+		IncludeID:          false, // Useless in logs for most cases
 		IncludeCategory:    true,
 		IncludeSeverity:    true,
 		IncludeTracing:     true,
@@ -198,10 +198,9 @@ var (
 	// MinimalLogOptions includes a minimal set of fields for concise logging.
 	MinimalLogOptions = LogOptions{
 		IncludeUserFields: true,
-		IncludeID:         true,
 		IncludeSeverity:   true,
-		StackFormat:       StackFormatJSON,
-		FieldNamePrefix:   "error_",
+		StackFormat:       StackFormatList,
+		FieldNamePrefix:   "",
 	}
 	// VerboseLogOptions includes all available fields for detailed debugging.
 	VerboseLogOptions = LogOptions{
@@ -222,7 +221,7 @@ var (
 	}
 
 	// VerboseLogOpts is a slice of [LogOption] functions for verbose logging.
-	VerboseLogOpts = []func(*LogOptions){
+	VerboseLogOpts = []LogOption{
 		WithUserFields(true),
 		WithID(true),
 		WithSeverity(true),
@@ -238,7 +237,7 @@ var (
 	}
 
 	// MinimalLogOpts is a slice of [LogOption] functions for minimal logging.
-	MinimalLogOpts = []func(*LogOptions){
+	MinimalLogOpts = []LogOption{
 		WithUserFields(true),
 		WithID(true),
 		WithSeverity(true),
@@ -253,7 +252,7 @@ var (
 		WithStack(false),
 	}
 	// EmptyLogOpts is a slice of [LogOption] functions to exclude all fields.
-	EmptyLogOpts = []func(*LogOptions){
+	EmptyLogOpts = []LogOption{
 		WithUserFields(false),
 		WithID(false),
 		WithSeverity(false),

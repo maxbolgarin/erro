@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/user/repo/erro"
+
+	"github.com/maxbolgarin/erro"
 )
 
 func main() {

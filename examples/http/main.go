@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/user/repo/erro"
 	"log"
 	"net/http"
+
+	"github.com/maxbolgarin/erro"
 )
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {

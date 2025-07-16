@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/user/repo/erro"
 	"log/slog"
 	"os"
+
+	"github.com/maxbolgarin/erro"
 )
 
 func main() {

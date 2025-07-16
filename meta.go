@@ -42,7 +42,7 @@ func Formatter(f FormatErrorFunc) errorOpt {
 // StackTrace captures a stack trace for the error.
 func StackTrace(c ...*StackTraceConfig) errorOpt {
 	return func(err *baseError) {
-		err.stack = captureStack(3)
+		err.stack = captureStack(5)
 		if len(c) > 0 {
 			err.stackTraceConfig = c[0]
 		} else {

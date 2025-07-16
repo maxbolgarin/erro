@@ -7,16 +7,16 @@ import (
 	"github.com/maxbolgarin/erro"
 )
 
-func sensitiveFunction() erro.Error {
-	return erro.New("sensitive error occurred", "user_id", "12345", "api_key", "secret_key_123")
+func sensitiveFunction(cfg *erro.StackTraceConfig) erro.Error {
+	return erro.New("sensitive error occurred", "user_id", "12345", "api_key", "secret_key_123", erro.StackTrace(cfg))
 }
 
-func processPayment() erro.Error {
-	return erro.Wrap(sensitiveFunction(), "payment processing failed", "transaction_id", "tx_456")
+func processPayment(cfg *erro.StackTraceConfig) erro.Error {
+	return erro.Wrap(sensitiveFunction(cfg), "payment processing failed", "transaction_id", "tx_456")
 }
 
 func handleRequest(cfg *erro.StackTraceConfig) erro.Error {
-	return erro.Wrap(processPayment(), "request handling failed", "request_id", "req_789", erro.StackTrace(cfg))
+	return erro.Wrap(processPayment(cfg), "request handling failed", "request_id", "req_789")
 }
 
 func main() {
@@ -43,15 +43,15 @@ func main() {
 	// Custom configuration
 	fmt.Println("\n=== CUSTOM CONFIGURATION ===")
 	cfg := &erro.StackTraceConfig{
-		ShowFileNames:	  true,
-		ShowFullPaths:	  false,
+		ShowFileNames:     true,
+		ShowFullPaths:     false,
 		ShowFunctionNames: true, // Show function names but not paths
-		ShowPackageNames:	  false,
-		ShowLineNumbers:	  false,
+		ShowPackageNames:  false,
+		ShowLineNumbers:   false,
 		ShowAllCodeFrames: true,
-		PathElements:	  1, // Show only 1 path element (just parent directory + filename)
-		FunctionRedacted:	  "[FUNC]",
-		MaxFrames:		  3,
+		PathElements:      1, // Show only 1 path element (just parent directory + filename)
+		FunctionRedacted:  "[FUNC]",
+		MaxFrames:         3,
 	}
 	err = handleRequest(cfg)
 	fmt.Printf("%+v\n", err)
