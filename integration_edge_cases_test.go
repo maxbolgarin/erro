@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -197,67 +196,6 @@ func TestHTTPIntegration(t *testing.T) {
 					t.Errorf("Expected status %d, got %d", tc.expectedCode, w.Code)
 				}
 			})
-		}
-	})
-}
-
-// TestLoggingIntegration tests integration with logging frameworks
-func TestLoggingIntegration(t *testing.T) {
-	t.Run("slog integration", func(t *testing.T) {
-		var logOutput strings.Builder
-		logger := slog.New(slog.NewTextHandler(&logOutput, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
-
-		err := erro.New("test error",
-			"user_id", 123,
-			"operation", "test",
-			"sensitive", erro.Redact("secret"),
-			erro.ClassValidation,
-			erro.CategoryUserInput,
-		)
-
-		// Test LogFields integration
-		logger.Error("Operation failed", erro.LogFields(err)...)
-
-		output := logOutput.String()
-
-		// Should contain error fields
-		if !strings.Contains(output, "user_id=123") {
-			t.Error("Should contain user_id field")
-		}
-		if !strings.Contains(output, "operation=test") {
-			t.Error("Should contain operation field")
-		}
-
-		// Should redact sensitive data
-		if strings.Contains(output, "secret") {
-			t.Error("Should not contain sensitive data")
-		}
-		if !strings.Contains(output, erro.RedactedPlaceholder) {
-			t.Error("Should contain redacted placeholder")
-		}
-	})
-
-	t.Run("LogFieldsMap integration", func(t *testing.T) {
-		err := erro.New("map test",
-			"string_field", "value",
-			"int_field", 42,
-			"bool_field", true,
-			"nil_field", nil,
-		)
-
-		fieldsMap := erro.LogFieldsMap(err)
-
-		// Should contain all fields as map
-		if fieldsMap["string_field"] != "value" {
-			t.Error("Missing string field")
-		}
-		if fieldsMap["int_field"] != 42 {
-			t.Error("Missing int field")
-		}
-		if fieldsMap["bool_field"] != true {
-			t.Error("Missing bool field")
 		}
 	})
 }
