@@ -193,12 +193,23 @@ var buildInfo, _ = debug.ReadBuildInfo()
 
 // IsErroInternal returns true if this frame is from erro internal functions.
 func (f StackFrame) IsErroInternal() bool {
+	// Test frames are never considered internal, they are user code
+	if f.IsTest() {
+		return false
+	}
+
 	for _, internal := range internalFuncs {
 		if f.Name == internal {
 			return true
 		}
 	}
-	return strings.Contains(f.FullName, buildInfo.Path) && !f.IsTest()
+
+	// Only consider non-test frames from the erro module as internal
+	if buildInfo != nil && buildInfo.Path != "" {
+		return strings.Contains(f.FullName, buildInfo.Path)
+	}
+
+	return false
 }
 
 func (f StackFrame) getFrameType() string {
@@ -592,7 +603,6 @@ func (rs rawStack) toFrames(cfg *StackTraceConfig) Stack {
 
 	for {
 		runtimeFrame, more := runtimeFrames.Next()
-		fmt.Println(runtimeFrame.Function, runtimeFrame.File, runtimeFrame.Line)
 
 		if isUselessRuntimeFrame(runtimeFrame.Function, runtimeFrame.File) {
 			if !more {

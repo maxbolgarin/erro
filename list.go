@@ -1,6 +1,7 @@
 package erro
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -573,6 +574,26 @@ func (m *multiError) Unwrap() []error {
 	return m.errors
 }
 
+// Is checks if any of the wrapped errors match the target.
+func (m *multiError) Is(target error) bool {
+	for _, err := range m.errors {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// As checks if any of the wrapped errors can be assigned to the target.
+func (m *multiError) As(target interface{}) bool {
+	for _, err := range m.errors {
+		if errors.As(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // multiErrorSet is the error type returned by a Set, including deduplication counts.
 type multiErrorSet struct {
 	errors    []error
@@ -605,6 +626,26 @@ func (m *multiErrorSet) Error() string {
 // Unwrap returns the underlying errors for error chain traversal.
 func (m *multiErrorSet) Unwrap() []error {
 	return m.errors
+}
+
+// Is checks if any of the wrapped errors match the target.
+func (m *multiErrorSet) Is(target error) bool {
+	for _, err := range m.errors {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// As checks if any of the wrapped errors can be assigned to the target.
+func (m *multiErrorSet) As(target interface{}) bool {
+	for _, err := range m.errors {
+		if errors.As(err, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // addNew creates a new formatted error and adds it to the list.
