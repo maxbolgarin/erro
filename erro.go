@@ -438,13 +438,11 @@ func HTTPCode(err error) int {
 	}
 
 	status := http.StatusInternalServerError
-	var erroErr Error
-	if As(err, &erroErr) {
-		return status
-	}
-
-	if erroErr == nil {
-		return status
+	erroErr, ok := err.(Error)
+	if !ok {
+		if !As(err, &erroErr) {
+			return status
+		}
 	}
 
 	class := erroErr.Class()

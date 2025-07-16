@@ -143,6 +143,17 @@ func ApplyFormatVerbs(format string, args ...any) (string, []any) {
 		return "", args
 	}
 
+	var hasFormats bool
+	for i := 0; i < len(format); i++ {
+		if format[i] == '%' {
+			hasFormats = true
+			break
+		}
+	}
+	if !hasFormats {
+		return format, args
+	}
+
 	var result strings.Builder
 	result.Grow(len(format) + len(args)*8)
 	argIdx := 0

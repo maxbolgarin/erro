@@ -13,6 +13,10 @@ func ExtractError(err error) Error {
 	if erroErr, ok := err.(Error); ok {
 		return erroErr
 	}
+	var errError Error
+	if As(err, &errError) {
+		return errError
+	}
 	return newWrapError(err, "")
 }
 
@@ -30,7 +34,10 @@ func LogFields(err error, optFuncs ...LogOption) []any {
 	if ctx == nil {
 		return nil
 	}
-	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
+	opts := DefaultLogOptions
+	if len(optFuncs) > 0 {
+		opts = opts.ApplyOptions(optFuncs...)
+	}
 	return getLogFields(ctx, opts)
 }
 
@@ -48,7 +55,10 @@ func LogFieldsMap(err error, optFuncs ...LogOption) map[string]any {
 	if ctx == nil {
 		return nil
 	}
-	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
+	opts := DefaultLogOptions
+	if len(optFuncs) > 0 {
+		opts = opts.ApplyOptions(optFuncs...)
+	}
 	return getLogFieldsMap(ctx, opts)
 }
 
@@ -69,8 +79,10 @@ func LogError(err error, logFunc func(message string, fields ...any), optFuncs .
 
 	errError, ok := err.(Error)
 	if !ok {
-		logFunc(err.Error())
-		return
+		if !As(err, &errError) {
+			logFunc(err.Error())
+			return
+		}
 	}
 
 	opts := DefaultLogOptions.ApplyOptions(optFuncs...)
@@ -195,30 +207,6 @@ var (
 		StackFormat:        StackFormatJSON,
 		FieldNamePrefix:    "error_",
 	}
-	// MinimalLogOptions includes a minimal set of fields for concise logging.
-	MinimalLogOptions = LogOptions{
-		IncludeUserFields: true,
-		IncludeSeverity:   true,
-		StackFormat:       StackFormatList,
-		FieldNamePrefix:   "",
-	}
-	// VerboseLogOptions includes all available fields for detailed debugging.
-	VerboseLogOptions = LogOptions{
-		IncludeUserFields:  true,
-		IncludeID:          true,
-		IncludeCategory:    true,
-		IncludeSeverity:    true,
-		IncludeTracing:     true,
-		IncludeRetryable:   true,
-		IncludeCreatedTime: true,
-		IncludeFunction:    true,
-		IncludePackage:     true,
-		IncludeFile:        true,
-		IncludeLine:        true,
-		IncludeStack:       true,
-		StackFormat:        StackFormatJSON,
-		FieldNamePrefix:    "error_",
-	}
 
 	// VerboseLogOpts is a slice of [LogOption] functions for verbose logging.
 	VerboseLogOpts = []LogOption{
@@ -239,8 +227,8 @@ var (
 	// MinimalLogOpts is a slice of [LogOption] functions for minimal logging.
 	MinimalLogOpts = []LogOption{
 		WithUserFields(true),
-		WithID(true),
 		WithSeverity(true),
+		WithID(false),
 		WithCategory(false),
 		WithTracing(false),
 		WithRetryable(false),
@@ -470,14 +458,13 @@ func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 
 	// Add user fields
 	if opts.IncludeUserFields && len(errorFields) > 0 {
-		redactedFields := make([]any, len(errorFields))
-		copy(redactedFields, errorFields)
-		for i := 1; i < len(redactedFields); i += 2 {
-			if _, ok := redactedFields[i].(RedactedValue); ok {
-				redactedFields[i] = RedactedPlaceholder
+		for i := 0; i < len(errorFields); i++ {
+			if _, ok := errorFields[i].(RedactedValue); ok {
+				fields = append(fields, RedactedPlaceholder)
+			} else {
+				fields = append(fields, errorFields[i])
 			}
 		}
-		fields = append(fields, redactedFields...)
 	}
 
 	// Add error metadata
@@ -510,23 +497,24 @@ func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 		fields = append(fields, opts.FieldNamePrefix+"created", errorCreated)
 	}
 
-	topFrame := errorStack.TopUserFrame()
-	if topFrame == nil && len(errorStack) > 0 {
-		topFrame = &errorStack[0]
-	}
-
-	// Add function context
-	if opts.IncludeFunction && topFrame != nil && topFrame.Name != "" {
-		fields = append(fields, opts.FieldNamePrefix+"function", topFrame.Name)
-	}
-	if opts.IncludePackage && topFrame != nil && topFrame.Package != "" {
-		fields = append(fields, opts.FieldNamePrefix+"package", topFrame.Package)
-	}
-	if opts.IncludeFile && topFrame != nil && topFrame.File != "" {
-		fields = append(fields, opts.FieldNamePrefix+"file", topFrame.File)
-	}
-	if opts.IncludeLine && topFrame != nil && topFrame.Line > 0 {
-		fields = append(fields, opts.FieldNamePrefix+"line", topFrame.Line)
+	if opts.IncludeFunction || opts.IncludePackage || opts.IncludeFile || opts.IncludeLine {
+		topFrame := errorStack.TopUserFrame()
+		if topFrame == nil && len(errorStack) > 0 {
+			topFrame = &errorStack[0]
+		}
+		// Add function context
+		if opts.IncludeFunction && topFrame != nil && topFrame.Name != "" {
+			fields = append(fields, opts.FieldNamePrefix+"function", topFrame.Name)
+		}
+		if opts.IncludePackage && topFrame != nil && topFrame.Package != "" {
+			fields = append(fields, opts.FieldNamePrefix+"package", topFrame.Package)
+		}
+		if opts.IncludeFile && topFrame != nil && topFrame.File != "" {
+			fields = append(fields, opts.FieldNamePrefix+"file", topFrame.File)
+		}
+		if opts.IncludeLine && topFrame != nil && topFrame.Line > 0 {
+			fields = append(fields, opts.FieldNamePrefix+"line", topFrame.Line)
+		}
 	}
 
 	// Add stack trace if requested

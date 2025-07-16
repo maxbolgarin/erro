@@ -409,11 +409,11 @@ func TestJoin(t *testing.T) {
 func TestLogFields(t *testing.T) {
 	err := erro.New("test error", "key", "value")
 	fields := err.LogFields()
-	if len(fields) != 6 {
+	if len(fields) != 2 {
 		t.Errorf("unexpected number of fields: %d", len(fields))
 	}
 	fieldsMap := err.LogFieldsMap()
-	if len(fieldsMap) != 3 {
+	if len(fieldsMap) != 1 {
 		t.Errorf("unexpected number of fields in map: %d", len(fieldsMap))
 	}
 }

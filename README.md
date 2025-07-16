@@ -1,10 +1,16 @@
 # 🚀 `erro` - Next-Generation Error Handling for Go
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/maxbolgarin/erro.svg)](https://pkg.go.dev/github.com/maxbolgarin/erro)
-[![Go Report Card](https://goreportcard.com/badge/github.com/maxbolgarin/erro)](https://goreportcard.com/report/github.com/maxbolgarin/erro)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version][version-img]][doc] [![GoDoc][doc-img]][doc] [![Build][ci-img]][ci] [![Coverage][coverage-img]][coverage] [![GoReport][report-img]][report]
 
-**Transform your Go error handling from basic to brilliant.** `erro` is a powerful, production-ready error library that gives you everything the standard `errors` package should have provided: structured context, automatic HTTP status codes, seamless logging integration and comprehensive debugging tools.
+
+
+**Transform your Go error handling.** `erro` is a powerful, production-ready error library that gives you everything the standard `errors` package should have provided: structured context, stack traces, automatic HTTP status codes, seamless logging integration and comprehensive debugging tools.
+
+#### 📦 Installation
+
+```bash
+go get -u github.com/maxbolgarin/erro
+```
 
 ## ✨ Why `erro`?
 
@@ -43,12 +49,6 @@ return erro.Wrap(err, "failed to update user profile",
 
 ## 🚀 Quick Start
 
-### Installation
-```bash
-go get -u github.com/maxbolgarin/erro
-```
-
-### Basic Usage - Immediate Upgrade
 ```go
 package main
 
@@ -101,12 +101,6 @@ var (
         erro.CategoryUserInput,
         erro.SeverityLow,
     )
-    
-    DatabaseError = erro.NewTemplate("database operation failed: %s",
-        erro.CategoryDatabase,
-        erro.SeverityHigh,
-        erro.Retryable(),  // Mark as retryable for retry logic
-    )
 )
 
 // Use templates for consistent error creation
@@ -130,7 +124,7 @@ validator.New("password too short", "field", "password", "min_length", 8)
 
 // Return all errors at once
 if err := validator.Err(); err != nil {
-    return err  // "multiple errors (2): (1) email required; (2) password too short"
+    return err  // "multiple errors (2): [1] email required; [2] password too short"
 }
 
 // Thread-safe collections for concurrent operations
@@ -269,82 +263,119 @@ errors.Unwrap(err1)  // ✅ Works
 + )
 ```
 
-## 📊 Performance & Production Ready
+## 📊 Performance & Benchmark
 
 ### Benchmarks
-```
-BenchmarkNew-8                  5000000    250 ns/op    120 B/op    2 allocs/op
-BenchmarkWrap-8                 3000000    380 ns/op    180 B/op    3 allocs/op
-BenchmarkLogFields-8            2000000    850 ns/op    320 B/op    8 allocs/op
-BenchmarkHTTPCode-8            50000000     30 ns/op      0 B/op    0 allocs/op
+
+```bash
+go test -bench . -benchmem
 ```
 
-### Production Features
-- **Memory Safe**: Automatic field truncation prevents memory exhaustion
-- **Thread Safe**: Immutable errors, safe error collections available
-- **Zero Allocation**: Fast paths for common operations
-- **Configurable**: Stack traces only when needed, adjustable limits
-- **Battle Tested**: Comprehensive test suite, used in production
+```text
+goos: darwin
+goarch: arm64
+pkg: github.com/maxbolgarin/erro
+cpu: Apple M1 Pro
+```
 
-## 🎯 Use Cases
+#### New
 
-### ✅ Perfect For
-- **REST APIs** - Automatic HTTP status codes, structured responses
-- **Microservices** - Rich context for distributed debugging
-- **Production Systems** - Comprehensive error tracking and monitoring
-- **Team Development** - Standardized error handling across teams
-- **Debugging** - Stack traces and structured context for faster resolution
+```text
+Benchmark_New_STD-8                                   1000000000               0.3184 ns/op          0 B/op          0 allocs/op
+Benchmark_New-8                                         12589574               111.2 ns/op           256 B/op          1 allocs/op
+Benchmark_New_WithFields-8                               4357768               274.5 ns/op           416 B/op          4 allocs/op
+Benchmark_New_WithFieldsAndFormatVerbs-8                 2936198               374.8 ns/op           480 B/op          5 allocs/op
+Benchmark_NewWithStack-8                                 1699384               717.9 ns/op           368 B/op          5 allocs/op
+Benchmark_NewWithStack_WithFields-8                      1480636               809.9 ns/op           496 B/op          6 allocs/op
+```
 
-### 🤔 Consider Alternatives For
+#### Wrap
+
+```text
+Benchmark_Errorf_STD-8                                   8261662               151.5 ns/op            96 B/op          2 allocs/op
+Benchmark_Wrap-8                                       15654836                76.75 ns/op          256 B/op          1 allocs/op
+Benchmark_Wrap_WithFields-8                              8504668               135.2 ns/op           384 B/op          2 allocs/op
+Benchmark_Wrap_WithFieldsAndFormatVerbs-8                5701215               224.7 ns/op           448 B/op          3 allocs/op
+Benchmark_WrapWithStack-8                                2185100               551.8 ns/op           336 B/op          3 allocs/op
+Benchmark_WrapWithStack_WithFields-8                     1494895               821.4 ns/op           496 B/op          6 allocs/op
+```
+
+#### Error() - has cache, only first call is slow
+
+```text
+Benchmark_New_ErrorString-8                             303125539                3.964 ns/op           0 B/op          0 allocs/op
+Benchmark_New_ErrorString_WithFields-8                  307194626                3.919 ns/op           0 B/op          0 allocs/op
+Benchmark_Wrap_Error_Deep-8                             272289289                4.163 ns/op           0 B/op          0 allocs/op
+```
+
+#### AllMeta
+
+```text
+Benchmark_New_AllMeta_WithStack-8                         1000000              1183 ns/op             936 B/op         15 allocs/op
+Benchmark_New_AllMeta_NoStack-8                          2002927               602.9 ns/op           848 B/op         12 allocs/op
+Benchmark_New_AllMeta_NoStack_Optimized-8                5399748               234.4 ns/op           384 B/op          2 allocs/op
+```
+
+#### LogFields
+
+```text
+Benchmark_Error_Context-8                              32185711                37.31 ns/op           64 B/op          1 allocs/op
+Benchmark_LogFields_Default-8                            3546006               334.6 ns/op           816 B/op         11 allocs/op
+Benchmark_LogFields_Minimal-8                            3618733               313.0 ns/op           736 B/op          6 allocs/op
+Benchmark_LogFields_Verbose-8                            2183089               556.9 ns/op           912 B/op         17 allocs/op
+Benchmark_LogFieldsMap-8                                 1936456               594.7 ns/op          1480 B/op         15 allocs/op
+Benchmark_LogError-8                                     3604401               358.0 ns/op           784 B/op         11 allocs/op
+```
+
+#### Template
+
+```text
+Benchmark_New_Template-8                                 5552124               221.3 ns/op           448 B/op         10 allocs/op
+Benchmark_New_FromTemplate-8                             5750953               203.6 ns/op           400 B/op          2 allocs/op
+Benchmark_New_FromTemplate_WithMessageAndFields-8        3554412               346.8 ns/op           576 B/op          4 allocs/op
+Benchmark_New_FromTemplate_Full-8                        1387490               874.7 ns/op           640 B/op          5 allocs/op
+Benchmark_Wrap_FromTemplate-8                            6153196               185.6 ns/op           400 B/op          2 allocs/op
+Benchmark_Wrap_FromTemplate_WithMessageAndFields-8       4035168               304.4 ns/op           576 B/op          4 allocs/op
+Benchmark_Wrap_FromTemplate_Full-8                       1406871               842.5 ns/op           640 B/op          5 allocs/op
+```
+
+#### HTTPCode
+
+```text
+Benchmark_HTTPCode_Class-8                              57952584                20.52 ns/op           16 B/op          1 allocs/op
+Benchmark_HTTPCode_Category-8                           56516245                20.91 ns/op           16 B/op          1 allocs/op
+```
+
+#### Sprintf vs ApplyFormatVerbs
+
+```text
+Benchmark_Sprintf-8                                      3440610               343.2 ns/op           144 B/op          5 allocs/op
+Benchmark_ApplyFormatVerbs-8                             4271595               268.5 ns/op           160 B/op          5 allocs/op
+```
+
+### 🎯 Performance Insights
+
+**⚡ Core Operations**
+- `Wrap()` is ~31% faster than `New()` when you already have an error
+- HTTP status code mapping: **20ns** - virtually zero overhead
+- Template-based errors: **203ns** - consistent performance for reusable error patterns
+
+**📈 vs Standard Library**
+- Standard `errors.New()`: **0.32ns** (baseline, no features)
+- `erro.New()` no fields: **111ns** (not big overhead)
+- Standard `fmt.Errorf()`: **151ns** 
+- `erro.Wrap()` no fields: **77ns** (faster than `fmt.Errorf()`)
+- `erro.Wrap()` with fields: **274ns** (+81% for structured context vs `fmt.Errorf()`)
+
+**🤔 Consider Alternatives For**
 - **Ultra-high Performance** - If you need absolute minimal overhead
 - **Simple Scripts** - Standard `errors` might be sufficient for basic scripts
 - **Legacy Codebases** - If you can't gradually migrate existing error handling
-
-## 🛠️ Advanced Configuration
-
-### Structured Logging Options
-```go
-// Configure logging output
-err := erro.New("operation failed", "key", "value")
-
-// Minimal logging
-slog.Error("failed", erro.LogFields(err, 
-    erro.WithUserFields(true),
-    erro.WithID(true),
-    erro.WithSeverity(true),
-)...)
-
-// Verbose logging  
-slog.Error("failed", erro.LogFields(err,
-    erro.WithUserFields(true),
-    erro.WithStack(true),
-    erro.WithTracing(true),
-    erro.WithFieldNamePrefix("error_"),
-)...)
-```
-
-### Stack Trace Configuration
-```go
-// Production config - minimal overhead
-err := erro.New("error", erro.StackTrace(erro.ProductionStackTraceConfig()))
-
-// Development config - full details
-err := erro.New("error", erro.StackTrace(erro.DevelopmentStackTraceConfig()))
-
-// Custom config
-config := &erro.StackTraceConfig{
-    MaxDepth:     20,
-    SkipPackages: []string{"runtime", "net/http"},
-    Format:       erro.StackFormatJSON,
-}
-err := erro.New("error", erro.StackTrace(config))
-```
 
 ## 📚 Documentation
 
 - **[API Reference](https://pkg.go.dev/github.com/maxbolgarin/erro)** - Complete API documentation
 - **[Examples](examples/)** - Usage examples
-- **[Best Practices](docs/best-practices.md)** - Recommended patterns and practices
 
 ## 🤝 Contributing
 
@@ -354,3 +385,12 @@ We welcome contributions! Open an issue or submit a pull request.
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+[version-img]: https://img.shields.io/badge/Go-%3E%3D%201.18-%23007d9c
+[doc-img]: https://pkg.go.dev/badge/github.com/maxbolgarin/erro
+[doc]: https://pkg.go.dev/github.com/maxbolgarin/erro
+[ci-img]: https://github.com/maxbolgarin/erro/actions/workflows/go.yml/badge.svg
+[ci]: https://github.com/maxbolgarin/erro/actions
+[report-img]: https://goreportcard.com/badge/github.com/maxbolgarin/erro
+[report]: https://goreportcard.com/report/github.com/maxbolgarin/erro
+[coverage-img]: https://codecov.io/gh/maxbolgarin/erro/branch/main/graph/badge.svg
+[coverage]: https://codecov.io/gh/maxbolgarin/erro

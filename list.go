@@ -84,10 +84,13 @@ func (g *List) RemoveError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var errError Error
-	if !As(err, &errError) {
-		return false
+	errError, ok := err.(Error)
+	if !ok {
+		if !As(err, &errError) {
+			return false
+		}
 	}
+
 	id := errError.ID()
 	if id == "" {
 		return false

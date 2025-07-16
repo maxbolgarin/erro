@@ -433,30 +433,6 @@ func TestDefaultLogOptions(t *testing.T) {
 	}
 }
 
-func TestMinimalLogOptions(t *testing.T) {
-	if !MinimalLogOptions.IncludeUserFields {
-		t.Error("expected IncludeUserFields to be true")
-	}
-	if MinimalLogOptions.IncludeID {
-		t.Error("expected IncludeID to be false")
-	}
-	if MinimalLogOptions.IncludeCategory {
-		t.Error("expected IncludeCategory to be false")
-	}
-}
-
-func TestVerboseLogOptions(t *testing.T) {
-	if !VerboseLogOptions.IncludeUserFields {
-		t.Error("expected IncludeUserFields to be true")
-	}
-	if !VerboseLogOptions.IncludeID {
-		t.Error("expected IncludeID to be true")
-	}
-	if !VerboseLogOptions.IncludeCategory {
-		t.Error("expected IncludeCategory to be true")
-	}
-}
-
 func TestVerboseLogOpts(t *testing.T) {
 	opts := &LogOptions{}
 	for _, opt := range VerboseLogOpts {
@@ -472,7 +448,7 @@ func TestMinimalLogOpts(t *testing.T) {
 	for _, opt := range MinimalLogOpts {
 		opt(opts)
 	}
-	if !opts.IncludeUserFields || !opts.IncludeID || !opts.IncludeSeverity || opts.IncludeCategory || opts.IncludeTracing || opts.IncludeRetryable || opts.IncludeCreatedTime || opts.IncludeFunction || opts.IncludePackage || opts.IncludeFile || opts.IncludeLine || opts.IncludeStack {
+	if !opts.IncludeUserFields || opts.IncludeID || !opts.IncludeSeverity || opts.IncludeCategory || opts.IncludeTracing || opts.IncludeRetryable || opts.IncludeCreatedTime || opts.IncludeFunction || opts.IncludePackage || opts.IncludeFile || opts.IncludeLine || opts.IncludeStack {
 		t.Error("mismatch in minimal log options")
 	}
 }

@@ -31,6 +31,14 @@ func Benchmark_New_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		_ = erro.New("connection failed", "address", "localhost:5432", "key1", "value1", "key2", 123, "key3", 1.23)
+	}
+}
+
+func Benchmark_New_WithFieldsAndFormatVerbs(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		_ = erro.New("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
@@ -47,7 +55,7 @@ func Benchmark_NewWithStack_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.New("connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
+		_ = erro.New("connection failed", "address", "localhost:5432", "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
 	}
 }
 
@@ -76,6 +84,15 @@ func Benchmark_Wrap_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		_ = erro.Wrap(baseErr, "connection failed", "address", "localhost:5432", "key1", "value1", "key2", 123, "key3", 1.23)
+	}
+}
+
+func Benchmark_Wrap_WithFieldsAndFormatVerbs(b *testing.B) {
+	baseErr := erro.New("connection refused")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
 		_ = erro.Wrap(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23)
 	}
 }
@@ -94,7 +111,7 @@ func Benchmark_WrapWithStack_WithFields(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = erro.Wrap(baseErr, "connection failed address=%s:%d", "localhost", 5432, "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
+		_ = erro.Wrap(baseErr, "connection failed", "address", "localhost:5432", "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
 	}
 }
 
@@ -244,13 +261,33 @@ func Benchmark_Error_Context(b *testing.B) {
 
 // Log Fields
 
-func Benchmark_LogFields(b *testing.B) {
+func Benchmark_LogFields_Default(b *testing.B) {
 	err := newErr()
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		erro.LogFields(err)
+	}
+}
+
+func Benchmark_LogFields_Minimal(b *testing.B) {
+	err := newErr()
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		erro.LogFields(err, erro.MinimalLogOpts...)
+	}
+}
+
+func Benchmark_LogFields_Verbose(b *testing.B) {
+	err := newErr()
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		erro.LogFields(err, erro.VerboseLogOpts...)
 	}
 }
 
@@ -355,31 +392,24 @@ func Benchmark_Wrap_FromTemplate_Full(b *testing.B) {
 
 // HTTPCode benchmarks
 
-func Benchmark_HTTPCode_WithClass(b *testing.B) {
-	err := erro.New("not found", erro.ClassNotFound)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = erro.HTTPCode(err)
-	}
-}
-
-func Benchmark_HTTPCode_StandardError(b *testing.B) {
-	err := errors.New("not found")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = erro.HTTPCode(err)
-	}
-}
-
-func Benchmark_HTTPCode_UnknownClassCategory(b *testing.B) {
+func Benchmark_HTTPCode_Class(b *testing.B) {
 	err := erro.New("some error", erro.ClassValidation, erro.CategoryDatabase)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = erro.HTTPCode(err)
 	}
 }
+func Benchmark_HTTPCode_Category(b *testing.B) {
+	err := erro.New("some error", erro.CategoryDatabase)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.HTTPCode(err)
+	}
+}
 
-func Benchmark_Sprintf_vs_ApplyFormatVerbs(b *testing.B) {
+// Other benchmarks
+
+func Benchmark_Sprintf(b *testing.B) {
 	format := "connection failed address=%s:%d key1=%s key2=%d key3=%f key4=%t"
 	arg1 := "localhost"
 	arg2 := 5432
@@ -388,21 +418,27 @@ func Benchmark_Sprintf_vs_ApplyFormatVerbs(b *testing.B) {
 	arg5 := 3.14
 	arg6 := true
 
-	b.Run("fmt.Sprintf", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = fmt.Sprintf(format, arg1, arg2, arg3, arg4, arg5, arg6)
-		}
-	})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = fmt.Sprintf(format, arg1, arg2, arg3, arg4, arg5, arg6)
+	}
+}
 
-	b.Run("ApplyFormatVerbs", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = erro.ApplyFormatVerbs(format, arg1, arg2, arg3, arg4, arg5, arg6)
-		}
-	})
+func Benchmark_ApplyFormatVerbs(b *testing.B) {
+	format := "connection failed address=%s:%d key1=%s key2=%d key3=%f key4=%t"
+	arg1 := "localhost"
+	arg2 := 5432
+	arg3 := "value1"
+	arg4 := 123
+	arg5 := 3.14
+	arg6 := true
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = erro.ApplyFormatVerbs(format, arg1, arg2, arg3, arg4, arg5, arg6)
+	}
 }
 
 func newErr() erro.Error {

@@ -2,7 +2,6 @@ package erro
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -131,7 +130,7 @@ func (e *baseError) As(target any) bool {
 		return e.wrappedErr.As(target)
 	}
 	if e.originalErr != nil {
-		return errors.As(e.originalErr, target)
+		return As(e.originalErr, target)
 	}
 	return false
 }
@@ -322,13 +321,16 @@ func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
 		message:   truncateString(message, MaxMessageLength),
 		formatter: FormatErrorWithFields,
 	}
-	var wrappedErr *baseError
-	if As(errorToWrap, &wrappedErr) {
-		e.wrappedErr = wrappedErr
-		e.originalErr = wrappedErr.originalErr
-	} else {
-		e.originalErr = errorToWrap
+
+	var ok bool
+	e.wrappedErr, ok = errorToWrap.(*baseError)
+	if !ok {
+		if !As(errorToWrap, &e.wrappedErr) {
+			e.originalErr = errorToWrap
+			return applyMeta(e, meta...)
+		}
 	}
+
 	return applyMeta(e, meta...)
 }
 
@@ -342,23 +344,23 @@ func applyMeta(e *baseError, meta ...any) *baseError {
 		if f == nil {
 			continue
 		}
-		switch f := f.(type) {
+		switch val := f.(type) {
 		case errorOpt:
-			f(e)
+			val(e)
 		case errorFields:
-			if fields := f(); len(fields) > 0 {
+			if fields := val(); len(fields) > 0 {
 				preparedFields = append(preparedFields, fields...)
 			}
 		case ErrorClass:
-			e.class = f
+			e.class = val
 		case ErrorCategory:
-			e.category = f
+			e.category = val
 		case ErrorSeverity:
-			e.severity = f
+			e.severity = val
 		case errorWork:
 			continue
 		default:
-			preparedFields = append(preparedFields, f)
+			preparedFields = append(preparedFields, val)
 		}
 	}
 	if len(preparedFields)%2 != 0 {
@@ -373,7 +375,14 @@ func applyMeta(e *baseError, meta ...any) *baseError {
 	if e.id == "" && e.wrappedErr == nil {
 		e.id = newID()
 	}
-	runWorkers(e, meta)
+
+	for _, f := range meta {
+		switch f := f.(type) {
+		case errorWork:
+			f(e)
+		}
+	}
+
 	return e
 }
 
@@ -393,13 +402,4 @@ func getFieldsCapFromMeta(meta []any) int {
 		resultedCap++
 	}
 	return resultedCap
-}
-
-func runWorkers(e *baseError, meta []any) {
-	for _, f := range meta {
-		switch f := f.(type) {
-		case errorWork:
-			f(e)
-		}
-	}
 }
