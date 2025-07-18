@@ -299,62 +299,62 @@ cpu: Apple M1 Pro
 #### New
 
 ```text
-Benchmark_New_STD-8                                   1000000000               0.3184 ns/op          0 B/op          0 allocs/op
-Benchmark_New-8                                         12589574               111.2 ns/op           256 B/op          1 allocs/op
-Benchmark_New_WithFields-8                               4357768               274.5 ns/op           416 B/op          4 allocs/op
-Benchmark_New_WithFieldsAndFormatVerbs-8                 2936198               374.8 ns/op           480 B/op          5 allocs/op
-Benchmark_NewWithStack-8                                 1699384               717.9 ns/op           368 B/op          5 allocs/op
-Benchmark_NewWithStack_WithFields-8                      1480636               809.9 ns/op           496 B/op          6 allocs/op
+Benchmark_New_STD-8                                     1000000000             0.311 ns/op           0 B/op          0 allocs/op
+Benchmark_New-8                                         11125068               107.1 ns/op           264 B/op          2 allocs/op
+Benchmark_New_WithFields-8                               6302073               188.9 ns/op           392 B/op          3 allocs/op
+Benchmark_New_WithFieldsAndFormatVerbs-8                 4366954               275.9 ns/op           456 B/op          4 allocs/op
+Benchmark_NewWithStack-8                                 2043105               600.0 ns/op           328 B/op          4 allocs/op
+Benchmark_NewWithStack_WithFields-8                      1649178               715.0 ns/op           456 B/op          5 allocs/op
 ```
 
 #### Wrap
 
 ```text
-Benchmark_Errorf_STD-8                                   8261662               151.5 ns/op            96 B/op          2 allocs/op
-Benchmark_Wrap-8                                       15654836                76.75 ns/op          256 B/op          1 allocs/op
-Benchmark_Wrap_WithFields-8                              8504668               135.2 ns/op           384 B/op          2 allocs/op
-Benchmark_Wrap_WithFieldsAndFormatVerbs-8                5701215               224.7 ns/op           448 B/op          3 allocs/op
-Benchmark_WrapWithStack-8                                2185100               551.8 ns/op           336 B/op          3 allocs/op
-Benchmark_WrapWithStack_WithFields-8                     1494895               821.4 ns/op           496 B/op          6 allocs/op
+Benchmark_Errorf_STD-8                                   7437198               158.4 ns/op            96 B/op          2 allocs/op
+Benchmark_Wrap-8                                        16625276               74.87 ns/op           256 B/op          1 allocs/op
+Benchmark_Wrap_WithFields-8                              8272609               146.8 ns/op           384 B/op          2 allocs/op
+Benchmark_Wrap_WithFieldsAndFormatVerbs-8                5365737               227.7 ns/op           448 B/op          3 allocs/op
+Benchmark_WrapWithStack-8                                2038002               596.2 ns/op           320 B/op          3 allocs/op
+Benchmark_WrapWithStack_WithFields-8                     1468904               813.1 ns/op           456 B/op          5 allocs/op
 ```
 
 #### Error() - has cache, only first call is slow
 
 ```text
-Benchmark_New_ErrorString-8                             303125539                3.964 ns/op           0 B/op          0 allocs/op
-Benchmark_New_ErrorString_WithFields-8                  307194626                3.919 ns/op           0 B/op          0 allocs/op
-Benchmark_Wrap_Error_Deep-8                             272289289                4.163 ns/op           0 B/op          0 allocs/op
+Benchmark_New_ErrorString-8                             297651590                4.021 ns/op           0 B/op          0 allocs/op
+Benchmark_New_ErrorString_WithFields-8                  303490167                3.926 ns/op           0 B/op          0 allocs/op
+Benchmark_Wrap_Error_Deep-8                             295614921                4.210 ns/op           0 B/op          0 allocs/op
 ```
 
-#### AllMeta
+#### AllMeta - optimized means preallocation slice of options
 
 ```text
-Benchmark_New_AllMeta_WithStack-8                         1000000              1183 ns/op             936 B/op         15 allocs/op
-Benchmark_New_AllMeta_NoStack-8                          2002927               602.9 ns/op           848 B/op         12 allocs/op
-Benchmark_New_AllMeta_NoStack_Optimized-8                5399748               234.4 ns/op           384 B/op          2 allocs/op
+Benchmark_New_AllMeta_WithStack-8                         968913               1076 ns/op            896 B/op         14 allocs/op
+Benchmark_New_AllMeta_NoStack-8                          2255648               513.6 ns/op           824 B/op         11 allocs/op
+Benchmark_New_AllMeta_NoStack_Optimized-8                5139520               229.7 ns/op           384 B/op          2 allocs/op
 ```
 
 #### LogFields
 
 ```text
-Benchmark_Error_Context-8                              32185711                37.31 ns/op           64 B/op          1 allocs/op
-Benchmark_LogFields_Default-8                            3546006               334.6 ns/op           816 B/op         11 allocs/op
-Benchmark_LogFields_Minimal-8   	                     6461720	           188.5 ns/op	         720 B/op	       5 allocs/op
-Benchmark_LogFields_Verbose-8                            2183089               556.9 ns/op           912 B/op         17 allocs/op
-Benchmark_LogFieldsMap-8                                 1936456               594.7 ns/op          1480 B/op         15 allocs/op
-Benchmark_LogError-8                                     3604401               358.0 ns/op           784 B/op         11 allocs/op
+Benchmark_Error_Context-8                               30605966               37.19 ns/op           64 B/op           1 allocs/op
+Benchmark_LogFields_Default-8                            3674788               325.0 ns/op           768 B/op         10 allocs/op
+Benchmark_LogFields_Minimal-8                            4873533               257.2 ns/op           720 B/op          5 allocs/op
+Benchmark_LogFields_Verbose-8                            2671768               423.3 ns/op           840 B/op         12 allocs/op
+Benchmark_LogFieldsMap-8                                 1997305               614.1 ns/op          1432 B/op         14 allocs/op
+Benchmark_LogError-8                                     3502598               357.7 ns/op           784 B/op         11 allocs/op
 ```
 
 #### Template
 
 ```text
-Benchmark_New_Template-8                                 5552124               221.3 ns/op           448 B/op         10 allocs/op
-Benchmark_New_FromTemplate-8                             5750953               203.6 ns/op           400 B/op          2 allocs/op
-Benchmark_New_FromTemplate_WithMessageAndFields-8        3554412               346.8 ns/op           576 B/op          4 allocs/op
-Benchmark_New_FromTemplate_Full-8                        1387490               874.7 ns/op           640 B/op          5 allocs/op
-Benchmark_Wrap_FromTemplate-8                            6153196               185.6 ns/op           400 B/op          2 allocs/op
-Benchmark_Wrap_FromTemplate_WithMessageAndFields-8       4035168               304.4 ns/op           576 B/op          4 allocs/op
-Benchmark_Wrap_FromTemplate_Full-8                       1406871               842.5 ns/op           640 B/op          5 allocs/op
+Benchmark_New_Template-8                                 5010291               230.4 ns/op           448 B/op         10 allocs/op
+Benchmark_New_FromTemplate-8                             5621970               209.9 ns/op           400 B/op          2 allocs/op
+Benchmark_New_FromTemplate_WithMessageAndFields-8        3354512               352.6 ns/op           576 B/op          4 allocs/op
+Benchmark_New_FromTemplate_Full-8                        1253613               951.9 ns/op           624 B/op          5 allocs/op
+Benchmark_Wrap_FromTemplate-8                            6404426               190.6 ns/op           400 B/op          2 allocs/op
+Benchmark_Wrap_FromTemplate_WithMessageAndFields-8       3398883               324.9 ns/op           576 B/op          4 allocs/op
+Benchmark_Wrap_FromTemplate_Full-8                       1000000               1101 ns/op            624 B/op          5 allocs/op
 ```
 
 #### HTTPCode
@@ -374,16 +374,13 @@ Benchmark_ApplyFormatVerbs-8                             4271595               2
 ### 🎯 Performance Insights
 
 **⚡ Core Operations**
-- `Wrap()` is ~31% faster than `New()` when you already have an error
+- `Wrap()` is faster than `New()` when you already have an error
 - HTTP status code mapping: **20ns** - virtually zero overhead
-- Template-based errors: **203ns** - consistent performance for reusable error patterns
-
-**📈 vs Standard Library**
 - Standard `errors.New()`: **0.32ns** (baseline, no features)
-- `erro.New()` no fields: **111ns** (not big overhead)
-- Standard `fmt.Errorf()`: **151ns** 
-- `erro.Wrap()` no fields: **77ns** (faster than `fmt.Errorf()`!)
-- `erro.Wrap()` with fields: **274ns** (+81% for structured context vs `fmt.Errorf()`)
+- `erro.New()` no fields: **107ns** (small overhead in most cases)
+- Standard `fmt.Errorf()`: **158ns** 
+- `erro.Wrap()` no fields: **75ns** (faster than `fmt.Errorf()`!)
+- `erro.Wrap()` with fields: **146ns** (compared with `fmt.Errorf()`)
 
 **🤔 Consider Alternatives For**
 - **Ultra-high Performance** - If you need absolute minimal overhead
