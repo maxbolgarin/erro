@@ -330,14 +330,8 @@ func valueToString(value any) string {
 	case time.Time:
 		str = v.Format(time.RFC3339)
 	case fmt.Stringer:
-		if v == nil {
-			return ""
-		}
 		str = v.String()
 	case error:
-		if v == nil {
-			return ""
-		}
 		str = v.Error()
 	case int:
 		return strconv.FormatInt(int64(v), 10)

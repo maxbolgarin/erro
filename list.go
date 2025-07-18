@@ -585,7 +585,7 @@ func (m *multiError) Is(target error) bool {
 }
 
 // As checks if any of the wrapped errors can be assigned to the target.
-func (m *multiError) As(target interface{}) bool {
+func (m *multiError) As(target any) bool {
 	for _, err := range m.errors {
 		if errors.As(err, target) {
 			return true
@@ -639,7 +639,7 @@ func (m *multiErrorSet) Is(target error) bool {
 }
 
 // As checks if any of the wrapped errors can be assigned to the target.
-func (m *multiErrorSet) As(target interface{}) bool {
+func (m *multiErrorSet) As(target any) bool {
 	for _, err := range m.errors {
 		if errors.As(err, target) {
 			return true

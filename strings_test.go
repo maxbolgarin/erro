@@ -139,6 +139,16 @@ func TestValueToString(t *testing.T) {
 	if valueToString(nilStringer) != "" {
 		t.Error("unexpected nil stringer conversion")
 	}
+	stringerObj := stringer{}
+	if valueToString(stringerObj) != "stringer" {
+		t.Error("unexpected stringer conversion")
+	}
+}
+
+type stringer struct{}
+
+func (s stringer) String() string {
+	return "stringer"
 }
 
 func TestAppendValue(t *testing.T) {
@@ -261,7 +271,6 @@ func TestAppendValue(t *testing.T) {
 		t.Error("unexpected appendValue result")
 	}
 }
-
 
 func TestBuildMessage(t *testing.T) {
 	err := New("test", CategoryDatabase, ClassInternal, SeverityCritical)

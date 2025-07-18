@@ -43,10 +43,34 @@ func TestStackTrace(t *testing.T) {
 	if err.Stack() == nil {
 		t.Error("expected stack trace to be captured")
 	}
+	err = New("test", StackTrace(nil))
+	if err.Stack() == nil {
+		t.Error("expected stack trace to be captured")
+	}
+	err = New("test", StackTrace(nil, nil))
+	if err.Stack() == nil {
+		t.Error("expected stack trace to be captured")
+	}
+	err = New("test", StackTrace(&StackTraceConfig{}))
+	if err.Stack() == nil {
+		t.Error("expected stack trace to be captured")
+	}
+	err = New("test", StackTrace(DevelopmentStackTraceConfig()))
+	if err.Stack() == nil {
+		t.Error("expected stack trace to be captured")
+	}
 }
 
 func TestStackTraceWithSkip(t *testing.T) {
 	err := New("test", StackTraceWithSkip(1))
+	if err.Stack() == nil {
+		t.Error("expected stack trace to be captured")
+	}
+	err = New("test", StackTraceWithSkip(-1, &StackTraceConfig{}))
+	if err.Stack() == nil {
+		t.Error("expected stack trace to be captured")
+	}
+	err = New("test", StackTraceWithSkip(1, DevelopmentStackTraceConfig()))
 	if err.Stack() == nil {
 		t.Error("expected stack trace to be captured")
 	}

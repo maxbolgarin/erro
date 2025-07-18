@@ -47,19 +47,19 @@ func (e *baseError) Error() (out string) {
 
 	if formatter := e.Formatter(); formatter != nil {
 		out = formatter(e)
-		if unwrapped := e.Unwrap(); unwrapped != nil {
-			unwrappedMsg := unwrapped.Error()
-			if unwrappedMsg == "" {
-				return out
-			}
-			if out == "" {
-				return unwrappedMsg
-			}
-			return out + ": " + unwrappedMsg
-		}
 	}
 	if out == "" {
 		out = FormatErrorMessage(e)
+	}
+	if unwrapped := e.Unwrap(); unwrapped != nil {
+		unwrappedMsg := unwrapped.Error()
+		if unwrappedMsg == "" {
+			return out
+		}
+		if out == "" {
+			return unwrappedMsg
+		}
+		return out + ": " + unwrappedMsg
 	}
 	return out
 }
@@ -89,11 +89,17 @@ func (e *baseError) Unwrap() error {
 // [errors.Is] function, which will then check the wrapped standard error
 // by calling [Unwrap].
 func (e *baseError) Is(target error) bool {
-	if e == nil {
+	if target == nil {
 		return false
 	}
 	targetErr, ok := target.(Error)
 	if !ok {
+		if e.originalErr != nil {
+			return Is(e.originalErr, target)
+		}
+		if e.wrappedErr != nil {
+			return e.wrappedErr.Is(target)
+		}
 		return false
 	}
 
@@ -121,7 +127,10 @@ func (e *baseError) Is(target error) bool {
 
 // As implements the [errors.As] interface.
 func (e *baseError) As(target any) bool {
-	targetPtr, ok := target.(**baseError)
+	if e == nil || target == nil {
+		return false
+	}
+	targetPtr, ok := target.(*Error)
 	if ok && targetPtr != nil {
 		*targetPtr = e
 		return true
@@ -218,7 +227,7 @@ func (e *baseError) Message() string {
 
 // Fields returns the error's fields.
 func (e *baseError) Fields() []any {
-	if len(e.fields) == 0 && e.wrappedErr != nil {
+	if len(e.fields) == 0 {
 		return nil // Get fields only from current level
 	}
 	fields := make([]any, len(e.fields))

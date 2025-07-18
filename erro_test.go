@@ -81,6 +81,11 @@ func TestWrap(t *testing.T) {
 		t.Errorf("Expected prefix 'wrapped error', got '%s'", err.Error())
 	}
 
+	err2 := erro.Wrap(err, "")
+	if err2.Message() != "wrapped error" {
+		t.Errorf("Expected message 'wrapped error', got '%s'", err2.Message())
+	}
+
 	unwrapped := erro.Unwrap(err)
 	if unwrapped != baseErr {
 		t.Errorf("Expected unwrapped error to be baseErr, got %v", unwrapped)
@@ -415,5 +420,108 @@ func TestLogFields(t *testing.T) {
 	fieldsMap := err.LogFieldsMap()
 	if len(fieldsMap) != 1 {
 		t.Errorf("unexpected number of fields in map: %d", len(fieldsMap))
+	}
+}
+
+func TestFormatter(t *testing.T) {
+	// Test 1: Default formatter behavior
+	err := erro.New("test error")
+	// The default formatter should include the message and fields
+	if !strings.Contains(err.Error(), "test error") {
+		t.Errorf("Expected error to contain 'test error', got '%s'", err.Error())
+	}
+
+	// Test 2: Custom formatter
+	customFormatter := func(err erro.Error) string {
+		return "custom formatted: " + err.Message()
+	}
+
+	errWithCustom := erro.New("test error", erro.Formatter(customFormatter))
+	expected := "custom formatted: test error"
+	if errWithCustom.Error() != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, errWithCustom.Error())
+	}
+
+	// Test 3: Nil formatter - should fall back to default formatting
+	errWithNil := erro.New("test error", erro.Formatter(nil))
+	// Should still format the error, just without custom formatting
+	if !strings.Contains(errWithNil.Error(), "test error") {
+		t.Errorf("Expected error to contain 'test error', got '%s'", errWithNil.Error())
+	}
+
+	// Test 4: Wrapped error with custom formatter on base
+	baseErr := erro.New("base error", erro.Formatter(customFormatter))
+	wrappedErr := erro.Wrap(baseErr, "wrapped error")
+
+	// The wrapped error should use the custom formatter from the base
+	// The formatter should format the wrapped error, not the base
+	expectedWrapped := "wrapped error: custom formatted: base error"
+	if wrappedErr.Error() != expectedWrapped {
+		t.Errorf("Expected '%s', got '%s'", expectedWrapped, wrappedErr.Error())
+	}
+
+	// Test 5: Wrapped error with its own formatter
+	baseErr2 := erro.New("base error")
+	wrappedErr2 := erro.Wrap(baseErr2, "wrapped error", erro.Formatter(customFormatter))
+
+	// The wrapped error should use its own formatter
+	expectedWrapped2 := "custom formatted: wrapped error: base error"
+	if wrappedErr2.Error() != expectedWrapped2 {
+		t.Errorf("Expected '%s', got '%s'", expectedWrapped2, wrappedErr2.Error())
+	}
+
+	// Test 6: Deep wrapping with formatter inheritance
+	deepBase := erro.New("deep base", erro.Formatter(customFormatter))
+	level1 := erro.Wrap(deepBase, "level 1")
+	level2 := erro.Wrap(level1, "level 2")
+
+	// The deepest level should use the custom formatter
+	expectedDeep := "level 2: level 1: custom formatted: deep base"
+	if level2.Error() != expectedDeep {
+		t.Errorf("Expected '%s', got '%s'", expectedDeep, level2.Error())
+	}
+
+	// Test 7: Wrapped standard error
+	stdErr := errors.New("standard error")
+	wrappedStdErr := erro.Wrap(stdErr, "wrapped standard")
+
+	// Standard errors should be formatted normally
+	if !strings.Contains(wrappedStdErr.Error(), "wrapped standard") {
+		t.Errorf("Expected error to contain 'wrapped standard', got '%s'", wrappedStdErr.Error())
+	}
+	if !strings.Contains(wrappedStdErr.Error(), "standard error") {
+		t.Errorf("Expected error to contain 'standard error', got '%s'", wrappedStdErr.Error())
+	}
+
+	// Test 8: Custom formatter with fields
+	errWithFields := erro.New("test error", "key", "value", erro.Formatter(customFormatter))
+	expectedWithFields := "custom formatted: test error"
+	if errWithFields.Error() != expectedWithFields {
+		t.Errorf("Expected '%s', got '%s'", expectedWithFields, errWithFields.Error())
+	}
+
+	// Test 9: Formatter that returns empty string
+	emptyFormatter := func(err erro.Error) string {
+		return ""
+	}
+	errWithEmpty := erro.New("test error", erro.Formatter(emptyFormatter))
+	// Should fall back to default formatting when formatter returns empty
+	if !strings.Contains(errWithEmpty.Error(), "test error") {
+		t.Errorf("Expected error to contain 'test error', got '%s'", errWithEmpty.Error())
+	}
+
+	errWithNilFormatter := erro.New("test error", erro.Formatter(nil), "key", "value")
+	wrappedErrWithNilFormatter := erro.Wrap(errWithNilFormatter, "wrapped error", erro.Formatter(nil), "key2", "value2")
+	// Should fall back to default formatting when formatter is nil
+	if wrappedErrWithNilFormatter.Error() != "wrapped error: test error" {
+		t.Errorf("Expected error to be 'wrapped error: test error', got '%s'", wrappedErrWithNilFormatter.Error())
+	}
+
+	errWithPanicFormatter := erro.New("test error", erro.Formatter(func(err erro.Error) string {
+		panic("panic")
+	}))
+	// Should fall back to default formatting when formatter is nil
+	if errWithPanicFormatter.Error() != "error formatting failed: panic" {
+		t.Errorf("Expected error to be 'error formatting failed: panic', got '%s'", errWithPanicFormatter.Error())
 	}
 }

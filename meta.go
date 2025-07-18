@@ -32,9 +32,6 @@ func Fields(fields ...any) errorFields {
 // Formatter sets a custom error message formatter.
 func Formatter(f FormatErrorFunc) errorOpt {
 	return func(err *baseError) {
-		if f == nil {
-			return
-		}
 		err.formatter = f
 	}
 }
