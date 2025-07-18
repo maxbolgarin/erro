@@ -11,7 +11,7 @@
 go get -u github.com/maxbolgarin/erro
 ```
 
-## ✨ Why `erro`?
+## ✨ Why `erro` > standard `errors`?
 
 **Before: Basic Go errors leave you guessing**
 ```go
@@ -28,10 +28,12 @@ return fmt.Errorf("user operation failed: %w", err)
 return erro.Wrap(err, "failed to update user profile",
     "user_id", userID,
     "operation", "profile_update", 
-    "fields_updated", []string{"email", "name"},
     erro.ClassValidation,        // → HTTP 400
     erro.CategoryUserInput,      // → Organized error tracking
     erro.SeverityMedium,         // → Priority for alerts
+    erro.RecordSpan(span),       // → OpenTelemetry tracing
+    erro.RecordMetrics(metrics), // → Prometheus metrics
+    erro.SendEvent(ctx, dispatcher),  // → Error event tracking (e.g. Sentry, Honeycomb, etc.)
 )
 
 // Instant context: exactly what failed, for whom, why, and how to respond
@@ -39,12 +41,12 @@ return erro.Wrap(err, "failed to update user profile",
 
 ## 🎯 Key Benefits
 
-- **🔍 Rich Context**: Error carries structured metadata, stack traces, and debugging information
-- **🏷️ Smart Classification**: Organize errors by class, category, and severity for better handling
+- **🔍 Rich Context**: Error carries structured metadata, stack traces, and debugging information with smart classification
 - **📊 Logging-Native**: Integration with `slog`, `logrus` and any structured logger
+- **🔍 Monitoring-Native**: Easyly gather metrics, trace spans or send events on error creation
 - **🔒 Security-Aware**: Redaction of sensitive data in logs and traces, protection from DoS attacks
-- **🔄 Drop-in Replacement**: Fully compatible with standard `errors` package - migrate gradually
-- **🎯 Production-Ready**: Comprehensive testing, thread-safe, used in production environments
+- **🔄 Drop-in Replacement**: Fully compatible with standard `errors` package - migrate gradually or just replace `errors` to `erro` in your codebase
+- **🎯 Production-Ready**: Comprehensive testing, thread-safe, used in production environments, performance is suitable for 95% of use cases (watch [benchmarks below](#-performance--benchmark))
 
 ## 🚀 Quick Start
 
@@ -92,6 +94,9 @@ func UserHandler(w http.ResponseWriter, r *http.Request) {
 ## 🔥 Advanced Features
 
 ### 🏷️ Error Templates - Consistency Made Easy
+
+Tutorial: [Error Templates](docs/template-creation.md)
+
 ```go
 // Define reusable error templates
 var (
@@ -148,6 +153,9 @@ func AuthenticateUser(username, password string) error {
 ```
 
 ### 🔍 Stack Traces & Debugging
+
+Tutorial: [Stack Trace Configuration](docs/stack-trace-configuration.md)
+
 ```go
 // Capture stack traces for debugging
 func CriticalOperation() error {
@@ -237,8 +245,8 @@ import "github.com/maxbolgarin/erro"
 err := erro.New("something failed")
 
 // All standard functions still work
-if errors.Is(err, err) { ... }  // ✅ Works
-errors.Unwrap(err1)  // ✅ Works
+if erro.Is(err, err1) { ... }  // ✅ Works
+erro.Unwrap(err1)  // ✅ Works
 ```
 
 ### Gradual Enhancement
@@ -273,7 +281,7 @@ errors.Unwrap(err1)  // ✅ Works
 - Memory safety with no leaks
 - Thread safety with comprehensive concurrency testing
 - Standards compliance with Go error interfaces
-- High test coverage (93.9%) with extensive edge case coverage
+- High test coverage with extensive edge case coverage
 
 ### Benchmarks
 
@@ -374,13 +382,26 @@ Benchmark_ApplyFormatVerbs-8                             4271595               2
 - Standard `errors.New()`: **0.32ns** (baseline, no features)
 - `erro.New()` no fields: **111ns** (not big overhead)
 - Standard `fmt.Errorf()`: **151ns** 
-- `erro.Wrap()` no fields: **77ns** (faster than `fmt.Errorf()`)
+- `erro.Wrap()` no fields: **77ns** (faster than `fmt.Errorf()`!)
 - `erro.Wrap()` with fields: **274ns** (+81% for structured context vs `fmt.Errorf()`)
 
 **🤔 Consider Alternatives For**
 - **Ultra-high Performance** - If you need absolute minimal overhead
 - **Simple Scripts** - Standard `errors` might be sufficient for basic scripts
 - **Legacy Codebases** - If you can't gradually migrate existing error handling
+
+
+## Why Go's approach to errors is better than exceptions?
+
+Go's approach to errors—as values rather than exceptions—offers significant advantages for **modern microservice and observability-driven architectures**. 
+
+By treating errors as explicit return values, Go encourages developers to handle failures directly at the point where they occur, making error flows transparent and predictable. This explicitness enables rich error wrapping, structured context, and metadata propagation, which are essential for **tracing issues across distributed systems**. Unlike try-catch mechanisms that can obscure the origin and context of failures, Go's model makes it easy to:
+* attach contextual information
+* correlate errors with logs and traces
+* surface actionable insights for monitoring and debugging
+
+As a result, error handling in Go aligns naturally with the needs of production-grade systems, where observability, debuggability, and reliability are paramount. Use the natural strength of Go approach to errors and build your systems with observability in mind.
+
 
 ## 📚 Documentation
 
