@@ -269,6 +269,8 @@ func countVerbs(s string) int {
 		if s[i] == '%' {
 			if i+1 < len(s) && s[i+1] != '%' {
 				count++
+			} else {
+				i++
 			}
 		}
 	}
