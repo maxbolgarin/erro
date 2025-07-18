@@ -126,6 +126,9 @@ func Redact(value any) RedactedValue {
 var (
 	// MessageKeyGetter generates a key based on the error's message without fields.
 	MessageKeyGetter KeyGetterFunc = func(err error) string {
+		if err == nil {
+			return ""
+		}
 		if erroErr, ok := err.(Error); ok {
 			return erroErr.Message()
 		}
@@ -137,6 +140,9 @@ var (
 	}
 	// IDKeyGetter generates a key based on the error's ID.
 	IDKeyGetter KeyGetterFunc = func(err error) string {
+		if err == nil {
+			return ""
+		}
 		if erroErr, ok := err.(Error); ok {
 			return erroErr.ID()
 		}
@@ -148,6 +154,9 @@ var (
 	}
 	// ErrorKeyGetter generates a key based on the error's string representation (err.Error()).
 	ErrorKeyGetter KeyGetterFunc = func(err error) string {
+		if err == nil {
+			return ""
+		}
 		return err.Error()
 	}
 )

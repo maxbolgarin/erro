@@ -345,6 +345,9 @@ func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
 
 func applyMeta(e *baseError, meta ...any) *baseError {
 	if len(meta) == 0 {
+		if e.wrappedErr == nil {
+			e.id = newID()
+		}
 		return e
 	}
 

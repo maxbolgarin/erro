@@ -1,15 +1,19 @@
 package erro
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
+
+func init() {
+	// Seed the random number generator for better randomness
+	rand.Seed(time.Now().UnixNano())
+}
 
 // GetFormatErrorWithFullContextBase returns a [FormatErrorFunc] that formats an error with full context.
 func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
@@ -209,12 +213,28 @@ func formatError(err Error, s fmt.State, verb rune) {
 	}
 }
 
+var idCounter uint64
+
+const hexChars = "0123456789abcdef"
+
 func newID() string {
+	// Use atomic counter for better performance
+	// This provides unique IDs without the overhead of random number generation
+	id := atomic.AddUint64(&idCounter, 1)
+
+	// Pre-allocated buffer for hex encoding (8 characters = 4 bytes)
 	var buf [8]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 10)[:8]
+
+	// Manual hex encoding to avoid string allocation
+	// Use only the lower 32 bits for a shorter ID
+	val := uint32(id)
+	for i := 0; i < 4; i++ {
+		byte := byte(val >> (i * 8))
+		buf[i*2] = hexChars[byte>>4]
+		buf[i*2+1] = hexChars[byte&0x0f]
 	}
-	return hex.EncodeToString(buf[:])
+
+	return string(buf[:8])
 }
 
 type atomicValue[T any] struct {

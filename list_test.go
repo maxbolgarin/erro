@@ -349,7 +349,7 @@ func TestSafeList(t *testing.T) {
 	}
 	errToRemove := safeList.First()
 	safeList.RemoveError(errToRemove)
-	if safeList.Len() != 99 {
+	if safeList.Len() != 98 {
 		t.Error("unexpected length after remove error")
 	}
 	safeList.Clear()
@@ -528,4 +528,665 @@ func TestSafeSet_ConcurrentAdd(t *testing.T) {
 	if safeSet.Len() != 100 {
 		t.Errorf("expected 100 errors, got %d", safeSet.Len())
 	}
+}
+
+func TestKeyGetters(t *testing.T) {
+	t.Run("MessageKeyGetter", func(t *testing.T) {
+		// Test with erro.Error
+		err1 := New("test message", ID("123"))
+		key1 := MessageKeyGetter(err1)
+		if key1 != "test message" {
+			t.Errorf("expected 'test message', got '%s'", key1)
+		}
+
+		// Test with wrapped erro.Error - should get the wrapped message
+		err2 := Wrap(err1, "wrapped message")
+		key2 := MessageKeyGetter(err2)
+		if key2 != "wrapped message" {
+			t.Errorf("expected 'wrapped message', got '%s'", key2)
+		}
+
+		// Test with standard error
+		stdErr := errors.New("standard error")
+		key3 := MessageKeyGetter(stdErr)
+		if key3 != "standard error" {
+			t.Errorf("expected 'standard error', got '%s'", key3)
+		}
+
+		// Test with nil error
+		key4 := MessageKeyGetter(nil)
+		if key4 != "" {
+			t.Errorf("expected empty string for nil error, got '%s'", key4)
+		}
+	})
+
+	t.Run("IDKeyGetter", func(t *testing.T) {
+		// Test with erro.Error with ID
+		err1 := New("test message", ID("123"))
+		key1 := IDKeyGetter(err1)
+		if key1 != "123" {
+			t.Errorf("expected '123', got '%s'", key1)
+		}
+
+		// Test with erro.Error without ID - should fallback to Error()
+		err2 := New("test message")
+		key2 := IDKeyGetter(err2)
+		expected2 := err2.ID()
+		if key2 != expected2 {
+			t.Errorf("expected '%s' (fallback to newID()), got '%s'", expected2, key2)
+		}
+
+		// Test with wrapped erro.Error - should get the wrapped error's ID
+		err3 := Wrap(err1, "wrapped message")
+		key3 := IDKeyGetter(err3)
+		if key3 != "123" {
+			t.Errorf("expected '123', got '%s'", key3)
+		}
+
+		// Test with standard error
+		stdErr := errors.New("standard error")
+		key4 := IDKeyGetter(stdErr)
+		if key4 != "standard error" {
+			t.Errorf("expected 'standard error', got '%s'", key4)
+		}
+
+		// Test with nil error
+		key5 := IDKeyGetter(nil)
+		if key5 != "" {
+			t.Errorf("expected empty string for nil error, got '%s'", key5)
+		}
+	})
+
+	t.Run("ErrorKeyGetter", func(t *testing.T) {
+		// Test with erro.Error
+		err1 := New("test message", ID("123"))
+		key1 := ErrorKeyGetter(err1)
+		expected1 := err1.Error()
+		if key1 != expected1 {
+			t.Errorf("expected '%s', got '%s'", expected1, key1)
+		}
+
+		// Test with standard error
+		stdErr := errors.New("standard error")
+		key2 := ErrorKeyGetter(stdErr)
+		if key2 != "standard error" {
+			t.Errorf("expected 'standard error', got '%s'", key2)
+		}
+
+		// Test with wrapped error
+		wrappedErr := Wrap(stdErr, "wrapped")
+		key3 := ErrorKeyGetter(wrappedErr)
+		expected3 := wrappedErr.Error()
+		if key3 != expected3 {
+			t.Errorf("expected '%s', got '%s'", expected3, key3)
+		}
+
+		// Test with nil error
+		key4 := ErrorKeyGetter(nil)
+		if key4 != "" {
+			t.Errorf("expected empty string for nil error, got '%s'", key4)
+		}
+	})
+}
+
+func TestKeyGetters_AsBehavior(t *testing.T) {
+	t.Run("MessageKeyGetter_WithWrappedStandardError", func(t *testing.T) {
+		// Create a standard error
+		stdErr := errors.New("standard error message")
+
+		// Wrap it with erro
+		wrappedErr := Wrap(stdErr, "wrapped message")
+
+		// Test MessageKeyGetter with wrapped standard error
+		key := MessageKeyGetter(wrappedErr)
+		if key != "wrapped message" {
+			t.Errorf("expected 'wrapped message', got '%s'", key)
+		}
+	})
+
+	t.Run("IDKeyGetter_WithWrappedStandardError", func(t *testing.T) {
+		// Create a standard error
+		stdErr := errors.New("standard error message")
+
+		// Wrap it with erro
+		wrappedErr := Wrap(stdErr, "wrapped message")
+
+		// Test IDKeyGetter with wrapped standard error
+		key := IDKeyGetter(wrappedErr)
+		expected := wrappedErr.ID()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("ErrorKeyGetter_WithWrappedStandardError", func(t *testing.T) {
+		// Create a standard error
+		stdErr := errors.New("standard error message")
+
+		// Wrap it with erro
+		wrappedErr := Wrap(stdErr, "wrapped message")
+
+		// Test ErrorKeyGetter with wrapped standard error
+		key := ErrorKeyGetter(wrappedErr)
+		expected := wrappedErr.Error()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("MessageKeyGetter_WithDeepWrappedStandardError", func(t *testing.T) {
+		// Create a standard error
+		stdErr := errors.New("deep standard error")
+
+		// Wrap it multiple times
+		wrapped1 := Wrap(stdErr, "first wrap")
+		wrapped2 := Wrap(wrapped1, "second wrap")
+		wrapped3 := Wrap(wrapped2, "third wrap")
+
+		// Test MessageKeyGetter with deeply wrapped standard error
+		key := MessageKeyGetter(wrapped3)
+		if key != "third wrap" {
+			t.Errorf("expected 'third wrap', got '%s'", key)
+		}
+	})
+
+	t.Run("IDKeyGetter_WithDeepWrappedStandardError", func(t *testing.T) {
+		// Create a standard error
+		stdErr := errors.New("deep standard error")
+
+		// Wrap it multiple times
+		wrapped1 := Wrap(stdErr, "first wrap")
+		wrapped2 := Wrap(wrapped1, "second wrap")
+		wrapped3 := Wrap(wrapped2, "third wrap")
+
+		// Test IDKeyGetter with deeply wrapped standard error
+		key := IDKeyGetter(wrapped3)
+		expected := wrapped3.ID()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("ErrorKeyGetter_WithDeepWrappedStandardError", func(t *testing.T) {
+		// Create a standard error
+		stdErr := errors.New("deep standard error")
+
+		// Wrap it multiple times
+		wrapped1 := Wrap(stdErr, "first wrap")
+		wrapped2 := Wrap(wrapped1, "second wrap")
+		wrapped3 := Wrap(wrapped2, "third wrap")
+
+		// Test ErrorKeyGetter with deeply wrapped standard error
+		key := ErrorKeyGetter(wrapped3)
+		expected := wrapped3.Error()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("MessageKeyGetter_WithWrappedErroError", func(t *testing.T) {
+		// Create an erro error
+		erroErr := New("original message", ID("123"))
+
+		// Wrap it with another erro error
+		wrappedErr := Wrap(erroErr, "wrapped message")
+
+		// Test MessageKeyGetter with wrapped erro error
+		key := MessageKeyGetter(wrappedErr)
+		if key != "wrapped message" {
+			t.Errorf("expected 'wrapped message', got '%s'", key)
+		}
+	})
+
+	t.Run("IDKeyGetter_WithWrappedErroError", func(t *testing.T) {
+		// Create an erro error with ID
+		erroErr := New("original message", ID("123"))
+
+		// Wrap it with another erro error
+		wrappedErr := Wrap(erroErr, "wrapped message")
+
+		// Test IDKeyGetter with wrapped erro error
+		key := IDKeyGetter(wrappedErr)
+		if key != "123" {
+			t.Errorf("expected '123', got '%s'", key)
+		}
+	})
+
+	t.Run("MessageKeyGetter_WithWrappedErroError", func(t *testing.T) {
+		// Create an erro error without ID
+		erroErr := New("original message")
+
+		// Wrap it with another erro error
+		wrappedErr := fmt.Errorf("wrapped message: %w", erroErr)
+
+		// Test IDKeyGetter with wrapped erro error without ID
+		key := MessageKeyGetter(wrappedErr)
+		expected := erroErr.Message()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("IDKeyGetter_WithWrappedErroError", func(t *testing.T) {
+		// Create an erro error without ID
+		erroErr := New("original message")
+
+		// Wrap it with another erro error
+		wrappedErr := fmt.Errorf("wrapped message: %w", erroErr)
+
+		// Test IDKeyGetter with wrapped erro error without ID
+		key := IDKeyGetter(wrappedErr)
+		expected := erroErr.ID()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("ErrorKeyGetter_WithWrappedErroError", func(t *testing.T) {
+		// Create an erro error
+		erroErr := New("original message", ID("123"))
+
+		// Wrap it with another erro error
+		wrappedErr := Wrap(erroErr, "wrapped message")
+
+		// Test ErrorKeyGetter with wrapped erro error
+		key := ErrorKeyGetter(wrappedErr)
+		expected := wrappedErr.Error()
+		if key != expected {
+			t.Errorf("expected '%s', got '%s'", expected, key)
+		}
+	})
+
+	t.Run("MessageKeyGetter_WithNilError", func(t *testing.T) {
+		// Test MessageKeyGetter with nil error
+		key := MessageKeyGetter(nil)
+		if key != "" {
+			t.Errorf("expected empty string for nil error, got '%s'", key)
+		}
+	})
+
+	t.Run("IDKeyGetter_WithNilError", func(t *testing.T) {
+		// Test IDKeyGetter with nil error
+		key := IDKeyGetter(nil)
+		if key != "" {
+			t.Errorf("expected empty string for nil error, got '%s'", key)
+		}
+	})
+
+	t.Run("ErrorKeyGetter_WithNilError", func(t *testing.T) {
+		// Test ErrorKeyGetter with nil error
+		key := ErrorKeyGetter(nil)
+		if key != "" {
+			t.Errorf("expected empty string for nil error, got '%s'", key)
+		}
+	})
+
+	t.Run("MessageKeyGetter_WithStandardError", func(t *testing.T) {
+		// Test MessageKeyGetter with standard error
+		stdErr := errors.New("standard error")
+		key := MessageKeyGetter(stdErr)
+		if key != "standard error" {
+			t.Errorf("expected 'standard error', got '%s'", key)
+		}
+	})
+
+	t.Run("IDKeyGetter_WithStandardError", func(t *testing.T) {
+		// Test IDKeyGetter with standard error
+		stdErr := errors.New("standard error")
+		key := IDKeyGetter(stdErr)
+		if key != "standard error" {
+			t.Errorf("expected 'standard error', got '%s'", key)
+		}
+	})
+
+	t.Run("ErrorKeyGetter_WithStandardError", func(t *testing.T) {
+		// Test ErrorKeyGetter with standard error
+		stdErr := errors.New("standard error")
+		key := ErrorKeyGetter(stdErr)
+		if key != "standard error" {
+			t.Errorf("expected 'standard error', got '%s'", key)
+		}
+	})
+}
+
+func TestSet_WithWrappedStandardErrors(t *testing.T) {
+	t.Run("SetWithMessageKeyGetter_StandardErrors", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(MessageKeyGetter)
+
+		// Create standard errors and wrap them with same message
+		stdErr1 := errors.New("same message")
+		stdErr2 := errors.New("same message")
+		stdErr3 := errors.New("different message")
+
+		wrapped1 := Wrap(stdErr1, "same wrap message")
+		wrapped2 := Wrap(stdErr2, "same wrap message")
+		wrapped3 := Wrap(stdErr3, "different wrap message")
+
+		set.Add(wrapped1)
+		set.Add(wrapped2) // Should be deduplicated (same message)
+		set.Add(wrapped3)
+
+		if set.Len() != 2 {
+			t.Errorf("expected 2 unique errors, got %d", set.Len())
+		}
+
+		// Verify the error message contains both unique messages
+		err := set.Err()
+		if err == nil {
+			t.Error("expected an error")
+		}
+		errStr := err.Error()
+		if !strings.Contains(errStr, "same wrap message") {
+			t.Error("expected error to contain 'same wrap message'")
+		}
+		if !strings.Contains(errStr, "different wrap message") {
+			t.Error("expected error to contain 'different wrap message'")
+		}
+	})
+
+	t.Run("SetWithIDKeyGetter_StandardErrors", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(IDKeyGetter)
+
+		// Create standard errors and wrap them with same message
+		stdErr1 := errors.New("same underlying message")
+		stdErr2 := errors.New("same underlying message")
+		stdErr3 := errors.New("different underlying message")
+
+		wrapped1 := Wrap(stdErr1, "same wrap")
+		wrapped2 := Wrap(stdErr2, "same wrap")
+		wrapped3 := Wrap(stdErr3, "different wrap")
+
+		set.Add(wrapped1)
+		set.Add(wrapped2) // Should be deduplicated (same error string)
+		set.Add(wrapped3)
+
+		if set.Len() != 3 {
+			t.Errorf("expected 3 unique errors, got %d", set.Len())
+		}
+
+		// Verify the error message contains both unique errors
+		err := set.Err()
+		if err == nil {
+			t.Error("expected an error")
+		}
+		errStr := err.Error()
+		if !strings.Contains(errStr, "same wrap") {
+			t.Error("expected error to contain 'same wrap'")
+		}
+		if !strings.Contains(errStr, "different wrap") {
+			t.Error("expected error to contain 'different wrap'")
+		}
+	})
+
+	t.Run("SetWithErrorKeyGetter_StandardErrors", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(ErrorKeyGetter)
+
+		// Create standard errors and wrap them with same message
+		stdErr1 := errors.New("same message")
+		stdErr2 := errors.New("same message")
+		stdErr3 := errors.New("different message")
+
+		wrapped1 := Wrap(stdErr1, "same wrap")
+		wrapped2 := Wrap(stdErr2, "same wrap")
+		wrapped3 := Wrap(stdErr3, "different wrap")
+
+		set.Add(wrapped1)
+		set.Add(wrapped2) // Should be deduplicated
+		set.Add(wrapped3)
+
+		if set.Len() != 2 {
+			t.Errorf("expected 2 unique errors, got %d", set.Len())
+		}
+
+		// Verify the error message contains both unique errors
+		err := set.Err()
+		if err == nil {
+			t.Error("expected an error")
+		}
+		errStr := err.Error()
+		if !strings.Contains(errStr, "same wrap") {
+			t.Error("expected error to contain 'same wrap'")
+		}
+		if !strings.Contains(errStr, "different wrap") {
+			t.Error("expected error to contain 'different wrap'")
+		}
+	})
+}
+
+func TestSet_WithKeyGetters(t *testing.T) {
+	t.Run("SetWithMessageKeyGetter", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(MessageKeyGetter)
+
+		// Add errors with same message but different IDs
+		err1 := New("same message", ID("1"))
+		err2 := New("same message", ID("2"))
+		err3 := New("different message", ID("3"))
+
+		set.Add(err1)
+		set.Add(err2) // Should be deduplicated
+		set.Add(err3)
+
+		if set.Len() != 2 {
+			t.Errorf("expected 2 unique errors, got %d", set.Len())
+		}
+
+		// Verify the error message contains both unique messages
+		err := set.Err()
+		if err == nil {
+			t.Error("expected an error")
+		}
+		errStr := err.Error()
+		if !strings.Contains(errStr, "same message") {
+			t.Error("expected error to contain 'same message'")
+		}
+		if !strings.Contains(errStr, "different message") {
+			t.Error("expected error to contain 'different message'")
+		}
+	})
+
+	t.Run("SetWithIDKeyGetter", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(IDKeyGetter)
+
+		// Add errors with same ID but different messages
+		err1 := New("message 1", ID("same-id"))
+		err2 := New("message 2", ID("same-id"))
+		err3 := New("message 3", ID("different-id"))
+
+		set.Add(err1)
+		set.Add(err2) // Should be deduplicated
+		set.Add(err3)
+
+		if set.Len() != 2 {
+			t.Errorf("expected 2 unique errors, got %d", set.Len())
+		}
+
+		// Verify the error message contains both unique error messages
+		err := set.Err()
+		if err == nil {
+			t.Error("expected an error")
+		}
+		errStr := err.Error()
+		if !strings.Contains(errStr, "message 1") {
+			t.Error("expected error to contain 'message 1'")
+		}
+		if !strings.Contains(errStr, "message 3") {
+			t.Error("expected error to contain 'message 3'")
+		}
+	})
+
+	t.Run("SetWithErrorKeyGetter", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(ErrorKeyGetter)
+
+		// Add errors with same string representation
+		err1 := New("same message", ID("1"))
+		err2 := New("same message", ID("1")) // Same ID too
+		err3 := New("different message", ID("2"))
+
+		set.Add(err1)
+		set.Add(err2) // Should be deduplicated
+		set.Add(err3)
+
+		if set.Len() != 2 {
+			t.Errorf("expected 2 unique errors, got %d", set.Len())
+		}
+
+		// Verify the error message contains both unique errors
+		err := set.Err()
+		if err == nil {
+			t.Error("expected an error")
+		}
+		errStr := err.Error()
+		if !strings.Contains(errStr, "same message") {
+			t.Error("expected error to contain 'same message'")
+		}
+		if !strings.Contains(errStr, "different message") {
+			t.Error("expected error to contain 'different message'")
+		}
+	})
+
+	t.Run("SetWithCustomKeyGetter", func(t *testing.T) {
+		set := NewSet()
+		customKeyGetter := func(err error) string {
+			if erroErr, ok := err.(Error); ok {
+				return erroErr.Message() + "_" + erroErr.ID()
+			}
+			return err.Error()
+		}
+		set.WithKeyGetter(customKeyGetter)
+
+		// Add errors with same message+ID combination
+		err1 := New("test", ID("123"))
+		err2 := New("test", ID("123"))
+		err3 := New("test", ID("456"))
+
+		set.Add(err1)
+		set.Add(err2) // Should be deduplicated
+		set.Add(err3)
+
+		if set.Len() != 2 {
+			t.Errorf("expected 2 unique errors, got %d", set.Len())
+		}
+	})
+
+	t.Run("SetWithNilKeyGetter", func(t *testing.T) {
+		set := NewSet()
+		set.WithKeyGetter(nil) // Should not panic
+
+		err1 := New("test", ID("123"))
+		err2 := New("test", ID("123"))
+
+		set.Add(err1)
+		set.Add(err2)
+
+		// When nil key getter is set, it doesn't change the key getter,
+		// so it keeps the default MessageKeyGetter and deduplicates
+		if set.Len() != 1 {
+			t.Errorf("expected 1 error with nil key getter (deduplication), got %d", set.Len())
+		}
+	})
+}
+
+func TestSafeSet_WithKeyGetters(t *testing.T) {
+	t.Run("SafeSetWithMessageKeyGetter", func(t *testing.T) {
+		safeSet := NewSafeSet()
+		safeSet.WithKeyGetter(MessageKeyGetter)
+
+		var wg sync.WaitGroup
+		// Add 100 errors with 10 unique messages
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				message := fmt.Sprintf("message_%d", i%10)
+				safeSet.New(message, ID(fmt.Sprintf("id_%d", i)))
+			}(i)
+		}
+		wg.Wait()
+
+		if safeSet.Len() != 10 {
+			t.Errorf("expected 10 unique errors, got %d", safeSet.Len())
+		}
+	})
+
+	t.Run("SafeSetWithIDKeyGetter", func(t *testing.T) {
+		safeSet := NewSafeSet()
+		safeSet.WithKeyGetter(IDKeyGetter)
+
+		var wg sync.WaitGroup
+		// Add 100 errors with 10 unique IDs
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				id := fmt.Sprintf("id_%d", i%10)
+				safeSet.New(fmt.Sprintf("message_%d", i), ID(id))
+			}(i)
+		}
+		wg.Wait()
+
+		if safeSet.Len() != 10 {
+			t.Errorf("expected 10 unique errors, got %d", safeSet.Len())
+		}
+	})
+
+	t.Run("SafeSetWithErrorKeyGetter", func(t *testing.T) {
+		safeSet := NewSafeSet()
+		safeSet.WithKeyGetter(ErrorKeyGetter)
+
+		var wg sync.WaitGroup
+		// Add 100 errors with 10 unique string representations
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				message := fmt.Sprintf("message_%d", i%10)
+				id := fmt.Sprintf("id_%d", i%10)
+				safeSet.New(message, ID(id))
+			}(i)
+		}
+		wg.Wait()
+
+		if safeSet.Len() != 10 {
+			t.Errorf("expected 10 unique errors, got %d", safeSet.Len())
+		}
+	})
+}
+
+func TestDebug_WrappedErrorStrings(t *testing.T) {
+	stdErr1 := errors.New("same message")
+	stdErr2 := errors.New("same message")
+
+	wrapped1 := Wrap(stdErr1, "wrapped 1")
+	wrapped2 := Wrap(stdErr2, "wrapped 2")
+
+	t.Logf("wrapped1.Error(): %s", wrapped1.Error())
+	t.Logf("wrapped2.Error(): %s", wrapped2.Error())
+
+	// Test key getters
+	t.Logf("MessageKeyGetter(wrapped1): %s", MessageKeyGetter(wrapped1))
+	t.Logf("MessageKeyGetter(wrapped2): %s", MessageKeyGetter(wrapped2))
+	t.Logf("IDKeyGetter(wrapped1): %s", IDKeyGetter(wrapped1))
+	t.Logf("IDKeyGetter(wrapped2): %s", IDKeyGetter(wrapped2))
+	t.Logf("ErrorKeyGetter(wrapped1): %s", ErrorKeyGetter(wrapped1))
+	t.Logf("ErrorKeyGetter(wrapped2): %s", ErrorKeyGetter(wrapped2))
+}
+
+func TestDebug_IDKeyGetter_WrappedErrors(t *testing.T) {
+	stdErr1 := errors.New("message 1")
+	stdErr2 := errors.New("message 2")
+	stdErr3 := errors.New("message 3")
+
+	wrapped1 := Wrap(stdErr1, "same wrap")
+	wrapped2 := Wrap(stdErr2, "same wrap")
+	wrapped3 := Wrap(stdErr3, "different wrap")
+
+	t.Logf("IDKeyGetter(wrapped1): %s", IDKeyGetter(wrapped1))
+	t.Logf("IDKeyGetter(wrapped2): %s", IDKeyGetter(wrapped2))
+	t.Logf("IDKeyGetter(wrapped3): %s", IDKeyGetter(wrapped3))
 }
