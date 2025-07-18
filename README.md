@@ -419,7 +419,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 [version-img]: https://img.shields.io/badge/Go-%3E%3D%201.18-%23007d9c
 [doc-img]: https://pkg.go.dev/badge/github.com/maxbolgarin/erro
 [doc]: https://pkg.go.dev/github.com/maxbolgarin/erro
-[ci-img]: https://github.com/maxbolgarin/erro/actions/workflows/go.yml/badge.svg
+[ci-img]: https://github.com/maxbolgarin/erro/actions/workflows/go.yaml/badge.svg
 [ci]: https://github.com/maxbolgarin/erro/actions
 [report-img]: https://goreportcard.com/badge/github.com/maxbolgarin/erro
 [report]: https://goreportcard.com/report/github.com/maxbolgarin/erro
