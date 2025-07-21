@@ -213,28 +213,25 @@ func formatError(err Error, s fmt.State, verb rune) {
 	}
 }
 
-var idCounter uint64
+const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-const hexChars = "0123456789abcdef"
+var globalSequence int64
 
-func newID() string {
-	// Use atomic counter for better performance
-	// This provides unique IDs without the overhead of random number generation
-	id := atomic.AddUint64(&idCounter, 1)
+func newID(seed int64) string {
+	seq := atomic.AddInt64(&globalSequence, 1) & 0xFFF
+	combined := (seed << 12) | seq
+	return encodeCompact(combined)
+}
 
-	// Pre-allocated buffer for hex encoding (8 characters = 4 bytes)
-	var buf [8]byte
-
-	// Manual hex encoding to avoid string allocation
-	// Use only the lower 32 bits for a shorter ID
-	val := uint32(id)
-	for i := 0; i < 4; i++ {
-		byte := byte(val >> (i * 8))
-		buf[i*2] = hexChars[byte>>4]
-		buf[i*2+1] = hexChars[byte&0x0f]
+func encodeCompact(n int64) string {
+	var buf [11]byte // Enough for 64-bit in base62
+	i := 10
+	for n > 0 {
+		buf[i] = alphabet[n%62]
+		n /= 62
+		i--
 	}
-
-	return string(buf[:8])
+	return string(buf[i+1:])
 }
 
 type atomicValue[T any] struct {

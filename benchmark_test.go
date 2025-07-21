@@ -66,12 +66,21 @@ func Benchmark_Errorf_STD(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = fmt.Errorf("connection failed to address=%s:%d: %w", "localhost", 5432, baseErr)
+		_ = fmt.Errorf("connection failed: %w", baseErr)
 	}
 }
 
-func Benchmark_Wrap(b *testing.B) {
-	baseErr := erro.New("connection refused")
+func Benchmark_Errorf_STD_WithFields(b *testing.B) {
+	baseErr := errors.New("connection refused")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = fmt.Errorf("connection failed address=%s:%d key1=%s key2=%d key3=%f: %w", "localhost", 5432, "value1", 123, 3.14, baseErr)
+	}
+}
+
+func Benchmark_Wrap_STD(b *testing.B) {
+	baseErr := errors.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -80,7 +89,7 @@ func Benchmark_Wrap(b *testing.B) {
 }
 
 func Benchmark_Wrap_WithFields(b *testing.B) {
-	baseErr := erro.New("connection refused")
+	baseErr := errors.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -89,7 +98,7 @@ func Benchmark_Wrap_WithFields(b *testing.B) {
 }
 
 func Benchmark_Wrap_WithFieldsAndFormatVerbs(b *testing.B) {
-	baseErr := erro.New("connection refused")
+	baseErr := errors.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -98,7 +107,7 @@ func Benchmark_Wrap_WithFieldsAndFormatVerbs(b *testing.B) {
 }
 
 func Benchmark_WrapWithStack(b *testing.B) {
-	baseErr := erro.New("connection refused")
+	baseErr := errors.New("connection refused")
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -112,6 +121,15 @@ func Benchmark_WrapWithStack_WithFields(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = erro.Wrap(baseErr, "connection failed", "address", "localhost:5432", "key1", "value1", "key2", 123, "key3", 1.23, erro.StackTrace())
+	}
+}
+
+func Benchmark_Wrap_Erro_NoIDGeneration(b *testing.B) {
+	baseErr := erro.New("connection refused")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = erro.Wrap(baseErr, "connection failed")
 	}
 }
 

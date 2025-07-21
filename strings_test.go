@@ -712,7 +712,7 @@ func TestNewID_Uniqueness(t *testing.T) {
 	// Test that IDs are unique
 	ids := make(map[string]bool)
 	for i := 0; i < 1000; i++ {
-		id := newID()
+		id := newID(int64(i))
 		if ids[id] {
 			t.Errorf("duplicate ID found: %s", id)
 		}

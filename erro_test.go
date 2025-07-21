@@ -562,6 +562,7 @@ func TestIsMethod(t *testing.T) {
 
 		// Test with both errors having empty IDs
 		err5 := erro.New("error 5", erro.ID(""))
+		time.Sleep(time.Millisecond)
 		err6 := erro.New("error 6", erro.ID(""))
 		if err5.Is(err6) {
 			t.Error("Is should return false for errors with empty IDs")

@@ -336,7 +336,7 @@ func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
 	if !ok {
 		if !As(errorToWrap, &e.wrappedErr) {
 			e.originalErr = errorToWrap
-			return applyMeta(e, meta...)
+			e.created = time.Now()
 		}
 	}
 
@@ -346,7 +346,7 @@ func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
 func applyMeta(e *baseError, meta ...any) *baseError {
 	if len(meta) == 0 {
 		if e.wrappedErr == nil {
-			e.id = newID()
+			e.id = newID(e.created.UnixNano())
 		}
 		return e
 	}
@@ -385,7 +385,7 @@ func applyMeta(e *baseError, meta ...any) *baseError {
 	}
 	e.fields = preparedFields
 	if e.id == "" && e.wrappedErr == nil {
-		e.id = newID()
+		e.id = newID(e.created.UnixNano())
 	}
 
 	for _, f := range meta {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestList_Add(t *testing.T) {
@@ -895,7 +896,9 @@ func TestSet_WithWrappedStandardErrors(t *testing.T) {
 		stdErr3 := errors.New("different underlying message")
 
 		wrapped1 := Wrap(stdErr1, "same wrap")
+		time.Sleep(time.Microsecond)
 		wrapped2 := Wrap(stdErr2, "same wrap")
+		time.Sleep(time.Microsecond)
 		wrapped3 := Wrap(stdErr3, "different wrap")
 
 		set.Add(wrapped1)
