@@ -543,8 +543,8 @@ func TestKeyGetters(t *testing.T) {
 		// Test with wrapped erro.Error - should get the wrapped message
 		err2 := Wrap(err1, "wrapped message")
 		key2 := MessageKeyGetter(err2)
-		if key2 != "wrapped message" {
-			t.Errorf("expected 'wrapped message', got '%s'", key2)
+		if key2 != "wrapped message: test message" {
+			t.Errorf("expected 'wrapped message: test message', got '%s'", key2)
 		}
 
 		// Test with standard error
@@ -640,8 +640,8 @@ func TestKeyGetters_AsBehavior(t *testing.T) {
 
 		// Test MessageKeyGetter with wrapped standard error
 		key := MessageKeyGetter(wrappedErr)
-		if key != "wrapped message" {
-			t.Errorf("expected 'wrapped message', got '%s'", key)
+		if key != "wrapped message: standard error message" {
+			t.Errorf("expected 'wrapped message: standard error message', got '%s'", key)
 		}
 	})
 
@@ -686,8 +686,8 @@ func TestKeyGetters_AsBehavior(t *testing.T) {
 
 		// Test MessageKeyGetter with deeply wrapped standard error
 		key := MessageKeyGetter(wrapped3)
-		if key != "third wrap" {
-			t.Errorf("expected 'third wrap', got '%s'", key)
+		if key != "third wrap: second wrap: first wrap: deep standard error" {
+			t.Errorf("expected 'third wrap: second wrap: first wrap: deep standard error', got '%s'", key)
 		}
 	})
 
@@ -734,8 +734,8 @@ func TestKeyGetters_AsBehavior(t *testing.T) {
 
 		// Test MessageKeyGetter with wrapped erro error
 		key := MessageKeyGetter(wrappedErr)
-		if key != "wrapped message" {
-			t.Errorf("expected 'wrapped message', got '%s'", key)
+		if key != "wrapped message: original message" {
+			t.Errorf("expected 'wrapped message: original message', got '%s'", key)
 		}
 	})
 

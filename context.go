@@ -209,6 +209,9 @@ type LogOption func(*LogOptions)
 
 // LogOptions controls which fields are included in logging output.
 type LogOptions struct {
+	// IncludeErrorMessage determines whether to include the error message.
+	IncludeErrorMessage bool
+
 	// IncludeUserFields determines whether to include user-defined fields.
 	IncludeUserFields bool
 
@@ -261,24 +264,26 @@ const (
 var (
 	// DefaultLogOptions includes a balanced set of fields for typical logging.
 	DefaultLogOptions = LogOptions{
-		IncludeUserFields:  true,
-		IncludeID:          false, // Useless in logs for most cases
-		IncludeCategory:    true,
-		IncludeSeverity:    true,
-		IncludeTracing:     true,
-		IncludeCreatedTime: false, // Often too verbose
-		IncludeRetryable:   true,
-		IncludeFunction:    true,
-		IncludePackage:     false,
-		IncludeFile:        false,
-		IncludeLine:        false,
-		IncludeStack:       false, // Often too verbose
-		StackFormat:        StackFormatJSON,
-		FieldNamePrefix:    "error_",
+		IncludeErrorMessage: true,
+		IncludeUserFields:   true,
+		IncludeID:           false, // Useless in logs for most cases
+		IncludeCategory:     true,
+		IncludeSeverity:     true,
+		IncludeTracing:      true,
+		IncludeCreatedTime:  false, // Often too verbose
+		IncludeRetryable:    true,
+		IncludeFunction:     true,
+		IncludePackage:      false,
+		IncludeFile:         false,
+		IncludeLine:         false,
+		IncludeStack:        false, // Often too verbose
+		StackFormat:         StackFormatJSON,
+		FieldNamePrefix:     "error_",
 	}
 
 	// VerboseLogOpts is a slice of [LogOption] functions for verbose logging.
 	VerboseLogOpts = []LogOption{
+		WithErrorMessage(true),
 		WithUserFields(true),
 		WithID(true),
 		WithSeverity(true),
@@ -295,6 +300,7 @@ var (
 
 	// MinimalLogOpts is a slice of [LogOption] functions for minimal logging.
 	MinimalLogOpts = []LogOption{
+		WithErrorMessage(true),
 		WithUserFields(true),
 		WithSeverity(true),
 	}
@@ -303,6 +309,16 @@ var (
 // MergeLogOpts merges multiple slices of [LogOption] functions into one.
 func MergeLogOpts(opts []LogOption, addsOpts ...LogOption) []LogOption {
 	return append(opts, addsOpts...)
+}
+
+// WithErrorMessage returns a [LogOption] to enable or disable the error message field.
+func WithErrorMessage(include ...bool) LogOption {
+	return func(opts *LogOptions) {
+		opts.IncludeErrorMessage = true
+		if len(include) > 0 {
+			opts.IncludeErrorMessage = include[0]
+		}
+	}
 }
 
 // WithUserFields returns a [LogOption] to enable or disable user-defined fields.
@@ -478,6 +494,7 @@ func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 	}
 
 	var (
+		errorMessage      = ec.Message()
 		errorID           = ec.ID()
 		errorCategory     = ec.Category()
 		errorSeverity     = ec.Severity()
@@ -508,6 +525,11 @@ func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 				fields = append(fields, errorFields[i])
 			}
 		}
+	}
+
+	// Add error message
+	if opts.IncludeErrorMessage && errorMessage != "" {
+		fields = append(fields, "error", errorMessage)
 	}
 
 	// Add error metadata

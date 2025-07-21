@@ -213,16 +213,23 @@ func (e *baseError) IsRetryable() bool {
 
 // Message returns the error's message.
 func (e *baseError) Message() string {
-	if e.message != "" {
-		return e.message
+	out := FormatErrorMessage(e)
+	if unwrapped := e.Unwrap(); unwrapped != nil {
+		var unwrappedMsg string
+		if unwrappedErr, ok := unwrapped.(*baseError); ok {
+			unwrappedMsg = unwrappedErr.Message()
+		} else {
+			unwrappedMsg = unwrapped.Error()
+		}
+		if unwrappedMsg == "" {
+			return out
+		}
+		if out == "" {
+			return unwrappedMsg
+		}
+		return out + ": " + unwrappedMsg
 	}
-	if e.wrappedErr != nil {
-		return e.wrappedErr.Message()
-	}
-	if e.originalErr != nil {
-		return e.originalErr.Error()
-	}
-	return ""
+	return out
 }
 
 // Fields returns the error's fields.

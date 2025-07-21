@@ -20,6 +20,14 @@ func main() {
 		erro.CategoryPayment,
 		erro.SeverityCritical,
 	)
+	err = erro.Wrap(err, "wrapped error", "wrap_field", "wrap_value")
 
-	logger.Error("a critical payment error occurred", erro.LogFields(err)...)
+	// got fields in log
+	logger.Error("got fields in log", erro.LogFields(err)...)
+
+	// send error in log (that is slog behaviour with errors)
+	logger.Error("got JSON in log", "error", err)
+
+	// got error in log with fields
+	logger.Error("got error message with fields", "error", err.Error())
 }

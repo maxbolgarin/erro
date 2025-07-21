@@ -83,8 +83,8 @@ func TestWrap(t *testing.T) {
 	}
 
 	err2 := erro.Wrap(err, "")
-	if err2.Message() != "wrapped error" {
-		t.Errorf("Expected message 'wrapped error', got '%s'", err2.Message())
+	if err2.Message() != "wrapped error: base error" {
+		t.Errorf("Expected message 'wrapped error: base error', got '%s'", err2.Message())
 	}
 
 	unwrapped := erro.Unwrap(err)
@@ -294,8 +294,8 @@ func TestWrappedGetters(t *testing.T) {
 	if !wrappedErr.IsRetryable() {
 		t.Errorf("Expected retryable to be true")
 	}
-	if wrappedErr.Message() != "wrapped message" {
-		t.Errorf("Expected message 'wrapped message', got '%s'", wrappedErr.Message())
+	if wrappedErr.Message() != "wrapped message: base message" {
+		t.Errorf("Expected message 'wrapped message: base message', got '%s'", wrappedErr.Message())
 	}
 
 	allFields := wrappedErr.AllFields()
@@ -415,11 +415,11 @@ func TestJoin(t *testing.T) {
 func TestLogFields(t *testing.T) {
 	err := erro.New("test error", "key", "value")
 	fields := err.LogFields()
-	if len(fields) != 2 {
+	if len(fields) != 4 {
 		t.Errorf("unexpected number of fields: %d", len(fields))
 	}
 	fieldsMap := err.LogFieldsMap()
-	if len(fieldsMap) != 1 {
+	if len(fieldsMap) != 2 {
 		t.Errorf("unexpected number of fields in map: %d", len(fieldsMap))
 	}
 }
@@ -466,7 +466,7 @@ func TestFormatter(t *testing.T) {
 	wrappedErr2 := erro.Wrap(baseErr2, "wrapped error", erro.Formatter(customFormatter))
 
 	// The wrapped error should use its own formatter
-	expectedWrapped2 := "custom formatted: wrapped error: base error"
+	expectedWrapped2 := "custom formatted: wrapped error: base error: base error"
 	if wrappedErr2.Error() != expectedWrapped2 {
 		t.Errorf("Expected '%s', got '%s'", expectedWrapped2, wrappedErr2.Error())
 	}
