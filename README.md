@@ -299,23 +299,27 @@ cpu: Apple M1 Pro
 #### New
 
 ```text
-Benchmark_New_STD-8                                     1000000000             0.311 ns/op           0 B/op          0 allocs/op
-Benchmark_New-8                                         11125068               107.1 ns/op           264 B/op          2 allocs/op
-Benchmark_New_WithFields-8                               6302073               188.9 ns/op           392 B/op          3 allocs/op
-Benchmark_New_WithFieldsAndFormatVerbs-8                 4366954               275.9 ns/op           456 B/op          4 allocs/op
-Benchmark_NewWithStack-8                                 2043105               600.0 ns/op           328 B/op          4 allocs/op
-Benchmark_NewWithStack_WithFields-8                      1649178               715.0 ns/op           456 B/op          5 allocs/op
+Benchmark_New_STD-8                                   1000000000               0.316 ns/op           0 B/op            0 allocs/op
+
+Benchmark_New-8                                          8659695               132.8 ns/op           272 B/op          2 allocs/op
+Benchmark_New_WithFields-8                               6191596               207.1 ns/op           400 B/op          3 allocs/op
+Benchmark_New_WithFieldsAndFormatVerbs-8                 4019469               290.0 ns/op           464 B/op          4 allocs/op
+Benchmark_NewWithStack-8                                 1917016               602.4 ns/op           336 B/op          4 allocs/op
+Benchmark_NewWithStack_WithFields-8                      1644594               736.4 ns/op           464 B/op          5 allocs/op
 ```
 
 #### Wrap
 
 ```text
-Benchmark_Errorf_STD-8                                   7437198               158.4 ns/op            96 B/op          2 allocs/op
-Benchmark_Wrap-8                                        16625276               74.87 ns/op           256 B/op          1 allocs/op
-Benchmark_Wrap_WithFields-8                              8272609               146.8 ns/op           384 B/op          2 allocs/op
-Benchmark_Wrap_WithFieldsAndFormatVerbs-8                5365737               227.7 ns/op           448 B/op          3 allocs/op
-Benchmark_WrapWithStack-8                                2038002               596.2 ns/op           320 B/op          3 allocs/op
-Benchmark_WrapWithStack_WithFields-8                     1468904               813.1 ns/op           456 B/op          5 allocs/op
+Benchmark_Errorf_STD-8                                  10615393               110.3 ns/op            80 B/op          2 allocs/op
+Benchmark_Errorf_STD_WithFields-8                        3269908               397.5 ns/op           128 B/op          2 allocs/op
+
+Benchmark_Wrap_STD-8                                     5731766               211.0 ns/op           272 B/op          2 allocs/op
+Benchmark_Wrap_WithFields-8                              4054627               313.4 ns/op           400 B/op          3 allocs/op
+Benchmark_Wrap_WithFieldsAndFormatVerbs-8                3114643               396.7 ns/op           464 B/op          4 allocs/op
+Benchmark_WrapWithStack-8                                1617450               799.5 ns/op           336 B/op          4 allocs/op
+Benchmark_WrapWithStack_WithFields-8                     1297959               928.0 ns/op           464 B/op          5 allocs/op
+Benchmark_Wrap_Erro_NoIDGeneration-8                    14933049               81.17 ns/op           256 B/op          1 allocs/op
 ```
 
 #### Error() - has cache, only first call is slow
@@ -348,13 +352,13 @@ Benchmark_LogError-8                                     3502598               3
 #### Template
 
 ```text
-Benchmark_New_Template-8                                 5010291               230.4 ns/op           448 B/op         10 allocs/op
-Benchmark_New_FromTemplate-8                             5621970               209.9 ns/op           400 B/op          2 allocs/op
-Benchmark_New_FromTemplate_WithMessageAndFields-8        3354512               352.6 ns/op           576 B/op          4 allocs/op
-Benchmark_New_FromTemplate_Full-8                        1253613               951.9 ns/op           624 B/op          5 allocs/op
-Benchmark_Wrap_FromTemplate-8                            6404426               190.6 ns/op           400 B/op          2 allocs/op
-Benchmark_Wrap_FromTemplate_WithMessageAndFields-8       3398883               324.9 ns/op           576 B/op          4 allocs/op
-Benchmark_Wrap_FromTemplate_Full-8                       1000000               1101 ns/op            624 B/op          5 allocs/op
+Benchmark_New_Template-8                                 5434267               221.1 ns/op           448 B/op         10 allocs/op
+Benchmark_New_FromTemplate-8                             5488628               220.5 ns/op           400 B/op          2 allocs/op
+Benchmark_New_FromTemplate_WithMessageAndFields-8        3428262               354.6 ns/op           576 B/op          4 allocs/op
+Benchmark_New_FromTemplate_Full-8                        1395340               860.9 ns/op           624 B/op          5 allocs/op
+Benchmark_Wrap_FromTemplate-8                            6116706               196.3 ns/op           400 B/op          2 allocs/op
+Benchmark_Wrap_FromTemplate_WithMessageAndFields-8       3667002               326.2 ns/op           576 B/op          4 allocs/op
+Benchmark_Wrap_FromTemplate_Full-8                       1215620               996.9 ns/op           624 B/op          5 allocs/op
 ```
 
 #### HTTPCode
@@ -373,18 +377,19 @@ Benchmark_ApplyFormatVerbs-8                             4271595               2
 
 ### 🎯 Performance Insights
 
-**⚡ Core Operations**
-- `Wrap()` is faster than `New()` when you already have an error
-- HTTP status code mapping: **20ns** - virtually zero overhead
+**⚡ Operations Insights**
 - Standard `errors.New()`: **0.32ns** (baseline, no features)
-- `erro.New()` no fields: **107ns** (small overhead in most cases)
-- Standard `fmt.Errorf()`: **158ns** 
-- `erro.Wrap()` no fields: **75ns** (faster than `fmt.Errorf()`!)
-- `erro.Wrap()` with fields: **146ns** (compared with `fmt.Errorf()`)
+- `erro.New()` no fields: **133ns** (small overhead in most cases)
+- Standard `fmt.Errorf()` with only error wrapped: **110ns**
+- Standard `fmt.Errorf()` with error wrapped and many fields: **397ns**
+- `erro.Wrap()` no fields with `errors.New` wrapping: **211ns** (overhead like `erro.New` + wrapping logic)
+- `erro.Wrap()` with fields: **313ns** (faster than `fmt.Errorf()` with fields)
+- `erro.Wrap()` is fast (**81ns**) if you already have an `erro.Error`, so in long chains it wins over many `fmt.Errorf()`
+- HTTP status code mapping: **20ns** - virtually zero overhead
 
 **🤔 Consider Alternatives For**
-- **Ultra-high Performance** - If you need absolute minimal overhead
-- **Simple Scripts** - Standard `errors` might be sufficient for basic scripts
+- **Ultra-high Performance** - If you need absolute minimal overhead (so do not use `fmt.Errorf` and `fmt.Sprintf`)
+- **Simple Scripts** - Standard `errors` might be sufficient for basic scripts 
 - **Legacy Codebases** - If you can't gradually migrate existing error handling
 
 
