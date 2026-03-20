@@ -37,12 +37,11 @@ func (e *baseError) Error() (out string) {
 		return fullMessage
 	}
 	defer func() {
-		e.fullMessage.Store(out)
-
 		if r := recover(); r != nil {
 			// Fallback to safe error message
 			out = fmt.Sprintf("error formatting failed: %v", r)
 		}
+		e.fullMessage.Store(out)
 	}()
 
 	if formatter := e.Formatter(); formatter != nil {
@@ -156,6 +155,8 @@ func (e *baseError) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	e.originalErr = nil
+	e.wrappedErr = nil
+	e.fullMessage = atomicValue[string]{}
 	e.message = schema.Message
 	e.created = schema.Created
 	e.span = nil
