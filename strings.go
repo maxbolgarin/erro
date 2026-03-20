@@ -2,18 +2,12 @@ package erro
 
 import (
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
-
-func init() {
-	// Seed the random number generator for better randomness
-	rand.Seed(time.Now().UnixNano())
-}
 
 // GetFormatErrorWithFullContextBase returns a [FormatErrorFunc] that formats an error with full context.
 func GetFormatErrorWithFullContextBase(optFuncs ...LogOption) FormatErrorFunc {
@@ -133,12 +127,12 @@ func truncateUTF8[T ~string](s T, maxBytes int) T {
 	if len(s) <= maxBytes {
 		return s
 	}
-	for i := maxBytes; i > 0; i-- {
-		if utf8.ValidString(string(s[:i])) {
-			return s[:i]
-		}
+	// Walk back at most 3 bytes to find a valid UTF-8 character boundary.
+	// Continuation bytes have the pattern 10xxxxxx (0x80-0xBF).
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
 	}
-	return ""
+	return s[:maxBytes]
 }
 
 // ApplyFormatVerbs replaces format verbs in a string with arguments.
@@ -224,11 +218,16 @@ func newID(seed int64) string {
 }
 
 func encodeCompact(n int64) string {
+	// Use unsigned to handle negative overflow from bit shifting large timestamps.
+	u := uint64(n)
+	if u == 0 {
+		return string(alphabet[0:1])
+	}
 	var buf [11]byte // Enough for 64-bit in base62
 	i := 10
-	for n > 0 {
-		buf[i] = alphabet[n%62]
-		n /= 62
+	for u > 0 {
+		buf[i] = alphabet[u%62]
+		u /= 62
 		i--
 	}
 	return string(buf[i+1:])

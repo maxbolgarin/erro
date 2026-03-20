@@ -457,11 +457,11 @@ func TestTruncateUTF8_EdgeCases(t *testing.T) {
 		t.Error("expected unchanged string when shorter than maxBytes")
 	}
 
-	// Test case: invalid UTF-8 sequence
+	// Test case: invalid UTF-8 sequence (truncation preserves bytes, doesn't validate)
 	invalidUTF8 := string([]byte{0xFF, 0xFE, 0xFD})
 	result := truncateUTF8(invalidUTF8, 2)
-	if result != "" {
-		t.Errorf("expected empty string for invalid UTF-8, got '%s'", result)
+	if len(result) > 2 {
+		t.Errorf("expected at most 2 bytes for invalid UTF-8, got %d", len(result))
 	}
 
 	// Test case: UTF-8 boundary
