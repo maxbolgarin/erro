@@ -75,7 +75,9 @@ func (g *List) Remove(i int) bool {
 	if i < 0 || i >= len(g.errors) {
 		return false
 	}
-	g.errors = append(g.errors[:i], g.errors[i+1:]...)
+	copy(g.errors[i:], g.errors[i+1:])
+	g.errors[len(g.errors)-1] = nil
+	g.errors = g.errors[:len(g.errors)-1]
 	return true
 }
 
@@ -344,7 +346,7 @@ func (sl *SafeList) Remove(i int) bool {
 }
 
 // RemoveError removes the first error that matches the given error by ID in a thread-safe manner.
-func (sl *SafeList) RemoveError(err Error) bool {
+func (sl *SafeList) RemoveError(err error) bool {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	return sl.list.RemoveError(err)
@@ -466,7 +468,7 @@ func (ss *SafeSet) Remove(i int) bool {
 }
 
 // RemoveError removes the first error that matches the given error by ID in a thread-safe manner.
-func (ss *SafeSet) RemoveError(err Error) bool {
+func (ss *SafeSet) RemoveError(err error) bool {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	return ss.set.RemoveError(err)
