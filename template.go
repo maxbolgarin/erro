@@ -19,29 +19,37 @@ func NewTemplate(messageTemplate string, opts ...any) *ErrorTemplate {
 // New creates an error from the template.
 func (t *ErrorTemplate) New(fields ...any) Error {
 	numVerbs := countVerbs(t.messageTemplate)
-	if len(fields) < numVerbs {
+	if numVerbs == 0 || len(fields) < numVerbs {
 		return newBaseError(t.messageTemplate, mergeFields(fields, t.opts)...)
 	}
 
 	formatArgs := fields[:numVerbs]
 	metaFields := fields[numVerbs:]
 
+	// The message is fully formatted here; do not run it through the verb
+	// processor again, or user-provided argument values containing '%'
+	// could consume metadata as format arguments.
 	message := fmt.Sprintf(t.messageTemplate, formatArgs...)
-	return newf(message, mergeFields(metaFields, t.opts)...)
+	return newBaseError(message, mergeFields(metaFields, t.opts)...)
 }
 
 // Wrap wraps an existing error with the template's message and options.
+// If the error is nil, Wrap returns nil, mirroring [Wrap].
 func (t *ErrorTemplate) Wrap(originalErr error, fields ...any) Error {
+	if originalErr == nil {
+		return nil
+	}
 	numVerbs := countVerbs(t.messageTemplate)
-	if len(fields) < numVerbs {
+	if numVerbs == 0 || len(fields) < numVerbs {
 		return newWrapError(originalErr, t.messageTemplate, mergeFields(fields, t.opts)...)
 	}
 
 	formatArgs := fields[:numVerbs]
 	metaFields := fields[numVerbs:]
 
+	// See New: the message is fully formatted, skip the second verb pass.
 	message := fmt.Sprintf(t.messageTemplate, formatArgs...)
-	return wrapf(originalErr, message, mergeFields(metaFields, t.opts)...)
+	return newWrapError(originalErr, message, mergeFields(metaFields, t.opts)...)
 }
 
 // Predefined error templates.

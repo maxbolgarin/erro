@@ -47,6 +47,7 @@ func (g *List) New(message string, meta ...any) *List {
 }
 
 // Wrap wraps an existing error with the given message and metadata, and adds it to the list.
+// If the error is nil, it is ignored.
 func (g *List) Wrap(err error, message string, meta ...any) *List {
 	return addWrap(g, err, message, meta...)
 }
@@ -131,7 +132,12 @@ func (g *List) Errors() []error {
 }
 
 // Errs returns a slice of all errors in the list as [Error] interfaces.
-func (g *List) Errs() []Error { return g.errors }
+// The returned slice is a copy and can be safely retained by the caller.
+func (g *List) Errs() []Error {
+	result := make([]Error, len(g.errors))
+	copy(result, g.errors)
+	return result
+}
 
 // Len returns the number of errors in the list.
 func (g *List) Len() int { return len(g.errors) }
@@ -162,6 +168,10 @@ func (g *List) Last() Error {
 
 // Set collects unique errors, deduplicating them based on a configurable key.
 // It is not thread-safe. For a thread-safe version, see [SafeSet].
+//
+// Note: Set embeds [List] for its accessors. Calling mutating methods
+// directly on the embedded List (e.g. set.List.Add) bypasses deduplication
+// and desyncs the internal counters — always use the Set's own methods.
 type Set struct {
 	*List
 	seen      map[string]int
@@ -211,6 +221,7 @@ func (s *Set) New(message string, meta ...any) *Set {
 }
 
 // Wrap wraps an existing error and adds it to the set.
+// If the error is nil, it is ignored.
 func (s *Set) Wrap(err error, message string, meta ...any) *Set {
 	return addWrap(s, err, message, meta...)
 }
@@ -236,9 +247,11 @@ func (s *Set) Err() error {
 	if s.Len() == 1 {
 		return s.First()
 	}
-	errorsCopy := make([]error, s.Len())
-	copy(errorsCopy, s.Errors())
-	return &multiErrorSet{errors: errorsCopy, counter: s.seen, keyGetter: s.keyGetter}
+	seenCopy := make(map[string]int, len(s.seen))
+	for k, v := range s.seen {
+		seenCopy[k] = v
+	}
+	return &multiErrorSet{errors: s.Errors(), counter: seenCopy, keyGetter: s.keyGetter}
 }
 
 // Clear removes all errors and resets the deduplication map.
@@ -265,7 +278,7 @@ func (s *Set) Remove(i int) bool {
 	if i < 0 || i >= s.Len() {
 		return false
 	}
-	err := s.Errs()[i]
+	err := s.List.errors[i]
 	if s.List.Remove(i) {
 		key := s.keyGetter(err)
 		if key != "" {
@@ -286,7 +299,7 @@ func (s *Set) RemoveError(err error) bool {
 	if id == "" {
 		return false
 	}
-	for i, e := range s.Errs() {
+	for i, e := range s.List.errors {
 		if s.keyGetter(e) == id {
 			return s.Remove(i)
 		}
@@ -657,7 +670,11 @@ func addNew[T interface{ add(Error) }](g T, message string, meta ...any) T {
 }
 
 // addWrap wraps an existing error and adds it to the list.
+// A nil error is ignored, mirroring [Wrap] and Add.
 func addWrap[T interface{ add(Error) }](g T, err error, message string, meta ...any) T {
+	if err == nil {
+		return g
+	}
 	g.add(wrapf(err, message, meta...))
 	return g
 }
