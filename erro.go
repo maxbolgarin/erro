@@ -114,6 +114,10 @@ func New(message string, fields ...any) Error {
 // If the error to be wrapped is nil, Wrap returns nil, making it safe to use in
 // conditional error handling patterns without explicit nil checks.
 //
+// The wrap depth is limited to [MaxWrapDepth]: once a chain reaches that many
+// erro layers, Wrap returns the existing error unchanged instead of adding
+// another layer, keeping traversal costs bounded.
+//
 // # Basic Usage
 //
 //	if err != nil {
@@ -538,6 +542,9 @@ func newf(message string, meta ...any) *baseError {
 }
 
 func wrapf(err error, message string, meta ...any) *baseError {
+	if len(meta) == 0 {
+		return newWrapError(err, message)
+	}
 	message, meta = ApplyFormatVerbs(message, meta...)
 	return newWrapError(err, message, meta...)
 }

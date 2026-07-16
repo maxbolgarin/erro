@@ -626,23 +626,33 @@ func TestCaptureStack_EdgeCases(t *testing.T) {
 func TestRawStack_ToFrames_EdgeCases(t *testing.T) {
 	// Test case: empty raw stack
 	var rs rawStack
-	frames := rs.toFrames(nil)
+	frames := rs.toFrames(nil, 0)
 	if frames != nil {
 		t.Error("expected nil frames for empty raw stack")
 	}
 
 	// Test case: nil config
 	rs = rawStack{1, 2, 3} // Some dummy values
-	frames = rs.toFrames(nil)
+	frames = rs.toFrames(nil, 0)
 	if len(frames) == 0 {
 		t.Error("expected frames even with nil config")
 	}
 }
 
 func TestIsUselessRuntimeFrame_EdgeCases(t *testing.T) {
-	// Test case: internal function suffix
-	if !isUselessRuntimeFrame("pkg.New", "") {
-		t.Error("expected useless frame for internal function suffix")
+	// Test case: user constructors must never be filtered from traces
+	if isUselessRuntimeFrame("pkg.New", "") {
+		t.Error("user function pkg.New must not be treated as an internal frame")
+	}
+
+	// Test case: erro's own construction frames are filtered
+	if !isUselessRuntimeFrame("github.com/maxbolgarin/erro.New", "/home/dev/erro/erro.go") {
+		t.Error("expected useless frame for erro module function")
+	}
+
+	// Test case: erro test files are kept
+	if isUselessRuntimeFrame("github.com/maxbolgarin/erro.TestSomething", "/home/dev/erro/stack_test.go") {
+		t.Error("erro test frames must be kept")
 	}
 
 	// Test case: runtime/proc.go

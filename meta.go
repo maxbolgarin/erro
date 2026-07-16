@@ -8,6 +8,17 @@ type (
 	errorFields func() []any
 )
 
+// isErroOption marks values that configure an error rather than carry data,
+// so the format-verb processor never consumes them as arguments.
+func (errorOpt) isErroOption()      {}
+func (errorWork) isErroOption()     {}
+func (errorFields) isErroOption()   {}
+func (ErrorClass) isErroOption()    {}
+func (ErrorCategory) isErroOption() {}
+func (ErrorSeverity) isErroOption() {}
+
+type erroOptionMarker interface{ isErroOption() }
+
 // ID sets a custom identifier for the error.
 func ID(id string) errorOpt {
 	return func(err *baseError) {
@@ -36,7 +47,11 @@ func Formatter(f FormatErrorFunc) errorOpt {
 	}
 }
 
-var defaultSkipFrames = 6
+// defaultSkipFrames skips only the capture plumbing (runtime.Callers,
+// captureStack, the option closure). erro's own construction frames are
+// filtered out by name when the stack is resolved, which keeps the top
+// frame correct for every entry point (New, Wrap, templates, lists).
+var defaultSkipFrames = 3
 
 // StackTrace captures a stack trace for the error.
 func StackTrace(c ...*StackTraceConfig) errorOpt {
@@ -50,13 +65,15 @@ func StackTrace(c ...*StackTraceConfig) errorOpt {
 	}
 }
 
-// StackTraceWithSkip captures a stack trace, skipping a specified number of frames.
+// StackTraceWithSkip captures a stack trace, skipping a specified number of
+// caller frames (erro's own construction frames are always excluded).
 func StackTraceWithSkip(skip int, c ...*StackTraceConfig) errorOpt {
 	return func(err *baseError) {
 		if skip < 0 {
 			skip = 0
 		}
-		err.stack = captureStack(defaultSkipFrames + skip)
+		err.stack = captureStack(defaultSkipFrames)
+		err.stackSkip = skip
 		if len(c) > 0 {
 			err.stackTraceConfig = c[0]
 		} else {
@@ -66,6 +83,9 @@ func StackTraceWithSkip(skip int, c ...*StackTraceConfig) errorOpt {
 }
 
 // RecordSpan records the error in a tracing span.
+// Redacted field values are replaced with the placeholder before being
+// passed to the span. A panic in the TraceSpan implementation propagates
+// to the New/Wrap caller.
 func RecordSpan(s TraceSpan) errorWork {
 	return func(err Error) {
 		if s == nil {
@@ -73,15 +93,40 @@ func RecordSpan(s TraceSpan) errorWork {
 		}
 		s.RecordError(err)
 		if base, ok := err.(*baseError); ok {
-			s.SetAttributes(base.fields...)
+			s.SetAttributes(redactFields(base.fields)...)
 			base.span = s
 			return
 		}
-		s.SetAttributes(err.Fields()...)
+		s.SetAttributes(redactFields(err.Fields())...)
 	}
 }
 
+// redactFields replaces RedactedValue entries with the placeholder so raw
+// secrets never reach external systems. It copies only when needed.
+func redactFields(fields []any) []any {
+	needsCopy := false
+	for _, f := range fields {
+		if _, ok := f.(RedactedValue); ok {
+			needsCopy = true
+			break
+		}
+	}
+	if !needsCopy {
+		return fields
+	}
+	out := make([]any, len(fields))
+	for i, f := range fields {
+		if _, ok := f.(RedactedValue); ok {
+			out[i] = RedactedPlaceholder
+		} else {
+			out[i] = f
+		}
+	}
+	return out
+}
+
 // RecordMetrics records the error with a metrics collector.
+// A panic in the ErrorMetrics implementation propagates to the New/Wrap caller.
 func RecordMetrics(m ErrorMetrics) errorWork {
 	return func(err Error) {
 		if m == nil {
@@ -92,6 +137,7 @@ func RecordMetrics(m ErrorMetrics) errorWork {
 }
 
 // SendEvent sends the error to an event dispatcher.
+// A panic in the EventDispatcher implementation propagates to the New/Wrap caller.
 func SendEvent(ctx context.Context, d EventDispatcher) errorWork {
 	return func(err Error) {
 		if d == nil {

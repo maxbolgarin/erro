@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 )
@@ -15,17 +14,46 @@ var (
 		"context.", "sync.", "os.", "io.", "net.", "crypto.", "encoding.",
 		"reflect.", "sort.", "math.", "unicode.", "errors.", "slog.", "http.",
 	}
-	internalFuncs = []string{
-		"newBaseError", "captureStack", "CaptureStack", "newError",
-		"buildErrorMessage", "buildFieldsMessage", "validateFields", "prepareFields",
-		"New", "Wrap", "Wrapf", "Errorf", "extractPackage",
-	}
 	uselessFrames = []string{
 		"runtime.main",        // Runtime's main function (not user's main)
 		"runtime.goexit",      // Goroutine exit function
 		"runtime.deferreturn", // Defer cleanup
 	}
 )
+
+// erroModulePrefix is this package's import path, computed at init from a
+// runtime frame so it stays correct in forks and vendored copies. It is
+// used to tell erro's own frames apart from user code.
+var erroModulePrefix = computeModulePrefix()
+
+func computeModulePrefix() string {
+	const fallback = "github.com/maxbolgarin/erro"
+	pc, _, _, ok := runtime.Caller(0)
+	if !ok {
+		return fallback
+	}
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return fallback
+	}
+	name := fn.Name() // e.g. "github.com/maxbolgarin/erro.computeModulePrefix"
+	if idx := strings.LastIndex(name, "."); idx > 0 {
+		return name[:idx]
+	}
+	return fallback
+}
+
+// isErroModuleFunc reports whether the fully-qualified function name belongs
+// to this package, matching on a package boundary so sibling packages that
+// merely share the prefix (e.g. the external test package erro_test) do not
+// match.
+func isErroModuleFunc(fullName string) bool {
+	if !strings.HasPrefix(fullName, erroModulePrefix) {
+		return false
+	}
+	rest := fullName[len(erroModulePrefix):]
+	return len(rest) > 0 && (rest[0] == '.' || rest[0] == '/')
+}
 
 const (
 	defaultFunctionRedacted = "[some_function]"
@@ -171,8 +199,12 @@ func (f StackFrame) IsStandardLibrary() bool {
 	if idx := strings.Index(f.FullName, "/"); idx > 0 {
 		beforeSlash := f.FullName[:idx]
 		if strings.Contains(beforeSlash, ".") {
+			// Domain-qualified first segment (github.com/...) → third-party.
 			return false
 		}
+		// A slashed path without a domain is a stdlib package
+		// (net/http, encoding/json, log/slog, ...).
+		return true
 	}
 	for _, prefix := range stdlibPrefixes {
 		if strings.HasPrefix(f.FullName, prefix) {
@@ -189,27 +221,13 @@ func (f StackFrame) IsTest() bool {
 		strings.Contains(f.File, "testing/")
 }
 
-var buildInfo, _ = debug.ReadBuildInfo()
-
 // IsErroInternal returns true if this frame is from erro internal functions.
 func (f StackFrame) IsErroInternal() bool {
 	// Test frames are never considered internal, they are user code
 	if f.IsTest() {
 		return false
 	}
-
-	for _, internal := range internalFuncs {
-		if f.Name == internal {
-			return true
-		}
-	}
-
-	// Only consider non-test frames from the erro module as internal
-	if buildInfo != nil && buildInfo.Path != "" {
-		return strings.Contains(f.FullName, buildInfo.Path)
-	}
-
-	return false
+	return isErroModuleFunc(f.FullName)
 }
 
 func (f StackFrame) getFrameType() string {
@@ -590,7 +608,7 @@ func captureStack(skip int) rawStack {
 	return rawPcs
 }
 
-func (rs rawStack) toFrames(cfg *StackTraceConfig) Stack {
+func (rs rawStack) toFrames(cfg *StackTraceConfig, skipUser int) Stack {
 	if len(rs) == 0 {
 		return nil
 	}
@@ -629,6 +647,16 @@ func (rs rawStack) toFrames(cfg *StackTraceConfig) Stack {
 		}
 	}
 
+	if skipUser > 0 {
+		if skipUser >= len(frames) {
+			return nil
+		}
+		frames = frames[skipUser:]
+	}
+	if cfg.MaxFrames > 0 && len(frames) > cfg.MaxFrames {
+		frames = frames[:cfg.MaxFrames]
+	}
+
 	return frames
 }
 
@@ -639,10 +667,9 @@ func isUselessRuntimeFrame(function, file string) bool {
 		}
 	}
 
-	for _, internal := range internalFuncs {
-		if strings.HasSuffix(function, "."+internal) {
-			return true
-		}
+	// Drop this module's own construction plumbing, but keep test frames.
+	if isErroModuleFunc(function) && !strings.HasSuffix(file, "_test.go") {
+		return true
 	}
 
 	if strings.Contains(file, "runtime/proc.go") ||

@@ -7,12 +7,20 @@ import (
 )
 
 // baseError holds the root error with all context and metadata.
+//
+// Wrapping state is one of:
+//  1. wrappedErr set, originalErr nil — wrapping an erro error directly;
+//  2. both set — wrapping a foreign error that contains an erro error
+//     deeper in its chain: originalErr preserves the full chain for
+//     Unwrap/Error, wrappedErr is the metadata-inheritance source;
+//  3. originalErr set, wrappedErr nil — wrapping a foreign error.
 type baseError struct {
 	// Core error info
 	originalErr error               // Original error if wrapping external error
-	wrappedErr  *baseError          // Wrapped error if wrapping erro error
+	wrappedErr  *baseError          // Wrapped erro error (metadata inheritance source)
 	message     string              // Base message
 	fullMessage atomicValue[string] // Full message with fields (caching)
+	depth       int                 // Number of erro layers below this one
 
 	// Metadata
 	id        string        // Error id
@@ -24,8 +32,9 @@ type baseError struct {
 	span      TraceSpan     // Span
 	created   time.Time     // Creation timestamp
 
-	stack  rawStack           // Stack trace (program counters only - resolved on demand)
-	frames atomicValue[Stack] // Stack trace frames (for caching)
+	stack     rawStack                 // Stack trace (program counters only - resolved on demand)
+	stackSkip int                      // Extra caller frames to hide (StackTraceWithSkip)
+	frames    atomicValue[cachedStack] // Stack trace frames (cached per config)
 
 	formatter        FormatErrorFunc
 	stackTraceConfig *StackTraceConfig
@@ -69,11 +78,16 @@ func (e *baseError) Format(s fmt.State, verb rune) {
 }
 
 // Unwrap implements the [errors.Unwrap] interface.
+// When a foreign chain is preserved (state 2), it takes precedence so no
+// intermediate layer is skipped.
 func (e *baseError) Unwrap() error {
+	if e.originalErr != nil {
+		return e.originalErr
+	}
 	if e.wrappedErr != nil {
 		return e.wrappedErr
 	}
-	return e.originalErr
+	return nil
 }
 
 // Is reports whether this [Error] can be considered a match for the target.
@@ -134,11 +148,13 @@ func (e *baseError) As(target any) bool {
 		*targetPtr = e
 		return true
 	}
+	if e.originalErr != nil {
+		// The full original chain contains any wrapped erro error too,
+		// so foreign wrapper types stay findable.
+		return As(e.originalErr, target)
+	}
 	if e.wrappedErr != nil {
 		return e.wrappedErr.As(target)
-	}
-	if e.originalErr != nil {
-		return As(e.originalErr, target)
 	}
 	return false
 }
@@ -149,26 +165,37 @@ func (e *baseError) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements the [json.Unmarshaler] interface.
+// The same limits that apply at construction time (message length,
+// field count) are enforced on deserialized data.
 func (e *baseError) UnmarshalJSON(data []byte) error {
 	var schema ErrorSchema
 	if err := json.Unmarshal(data, &schema); err != nil {
 		return err
 	}
+	fields := schema.Fields
+	if len(fields) > maxPairsCount {
+		fields = fields[:maxPairsCount]
+	}
+	if len(fields)%2 != 0 {
+		fields = append(fields, MissingFieldPlaceholder)
+	}
 	e.originalErr = nil
 	e.wrappedErr = nil
+	e.depth = 0
 	e.fullMessage = atomicValue[string]{}
-	e.message = schema.Message
+	e.message = truncateString(schema.Message, MaxMessageLength)
 	e.created = schema.Created
 	e.span = nil
 	e.stack = nil
-	e.frames = atomicValue[Stack]{}
+	e.stackSkip = 0
+	e.frames = atomicValue[cachedStack]{}
 	e.formatter = FormatErrorWithFields
-	e.id = schema.ID
+	e.id = truncateString(schema.ID, MaxKeyLength)
 	e.class = schema.Class
 	e.category = schema.Category
 	e.severity = schema.Severity
 	e.retryable = schema.Retryable
-	e.fields = schema.Fields
+	e.fields = fields
 	return nil
 }
 
@@ -212,7 +239,9 @@ func (e *baseError) IsRetryable() bool {
 	return e.retryable
 }
 
-// Message returns the error's message.
+// Message returns the error's message without fields. When the chain
+// contains foreign (non-erro) layers, their full Error() text is included,
+// since foreign errors expose no fields-free message.
 func (e *baseError) Message() string {
 	out := FormatErrorMessage(e)
 	if unwrapped := e.Unwrap(); unwrapped != nil {
@@ -261,15 +290,14 @@ func (e *baseError) Span() TraceSpan {
 
 // AllFields returns all fields from the error and its wrapped errors.
 func (e *baseError) AllFields() []any {
-	var wrappedFields []any
-	if e.wrappedErr != nil {
-		wrappedFields = e.wrappedErr.AllFields()
+	total := 0
+	for p := e; p != nil; p = p.wrappedErr {
+		total += len(p.fields)
 	}
-
-	fields := make([]any, 0, len(e.fields)+len(wrappedFields))
-	fields = append(fields, e.fields...)
-	fields = append(fields, wrappedFields...)
-
+	fields := make([]any, 0, total)
+	for p := e; p != nil; p = p.wrappedErr {
+		fields = append(fields, p.fields...)
+	}
 	return fields
 }
 
@@ -300,12 +328,23 @@ func (e *baseError) getStack(cfg *StackTraceConfig) Stack {
 	if e.stack == nil && e.wrappedErr != nil {
 		return e.wrappedErr.getStack(cfg)
 	}
-	frames := e.frames.Load()
-	if frames == nil && e.stack != nil {
-		frames = e.stack.toFrames(cfg)
-		e.frames.Store(frames)
+	if e.stack == nil {
+		return nil
 	}
+	if cached := e.frames.Load(); cached.frames != nil && cached.cfg == cfg {
+		return cached.frames
+	}
+	frames := e.stack.toFrames(cfg, e.stackSkip)
+	e.frames.Store(cachedStack{cfg: cfg, frames: frames})
 	return frames
+}
+
+// cachedStack pairs resolved stack frames with the config they were
+// resolved under, so a caller with a different config never receives
+// frames rendered for another one.
+type cachedStack struct {
+	cfg    *StackTraceConfig
+	frames Stack
 }
 
 // StackTraceConfig returns the configuration for the stack trace.
@@ -339,13 +378,24 @@ func newWrapError(errorToWrap error, message string, meta ...any) *baseError {
 		formatter: FormatErrorWithFields,
 	}
 
-	var ok bool
-	e.wrappedErr, ok = errorToWrap.(*baseError)
-	if !ok {
-		if !As(errorToWrap, &e.wrappedErr) {
-			e.originalErr = errorToWrap
-			e.created = time.Now()
+	if wrapped, ok := errorToWrap.(*baseError); ok {
+		e.wrappedErr = wrapped
+	} else if As(errorToWrap, &e.wrappedErr) {
+		// A foreign error contains an erro error deeper in its chain:
+		// preserve the full chain and inherit metadata from the inner one.
+		e.originalErr = errorToWrap
+	} else {
+		e.originalErr = errorToWrap
+		e.created = time.Now()
+	}
+
+	if e.wrappedErr != nil {
+		if e.wrappedErr.depth >= MaxWrapDepth {
+			// Depth cap reached: drop this layer (including its metadata
+			// and side-effect options) to keep traversal costs bounded.
+			return e.wrappedErr
 		}
+		e.depth = e.wrappedErr.depth + 1
 	}
 
 	return applyMeta(e, meta...)
