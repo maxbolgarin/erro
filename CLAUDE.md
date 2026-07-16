@@ -47,7 +47,7 @@ The variadic `fields ...any` parameter in `New()`/`Wrap()` accepts a mix of key-
 - **`stack.go`** — Stack trace capture (`rawStack`, `captureStack`), frame resolution (`StackFrame`, `Stack`), `StackTraceConfig` presets (Development/Production/Strict), frame classification (user/stdlib/runtime/internal).
 - **`strings.go`** — String formatting: `FormatErrorWithFields`, `FormatErrorMessage`, `ApplyFormatVerbs` (custom format verb processor), `appendValue` (type-switched value formatter), ID generation (`newID`), `atomicValue` generic wrapper, UTF-8 safe truncation.
 - **`context.go`** — Public helper functions: `ExtractError()`, `LogFields()`, `LogFieldsMap()`, `LogError()`, `ErrorToJSON()`, `LogOptions` struct with functional option pattern (`WithID()`, `WithStack()`, etc.), and the `getLogFields`/`getLogFieldsMap` implementations.
-- **`template.go`** — `ErrorTemplate` for reusable error patterns with predefined metadata. Includes ~25 predefined templates (e.g., `ValidationError`, `NotFoundError`, `DatabaseError`).
+- **`template.go`** — `ErrorTemplate` for reusable error patterns with predefined metadata. Includes 32 predefined templates (e.g., `ValidationError`, `NotFoundError`, `DatabaseError`).
 - **`list.go`** — Error collection types: `List` (not thread-safe), `Set` (deduplicating, not thread-safe), `SafeList` and `SafeSet` (thread-safe wrappers using `sync.RWMutex`). Also contains `multiError` and `multiErrorSet` types.
 
 ### Key design patterns
@@ -55,9 +55,9 @@ The variadic `fields ...any` parameter in `New()`/`Wrap()` accepts a mix of key-
 - **Immutability**: errors are immutable after creation; safe for concurrent reads.
 - **Metadata inheritance**: wrapped errors inherit class, category, severity, ID, span, and created time from inner errors when not overridden at the wrapping layer.
 - **Cached `Error()` string**: `fullMessage` uses `atomicValue` for lazy, thread-safe caching.
-- **DoS protection**: message, key, and value lengths are truncated; field count is capped at `MaxFieldsCount` (100); wrap depth is limited to `MaxWrapDepth` (50).
+- **DoS protection**: message, key, and value lengths are truncated; field count is capped at `MaxFieldsCount` (100); wrap depth is limited to `MaxWrapDepth` (50) — `Wrap` returns the inner error unchanged once the cap is reached. The same limits are enforced in `UnmarshalJSON`.
 - **Two-phase meta processing**: `applyMeta` runs `errorOpt` first (to set struct fields), then `errorWork` second (so span recording has access to fully-constructed error).
 
 ## CI
 
-Tests run against Go 1.18 through 1.24 and `1.x` (latest) with race detection. Coverage is uploaded to Codecov.
+Tests run against Go 1.18 through 1.26 with race detection; a separate lint job runs gofmt, `go vet`, and staticcheck. Coverage is uploaded to Codecov.
