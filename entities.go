@@ -8,7 +8,11 @@ import (
 )
 
 var (
-	// ErrMaxWrapDepthExceeded is returned when the maximum error wrapping depth is exceeded.
+	// ErrMaxWrapDepthExceeded is a sentinel reserved for wrap-depth overflow.
+	//
+	// Deprecated: it is no longer returned. When the wrap depth reaches
+	// [MaxWrapDepth], [Wrap] returns the inner error unchanged instead of
+	// adding another layer. Kept exported for API compatibility.
 	ErrMaxWrapDepthExceeded = New("maximum wrap depth exceeded")
 )
 
@@ -120,6 +124,24 @@ type RedactedValue struct {
 // with RedactedPlaceholder when the error is formatted as a string or JSON.
 func Redact(value any) RedactedValue {
 	return RedactedValue{Value: value}
+}
+
+// String implements [fmt.Stringer] so the wrapped value is never revealed
+// through fmt verbs like %v and %s.
+func (r RedactedValue) String() string {
+	return RedactedPlaceholder
+}
+
+// GoString implements [fmt.GoStringer] so the wrapped value is never revealed
+// through the %#v verb.
+func (r RedactedValue) GoString() string {
+	return RedactedPlaceholder
+}
+
+// MarshalJSON implements [json.Marshaler] so the wrapped value is never
+// revealed when marshaled to JSON.
+func (r RedactedValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(RedactedPlaceholder)
 }
 
 // Key getter functions for deduplication

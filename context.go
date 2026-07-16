@@ -1,8 +1,15 @@
 package erro
 
+import (
+	"encoding/json"
+	"math"
+)
+
 // ExtractError ensures that an error can be treated as an [Error].
 //
 // If the given error is already an [Error], it is returned as is.
+// If the error merely contains an [Error] somewhere in its chain, that inner
+// error is returned (outer non-erro layers are not represented in the result).
 // If it's a standard error, it's wrapped in a new [Error] so that
 // it can be used with the features of this package.
 // If the error is nil, it returns nil.
@@ -25,6 +32,12 @@ func ExtractError(err error) Error {
 //
 // This is useful for integrating with logging libraries like `slog` that
 // accept key-value pairs.
+//
+// When option functions are provided, they are applied to a zero
+// [LogOptions] value (not to [DefaultLogOptions]), so only the explicitly
+// enabled parts are included and FieldNamePrefix is empty unless set with
+// [WithFieldNamePrefix]. Field values are passed through as typed values
+// without truncation — rendering is the logger's job.
 //
 // Example:
 //
@@ -173,17 +186,15 @@ func ErrorToJSON(err Error) ErrorSchema {
 		Retryable: err.IsRetryable(),
 	}
 
-	// Redact sensitive fields before serialization.
+	// Redact sensitive fields and sanitize values that json.Marshal
+	// cannot handle (NaN/Inf, channels, funcs, cycles) before serialization.
 	allFields := err.AllFields()
 	if len(allFields) > 0 {
-		redactedFields := make([]any, len(allFields))
-		copy(redactedFields, allFields)
-		for i := 1; i < len(redactedFields); i += 2 {
-			if _, ok := redactedFields[i].(RedactedValue); ok {
-				redactedFields[i] = RedactedPlaceholder
-			}
+		safeFields := make([]any, len(allFields))
+		for i, v := range allFields {
+			safeFields[i] = jsonSafeValue(v)
 		}
-		schema.Fields = redactedFields
+		schema.Fields = safeFields
 	}
 
 	span := err.Span()
@@ -202,6 +213,36 @@ func ErrorToJSON(err Error) ErrorSchema {
 	}
 
 	return schema
+}
+
+// jsonSafeValue converts a field value into something json.Marshal cannot
+// fail on: redacted values become the placeholder, NaN/Inf floats and
+// non-serializable values fall back to their string representation.
+func jsonSafeValue(v any) any {
+	switch val := v.(type) {
+	case nil, string, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64:
+		return v
+	case RedactedValue:
+		return RedactedPlaceholder
+	case float64:
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return valueToString(val)
+		}
+		return v
+	case float32:
+		f := float64(val)
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return valueToString(val)
+		}
+		return v
+	default:
+		if _, err := json.Marshal(v); err != nil {
+			return valueToString(v)
+		}
+		return v
+	}
 }
 
 // LogOption is a function that configures logging options.
@@ -493,100 +534,101 @@ func getLogFields(ec Error, optsRaw ...LogOptions) []any {
 		opts = optsRaw[0]
 	}
 
-	var (
-		errorMessage      = ec.Message()
-		errorID           = ec.ID()
-		errorCategory     = ec.Category()
-		errorSeverity     = ec.Severity()
-		errorRetryable    = ec.IsRetryable()
-		errorCreated      = ec.Created()
-		errorTraceID      = ""
-		errorSpanID       = ""
-		errorParentSpanID = ""
-		errorStack        = ec.Stack()
-		errorFields       = ec.AllFields()
-	)
-
-	span := ec.Span()
-	if span != nil {
-		errorTraceID = span.TraceID()
-		errorSpanID = span.SpanID()
-		errorParentSpanID = span.ParentSpanID()
+	// Resolve expensive parts (fields, message, stack frames) only when the
+	// options actually include them.
+	var errorFields []any
+	if opts.IncludeUserFields {
+		errorFields = ec.AllFields()
 	}
 
 	fields := make([]any, 0, len(errorFields)+30)
 
 	// Add user fields
-	if opts.IncludeUserFields && len(errorFields) > 0 {
-		for i := 0; i < len(errorFields); i++ {
-			if _, ok := errorFields[i].(RedactedValue); ok {
-				fields = append(fields, RedactedPlaceholder)
-			} else {
-				fields = append(fields, errorFields[i])
-			}
+	for i := 0; i < len(errorFields); i++ {
+		if _, ok := errorFields[i].(RedactedValue); ok {
+			fields = append(fields, RedactedPlaceholder)
+		} else {
+			fields = append(fields, errorFields[i])
 		}
 	}
 
 	// Add error message
-	if opts.IncludeErrorMessage && errorMessage != "" {
-		fields = append(fields, "error", errorMessage)
+	if opts.IncludeErrorMessage {
+		if errorMessage := ec.Message(); errorMessage != "" {
+			fields = append(fields, "error", errorMessage)
+		}
 	}
 
 	// Add error metadata
-	if opts.IncludeID && errorID != "" {
-		fields = append(fields, opts.FieldNamePrefix+"id", errorID)
+	if opts.IncludeID {
+		if errorID := ec.ID(); errorID != "" {
+			fields = append(fields, opts.FieldNamePrefix+"id", errorID)
+		}
 	}
-	if opts.IncludeCategory && errorCategory != "" {
-		fields = append(fields, opts.FieldNamePrefix+"category", errorCategory)
+	if opts.IncludeCategory {
+		if errorCategory := ec.Category(); errorCategory != "" {
+			fields = append(fields, opts.FieldNamePrefix+"category", errorCategory)
+		}
 	}
-	if opts.IncludeSeverity && errorSeverity != "" {
-		fields = append(fields, opts.FieldNamePrefix+"severity", errorSeverity)
+	if opts.IncludeSeverity {
+		if errorSeverity := ec.Severity(); errorSeverity != "" {
+			fields = append(fields, opts.FieldNamePrefix+"severity", errorSeverity)
+		}
 	}
 	if opts.IncludeTracing {
-		if errorTraceID != "" {
-			fields = append(fields, "trace_id", errorTraceID)
-		}
-		if errorSpanID != "" {
-			fields = append(fields, "span_id", errorSpanID)
-		}
-		if errorParentSpanID != "" {
-			fields = append(fields, "parent_span_id", errorParentSpanID)
+		if span := ec.Span(); span != nil {
+			if traceID := span.TraceID(); traceID != "" {
+				fields = append(fields, "trace_id", traceID)
+			}
+			if spanID := span.SpanID(); spanID != "" {
+				fields = append(fields, "span_id", spanID)
+			}
+			if parentSpanID := span.ParentSpanID(); parentSpanID != "" {
+				fields = append(fields, "parent_span_id", parentSpanID)
+			}
 		}
 	}
-	if opts.IncludeRetryable && errorRetryable {
-		fields = append(fields, opts.FieldNamePrefix+"retryable", errorRetryable)
+	if opts.IncludeRetryable && ec.IsRetryable() {
+		fields = append(fields, opts.FieldNamePrefix+"retryable", true)
 	}
 
 	// Add timing information
-	if opts.IncludeCreatedTime && !errorCreated.IsZero() {
-		fields = append(fields, opts.FieldNamePrefix+"created", errorCreated)
-	}
-
-	if opts.IncludeFunction || opts.IncludePackage || opts.IncludeFile || opts.IncludeLine {
-		topFrame := errorStack.TopUserFrame()
-		if topFrame == nil && len(errorStack) > 0 {
-			topFrame = &errorStack[0]
-		}
-		// Add function context
-		if opts.IncludeFunction && topFrame != nil && topFrame.Name != "" {
-			fields = append(fields, opts.FieldNamePrefix+"function", topFrame.Name)
-		}
-		if opts.IncludePackage && topFrame != nil && topFrame.Package != "" {
-			fields = append(fields, opts.FieldNamePrefix+"package", topFrame.Package)
-		}
-		if opts.IncludeFile && topFrame != nil && topFrame.File != "" {
-			fields = append(fields, opts.FieldNamePrefix+"file", topFrame.File)
-		}
-		if opts.IncludeLine && topFrame != nil && topFrame.Line > 0 {
-			fields = append(fields, opts.FieldNamePrefix+"line", topFrame.Line)
+	if opts.IncludeCreatedTime {
+		if errorCreated := ec.Created(); !errorCreated.IsZero() {
+			fields = append(fields, opts.FieldNamePrefix+"created", errorCreated)
 		}
 	}
 
-	// Add stack trace if requested
-	if opts.IncludeStack {
-		stack := getStackTrace(errorStack, opts)
-		if stack != nil {
-			fields = append(fields, opts.FieldNamePrefix+"stack", stack)
+	needsFrame := opts.IncludeFunction || opts.IncludePackage || opts.IncludeFile || opts.IncludeLine
+	if needsFrame || opts.IncludeStack {
+		errorStack := ec.Stack()
+
+		if needsFrame {
+			topFrame := errorStack.TopUserFrame()
+			if topFrame == nil && len(errorStack) > 0 {
+				topFrame = &errorStack[0]
+			}
+			// Add function context
+			if opts.IncludeFunction && topFrame != nil && topFrame.Name != "" {
+				fields = append(fields, opts.FieldNamePrefix+"function", topFrame.Name)
+			}
+			if opts.IncludePackage && topFrame != nil && topFrame.Package != "" {
+				fields = append(fields, opts.FieldNamePrefix+"package", topFrame.Package)
+			}
+			if opts.IncludeFile && topFrame != nil && topFrame.File != "" {
+				fields = append(fields, opts.FieldNamePrefix+"file", topFrame.File)
+			}
+			if opts.IncludeLine && topFrame != nil && topFrame.Line > 0 {
+				fields = append(fields, opts.FieldNamePrefix+"line", topFrame.Line)
+			}
+		}
+
+		// Add stack trace if requested
+		if opts.IncludeStack {
+			stack := getStackTrace(errorStack, opts)
+			if stack != nil {
+				fields = append(fields, opts.FieldNamePrefix+"stack", stack)
+			}
 		}
 	}
 
