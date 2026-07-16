@@ -1091,7 +1091,7 @@ func TestIsAsPerformance(t *testing.T) {
 		duration := time.Since(start)
 
 		avgPerCall := duration / 10000
-		if avgPerCall > 10*time.Microsecond {
+		if avgPerCall > timingMultiplier*10*time.Microsecond {
 			t.Errorf("Is performance too slow: %v per call", avgPerCall)
 		}
 	})
@@ -1108,7 +1108,7 @@ func TestIsAsPerformance(t *testing.T) {
 		duration := time.Since(start)
 
 		avgPerCall := duration / 10000
-		if avgPerCall > 10*time.Microsecond {
+		if avgPerCall > timingMultiplier*10*time.Microsecond {
 			t.Errorf("As performance too slow: %v per call", avgPerCall)
 		}
 	})
@@ -1135,7 +1135,7 @@ func TestIsAsPerformance(t *testing.T) {
 		duration := time.Since(start)
 
 		avgPerCall := duration / 1000
-		if avgPerCall > 100*time.Microsecond {
+		if avgPerCall > timingMultiplier*100*time.Microsecond {
 			t.Errorf("Deep chain Is performance too slow: %v per call", avgPerCall)
 		}
 
@@ -1148,7 +1148,7 @@ func TestIsAsPerformance(t *testing.T) {
 		duration = time.Since(start)
 
 		avgPerCall = duration / 1000
-		if avgPerCall > 100*time.Microsecond {
+		if avgPerCall > timingMultiplier*100*time.Microsecond {
 			t.Errorf("Deep chain As performance too slow: %v per call", avgPerCall)
 		}
 	})

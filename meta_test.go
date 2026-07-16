@@ -36,6 +36,9 @@ func TestFormatter(t *testing.T) {
 		t.Errorf("unexpected error message: %s", err.Error())
 	}
 	err = New("test", Formatter(nil)) // should not panic
+	if err.Error() == "" {
+		t.Error("expected non-empty error message with nil formatter")
+	}
 }
 
 func TestStackTrace(t *testing.T) {

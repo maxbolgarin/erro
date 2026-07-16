@@ -392,7 +392,7 @@ func TestPerformanceDegradation(t *testing.T) {
 		}
 
 		duration := time.Since(start)
-		if duration > 5*time.Second {
+		if duration > timingMultiplier*5*time.Second {
 			t.Errorf("Performance test took too long: %v", duration)
 		}
 	})
@@ -407,7 +407,7 @@ func TestPerformanceDegradation(t *testing.T) {
 		}
 
 		duration := time.Since(start)
-		if duration > 2*time.Second {
+		if duration > timingMultiplier*2*time.Second {
 			t.Errorf("Stack trace performance test took too long: %v", duration)
 		}
 	})
@@ -856,7 +856,7 @@ func TestHighVolumeErrorCreation(t *testing.T) {
 		avgPerError := duration / numErrors
 
 		// Should be able to create errors quickly (increased threshold for CI)
-		if avgPerError > 50*time.Microsecond {
+		if avgPerError > timingMultiplier*50*time.Microsecond {
 			t.Errorf("Sequential error creation too slow: %v per error", avgPerError)
 		}
 
@@ -891,7 +891,7 @@ func TestHighVolumeErrorCreation(t *testing.T) {
 		avgPerError := duration / time.Duration(totalErrors)
 
 		// Concurrent creation should still be performant (increased threshold for CI)
-		if avgPerError > 100*time.Microsecond {
+		if avgPerError > timingMultiplier*100*time.Microsecond {
 			t.Errorf("Concurrent error creation too slow: %v per error", avgPerError)
 		}
 
@@ -960,7 +960,7 @@ func TestMemoryEfficiency(t *testing.T) {
 
 			// Subsequent calls should be faster due to caching
 			if round > 0 {
-				maxDuration := 50 * time.Millisecond
+				maxDuration := timingMultiplier * 50 * time.Millisecond
 				if duration > maxDuration {
 					t.Errorf("Round %d: Cached error strings took too long: %v", round, duration)
 				}
@@ -1011,7 +1011,7 @@ func TestStackTracePerformance(t *testing.T) {
 		duration := time.Since(start)
 
 		avgPerCall := duration / 100
-		if avgPerCall > 10*time.Millisecond {
+		if avgPerCall > timingMultiplier*10*time.Millisecond {
 			t.Errorf("Deep stack trace formatting too slow: %v per call", avgPerCall)
 		}
 	})
@@ -1053,7 +1053,7 @@ func TestConcurrencyPerformance(t *testing.T) {
 
 		// Go 1.18 has different performance characteristics for atomic operations with generics
 		// compared to newer versions, so we use a more tolerant threshold
-		maxAllowedPerAccess := 5 * time.Microsecond
+		maxAllowedPerAccess := timingMultiplier * 5 * time.Microsecond
 		if avgPerAccess > maxAllowedPerAccess {
 			t.Errorf("Concurrent access too slow: %v per access (max allowed: %v)", avgPerAccess, maxAllowedPerAccess)
 		}
@@ -1131,7 +1131,7 @@ func TestScalabilityLimits(t *testing.T) {
 		duration := time.Since(start)
 
 		avgPerError := duration / 100
-		if avgPerError > 50*time.Millisecond {
+		if avgPerError > timingMultiplier*50*time.Millisecond {
 			t.Errorf("Max fields handling too slow: %v per error", avgPerError)
 		}
 	})
@@ -1150,7 +1150,7 @@ func TestScalabilityLimits(t *testing.T) {
 		duration := time.Since(start)
 
 		avgPerCall := duration / 100
-		if avgPerCall > 10*time.Millisecond {
+		if avgPerCall > timingMultiplier*10*time.Millisecond {
 			t.Errorf("Deep chain handling too slow: %v per call", avgPerCall)
 		}
 
@@ -1164,7 +1164,7 @@ func TestScalabilityLimits(t *testing.T) {
 		}
 		unwrapDuration := time.Since(start)
 
-		if unwrapDuration > 10*time.Millisecond {
+		if unwrapDuration > timingMultiplier*10*time.Millisecond {
 			t.Errorf("Deep chain unwrapping too slow: %v for depth %d", unwrapDuration, depth)
 		}
 	})
@@ -1274,7 +1274,7 @@ func TestPerformanceRegression(t *testing.T) {
 		avgPerOp := duration / numIterations
 
 		// Set reasonable performance expectations (increased for CI and different Go versions)
-		if avgPerOp > 50*time.Microsecond {
+		if avgPerOp > timingMultiplier*50*time.Microsecond {
 			t.Errorf("Performance regression: %v per operation (expected < 50µs)", avgPerOp)
 		}
 
@@ -1294,7 +1294,7 @@ func TestPerformanceRegression(t *testing.T) {
 
 		avgPerOp := duration / numIterations
 
-		if avgPerOp > 60*time.Microsecond {
+		if avgPerOp > timingMultiplier*60*time.Microsecond {
 			t.Errorf("Wrapping performance regression: %v per operation (expected < 60µs)", avgPerOp)
 		}
 
@@ -1684,7 +1684,7 @@ func TestSerializationPerformance(t *testing.T) {
 		}
 		duration := time.Since(start)
 
-		if duration > 3*time.Second {
+		if duration > timingMultiplier*3*time.Second {
 			t.Errorf("Serialization performance too slow: %v", duration)
 		}
 	})

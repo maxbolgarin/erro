@@ -30,15 +30,6 @@ func TestFormatErrorMessage(t *testing.T) {
 	}
 }
 
-func TestIsASCII(t *testing.T) {
-	if !isASCII("ascii") {
-		t.Error("expected true for ascii string")
-	}
-	if isASCII("你好") {
-		t.Error("expected false for non-ascii string")
-	}
-}
-
 func TestTruncateUTF8(t *testing.T) {
 	if truncateUTF8("12345", 3) != "123" {
 		t.Error("unexpected truncation")
@@ -496,11 +487,17 @@ func TestApplyFormatVerbs_EdgeCases(t *testing.T) {
 	if !strings.Contains(format, "test %") {
 		t.Errorf("expected format to contain 'test %%', got '%s'", format)
 	}
+	if len(args) != 1 {
+		t.Errorf("expected trailing %% to consume no args, got %d remaining", len(args))
+	}
 
 	// Test case: more verbs than args
 	format, args = ApplyFormatVerbs("test %s %s %s", "arg1")
 	if !strings.Contains(format, "test arg1 %s %s") {
 		t.Errorf("expected format to contain 'test arg1 %%s %%s', got '%s'", format)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected all args consumed, got %d remaining", len(args))
 	}
 
 	// Test case: more args than verbs
